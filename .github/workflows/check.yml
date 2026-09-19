@@ -1,0 +1,61 @@
+name: Check
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install stable --profile minimal --component rustfmt --component clippy
+      - run: cargo +stable fmt --check
+      - run: cargo +stable clippy --locked --all-targets -- -D warnings
+      - run: cargo +stable test --locked
+      - name: Compare with CPython
+        if: runner.os == 'Linux'
+        run: cargo +stable test --locked --test python_oracle -- --ignored --nocapture
+      - run: cargo +stable run --locked -- --logic --proof raa --check-proof examples/raa.json
+
+  binary:
+    if: github.event_name == 'workflow_dispatch'
+    needs: check
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            extension: ''
+          - os: macos-latest
+            extension: ''
+          - os: windows-latest
+            extension: '.exe'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install stable --profile minimal
+      - run: cargo +stable build --release --locked
+      - run: tar -czf stepwise.tar.gz LICENSE README.md -C target/release stepwise${{ matrix.extension }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stepwise-${{ runner.os }}-${{ runner.arch }}
+          path: stepwise.tar.gz
+          if-no-files-found: error

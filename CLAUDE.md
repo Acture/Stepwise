@@ -1,0 +1,21 @@
+# Stepwise
+
+Offline Rust TUI for Python evaluation, propositional truth evaluation, and classical natural deduction.
+
+- Use tabs and explicit types. Keep the teaching rules separate from terminal rendering.
+- `cargo fmt --check`, `cargo clippy --locked --all-targets -- -D warnings`, `cargo test --locked` are the native gates.
+- Run `cargo test --locked --test python_oracle -- --ignored --nocapture` when changing Python semantics. Python is a development oracle, never a runtime dependency.
+- `src/core`: stable tree IDs, one-rule evaluation, typed answer validation, history.
+- `src/logic`: shared symbol aliases, bounded BDD equivalence, scoped proof rules.
+- `src/generate`: bounded seeded grammar generation. Both strategies must complete generated questions with manageable answers. Bump the generation ID version when changing the seed protocol; persisted random questions reconstruct from that ID. Default startup generates a random question or resumes unfinished progress; `n` generates the next question and `p` revisits the current run's history. Samples require `--exercise`.
+- `src/tui`: rendering and input; never preselect the correct next node in practice.
+- CLI requires exactly one of `--python` / `--logic`; proofs require `--logic`. Help/version are exempt. Keep exercise headers to the language/name only; display short-circuit status when toggled rather than in the permanent header.
+- Stay inline in the primary terminal buffer; no fullscreen, alternate screen, tree panel or Tab views. Keep the full expression visible above the inline draft and append accepted history to native scrollback.
+- Selecting any variable occurrence permits substituting every occurrence of that name in one answer, regardless of precedence. Independent ready operations at equal precedence may be chosen in either order; parentheses have local precedence scopes, not a global depth ranking. Preserve grouping dependencies, operator association and short-circuit guards. This is a priority-based teaching exercise, not strict execution tracing. Clicking a group whose contents are a value removes exactly that pair immediately, without requesting an answer. Record the click as an undoable/replayable action with no input. Preserve syntactically necessary parentheses around a negative power base even after its grouping step.
+- Automatically open the answer blank only when the whole expression is a binary operation over two known values. Never auto-submit or auto-solve. Explicit grouping and short-circuit selection remain student actions.
+- Exception at completion: when the whole expression is a minus sign over an unsigned numeric value, finish with that signed value without another answer. Do not apply this to inner negations, remaining groups, bool conversion or double negatives. Undo restores the last student step; completion adds no recorded attempt.
+- Generate steps, expected values and feedback from the parsed expression, bindings and evaluation rules. Exercises contain source and bindings, never a scripted solution. Keep concrete grouping separate from the semantic formulas used by proof checking.
+- Short circuit is optional; explain eager Python's teaching behavior in help/feedback without a permanent status heading. Progress must be isolated by teaching-rule version, mode, expression, and typed valuation.
+- Natural deduction validates rule shape, accessible lines, and assumption discharge. Semantic equivalence never authorizes a proof step.
+- `STATUS.md` owns local evidence. Linear project Stepwise owns execution: https://linear.app/acturea/project/stepwise-eda337d1c7f9 . Keep metrics out of Linear.
+- One real instruction file: this file. `AGENTS.md` and `.github/copilot-instructions.md` are symlinks.

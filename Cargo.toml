@@ -1,0 +1,34 @@
+[package]
+name = "stepwise"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+description = "Learn Python expressions one evaluation step at a time"
+license = "AGPL-3.0-only"
+repository = "https://github.com/Acture/Stepwise"
+
+[dependencies]
+boolean_expression = "0.4.4"
+clap = { version = "4.5", features = ["derive"] }
+crossterm = "0.29"
+directories = "6"
+num-bigint = "0.4"
+num-integer = "0.1"
+num-rational = "0.4"
+num-traits = "0.2"
+rand = "0.8.8"
+rand_chacha = "0.3.1"
+ratatui = "0.30"
+rustpython-parser = { version = "0.4", default-features = false, features = ["num-bigint"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tempfile = "3"
+thiserror = "2"
+unicode-width = "0.2"
+
+[profile.release]
+lto = "thin"
+strip = true
+
+[lints.rust]
+unsafe_code = "forbid"

@@ -1,0 +1,121 @@
+   Compiling stepwise v0.1.0 (/Users/acture/repos/Stepwise)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.72s
+     Running unittests src/lib.rs (target/debug/deps/stepwise-f6cf844030c314e7)
+
+running 16 tests
+test tui::proof_ui::tests::rules_scroll_without_switching_views_and_drafts_survive_resizing ... ok
+test tui::tests::long_logic_conjunction_click_is_accepted_before_disjunction_and_implication ... ok
+test tui::tests::keyboard_submission_undo_and_strategy_toggle_preserve_progress ... ok
+test tui::tests::feedback_scrolls_in_place_without_a_panel ... ok
+test tui::tests::native_history_survives_redraw_and_app_starts_below_shell_output ... ok
+test tui::tests::final_negative_result_finishes_without_another_answer_in_live_and_restored_history ... ok
+test tui::tests::final_pair_auto_blank_survives_resume_undo_and_reset_without_auto_solving ... ok
+test tui::tests::click_creates_inline_blank_and_only_correct_answer_appends_history ... ok
+test tui::tests::group_clicks_remove_one_pair_and_persist_without_a_typed_answer ... ok
+test tui::tests::wrapped_logic_expression_mouse_hits_use_display_cells ... ok
+test tui::tests::clicking_a_repeated_variable_blanks_and_substitutes_every_occurrence ... ok
+test tui::tests::native_history_reaches_terminal_scrollback ... ok
+test tui::tests::next_generates_questions_and_previous_restores_the_prior_attempts ... ok
+test tui::tests::screenshot_groups_are_independent_and_ready_groups_need_only_a_click ... ok
+test tui::tests::incorrect_selection_does_not_blank_or_advance_and_short_circuit_is_selectable ... ok
+test tui::tests::inline_unicode_draft_survives_tiny_resizes_and_tab_does_nothing ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running unittests src/main.rs (target/debug/deps/stepwise-8d2c087e1ed68a22)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/evaluation.rs (target/debug/deps/evaluation-2adf08610acbe7fc)
+
+running 10 tests
+test exact_types_and_signed_zero ... ok
+test replay_preserves_ids_and_rejects_invalid_attempts ... ok
+test final_negative_completion_keeps_validation_and_undo_at_the_last_student_step ... ok
+test short_circuit_types_and_eager_exception_are_distinct ... ok
+test displayed_sibling_spans_shift_after_each_replacement ... ok
+test strict_selection_and_no_skipping ... ok
+test displayed_parentheses_survive_replacement_undo_and_replay ... ok
+test final_negative_literals_are_values_without_recorded_answers ... ok
+test rejects_unsupported_source_and_resource_limits ... ok
+test precedence_and_rules_have_expected_step_sequences ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/flexible_steps.rs (target/debug/deps/flexible_steps-de62e122fa0a1773)
+
+running 6 tests
+test propositions_also_substitute_together_before_other_variables ... ok
+test lower_precedence_and_unfinished_groups_still_cannot_be_skipped ... ok
+test substitution_does_not_execute_a_short_circuited_branch ... ok
+test equal_precedence_can_start_on_the_right_without_changing_association ... ok
+test any_occurrence_replaces_the_whole_binding_with_one_undoable_answer ... ok
+test alternate_choices_finish_seeded_questions_with_the_same_values_and_replay ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.18s
+
+     Running tests/generation.rs (target/debug/deps/generation-5e10ab99dd9578bf)
+
+running 4 tests
+test versioned_seed_restores_the_exact_question_and_partial_progress ... ok
+test generated_questions_are_varied_bounded_and_solvable_under_both_strategies ... ok
+test cli_requires_exactly_one_language_before_starting ... ok
+test seeded_random_cli_is_repeatable_and_rejects_conflicting_modes ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.03s
+
+     Running tests/logic.rs (target/debug/deps/logic-127ae867904ec04f)
+
+running 9 tests
+test logic_requires_binding_and_rejects_numeric_answers ... ok
+test reductio_requires_a_scoped_contradiction_and_discharges_it ... ok
+test modus_ponens_does_not_accept_affirming_consequent ... ok
+test rejects_scope_leaks_and_cross_level_discharge ... ok
+test introduction_elimination_and_replay ... ok
+test semantic_equivalence_does_not_authorize_an_arbitrary_rule ... ok
+test remaining_rules_respect_their_formula_shapes ... ok
+test ascii_unicode_precedence_and_equivalence ... ok
+test truth_tables_and_both_evaluation_strategies ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/progress.rs (target/debug/deps/progress-14af2cebfe1b2ee4)
+
+running 5 tests
+test final_negative_rule_preserves_older_progress_without_replaying_the_extra_answer ... ok
+test malformed_progress_is_never_silently_reset ... ok
+test python_assignments_types_and_signed_zero_have_separate_progress ... ok
+test group_clicks_round_trip_without_fabricated_input_and_cannot_solve_operations ... ok
+test atomic_round_trip_and_mode_assignment_isolation ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/python_oracle.rs (target/debug/deps/python_oracle-677d8201ad246193)
+
+running 1 test
+test matches_cpython_values_types_exceptions_and_float_bits ... ignored, requires python3; run cargo test --test python_oracle -- --ignored --nocapture
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/rule_generation.rs (target/debug/deps/rule_generation-a4294ed70bd70d51)
+
+running 9 tests
+test logic_groups_preserve_aliases_and_require_separate_steps ... ok
+test all_five_logic_precedences_are_generated_from_source ... ok
+test negative_power_bases_and_word_operators_keep_their_display_meaning ... ok
+test variable_types_and_bindings_are_checked_before_starting ... ok
+test exponent_associativity_does_not_reverse_variable_read_order ... ok
+test only_a_whole_binary_pair_can_automatically_enter_a_blank ... ok
+test short_circuit_skips_variable_reads_and_groups_but_eager_does_not ... ok
+test a_recommended_path_respects_dependencies_without_enforcing_variable_order ... ok
+test long_exercises_use_the_same_rules_in_both_modes ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+   Doc-tests stepwise
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
