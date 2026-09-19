@@ -1,0 +1,5 @@
+[
+	"~P ; assume",
+	"False ; not-elim ; 1,2",
+	"P ; raa ; 2,3"
+]
