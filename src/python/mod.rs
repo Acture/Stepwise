@@ -8,9 +8,24 @@ mod parse;
 mod value;
 
 pub use op::{BinaryOp, BoolOp, CompareOp, Op, UnaryOp};
-pub use parse::{parse_bound_expression, parse_expression, parse_value};
+pub use parse::{parse_expression, parse_value};
 
-use crate::core::Value;
+use std::collections::BTreeMap;
+
+use crate::core::{EvaluationMode, Expr, Language, ParseError, Session, Value};
+
+/// Start a Python practice session. The progress key embeds this module's own name and
+/// the Debug rendering of Python's typed bindings; both must stay byte-identical.
+pub fn session(
+	source: &str,
+	bindings: &BTreeMap<String, Value>,
+	mode: EvaluationMode,
+) -> Result<Session, ParseError> {
+	let source: String = source.trim().into();
+	let root: Expr = parse::parse_bound_expression(&source, bindings)?;
+	let context: String = format!("python\n{bindings:?}\n{source}");
+	Ok(Session::new(Language::Python, source, root, context, mode))
+}
 
 pub(crate) fn binding_explanation(name: &str, value: &Value) -> String {
 	format!(

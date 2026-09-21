@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use stepwise::{
 	core::{EvaluationMode, Language, Outcome, Session, Value},
 	exercises, generate,
-	python::parse_value,
+	python::{self, parse_value},
 };
 
 #[derive(Clone, Serialize)]
@@ -141,7 +141,7 @@ fn matches_cpython_values_types_exceptions_and_float_bits() {
 			.map(|(name, literal)| (name.clone(), parse_value(literal).unwrap()))
 			.collect();
 		let mut session: Session =
-			Session::python(&original.source, &bindings, EvaluationMode::ShortCircuit).unwrap();
+			python::session(&original.source, &bindings, EvaluationMode::ShortCircuit).unwrap();
 		let mut states: Vec<String> = vec![original.source.clone()];
 		if session.render() != original.source {
 			states.push(session.render().into());

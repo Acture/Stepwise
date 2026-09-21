@@ -74,30 +74,9 @@ pub struct Session {
 }
 
 impl Session {
-	pub fn python(
-		source: &str,
-		bindings: &BTreeMap<String, Value>,
-		mode: EvaluationMode,
-	) -> Result<Self, ParseError> {
-		let source: String = source.trim().into();
-		let root: Expr = crate::python::parse_bound_expression(&source, bindings)?;
-		let context: String = format!("python\n{bindings:?}\n{source}");
-		Ok(Self::start(Language::Python, source, root, context, mode))
-	}
-
-	pub fn logic(
-		source: &str,
-		bindings: &BTreeMap<String, bool>,
-		mode: EvaluationMode,
-	) -> Result<Self, ParseError> {
-		let source: String = source.trim().into();
-		let root: Expr = crate::logic::parse_teaching_formula(&source, bindings)?;
-		let context: String = format!("logic\n{bindings:?}\n{source}");
-		Ok(Self::start(Language::Logic, source, root, context, mode))
-	}
-
-	/// `context` is part of the saved progress key, so each language spells its own.
-	fn start(
+	/// Built by the language module that parsed `root`; `context` is part of the saved
+	/// progress key, so each language spells its own name and binding rendering.
+	pub(crate) fn new(
 		language: Language,
 		source: String,
 		root: Expr,

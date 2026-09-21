@@ -1,7 +1,9 @@
 //! The teaching machinery both languages share: the tree a student clicks, stable node
 //! identifiers, substitution and source mapping, which steps are allowed, typed feedback,
 //! history and replay. Operator rules, type semantics and per-operator explanations belong
-//! to [`crate::python`] and [`crate::logic`], reached only through [`Language`] and [`Op`].
+//! to [`crate::python`] and [`crate::logic`], reached only through [`Language`] and [`Op`];
+//! `language.rs` is the only file here that names them, and each language builds its own
+//! session through `Session::new`.
 //! The feedback sentences core itself prints are shared by both languages and predate this
 //! split; a few still use Python vocabulary and are kept byte-identical on purpose.
 
