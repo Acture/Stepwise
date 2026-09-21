@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use stepwise::{
 	core::{EvaluationMode, FeedbackKind, Session, Value},
-	logic::{Formula, LogicOp, parse_formula, proof::Proof},
+	logic::{self, Formula, LogicOp, parse_formula, proof::Proof},
 };
 
 fn formula(source: &str) -> Formula {
@@ -53,7 +53,7 @@ fn truth_tables_and_both_evaluation_strategies() {
 					LogicOp::Iff => left == right,
 				};
 				for mode in [EvaluationMode::ShortCircuit, EvaluationMode::Eager] {
-					let mut session: Session = Session::logic(
+					let mut session: Session = logic::session(
 						&source,
 						&BTreeMap::from([("P".into(), left), ("Q".into(), right)]),
 						mode,
@@ -79,8 +79,8 @@ fn truth_tables_and_both_evaluation_strategies() {
 
 #[test]
 fn logic_requires_binding_and_rejects_numeric_answers() {
-	assert!(Session::logic("P", &BTreeMap::new(), EvaluationMode::Eager).is_err());
-	let mut session: Session = Session::logic(
+	assert!(logic::session("P", &BTreeMap::new(), EvaluationMode::Eager).is_err());
+	let mut session: Session = logic::session(
 		"P",
 		&BTreeMap::from([("P".into(), true)]),
 		EvaluationMode::Eager,

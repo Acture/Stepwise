@@ -1,6 +1,6 @@
 use crate::core::{EvaluationMode, Language, ParseError, Session, Value};
-use crate::logic::parse_truth;
-use crate::python::parse_value;
+use crate::logic::{self, parse_truth};
+use crate::python::{self, parse_value};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 
@@ -27,7 +27,7 @@ impl Exercise {
 					.iter()
 					.map(|(name, literal)| Ok((name.clone(), parse_value(literal)?)))
 					.collect::<Result<_, ParseError>>()?;
-				Session::python(&self.expression, &bindings, mode)
+				python::session(&self.expression, &bindings, mode)
 			}
 			Language::Logic => {
 				let bindings: BTreeMap<String, bool> = self
@@ -35,7 +35,7 @@ impl Exercise {
 					.iter()
 					.map(|(name, literal)| Ok((name.clone(), parse_truth(literal)?)))
 					.collect::<Result<_, ParseError>>()?;
-				Session::logic(&self.expression, &bindings, mode)
+				logic::session(&self.expression, &bindings, mode)
 			}
 		}
 	}

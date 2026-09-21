@@ -255,7 +255,7 @@ pub fn parse_formula(source: &str) -> Result<Formula, ParseError> {
 	Ok(parse_syntax(source)?.formula())
 }
 
-pub(crate) fn parse_teaching_formula(
+pub(super) fn parse_teaching_formula(
 	source: &str,
 	bindings: &BTreeMap<String, bool>,
 ) -> Result<Expr, ParseError> {
