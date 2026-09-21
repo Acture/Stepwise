@@ -1,9 +1,12 @@
-use stepwise::core::{
-	EvaluationMode, FeedbackKind, NodeId, Session, Value, parse_expression, parse_value,
+use std::collections::BTreeMap;
+
+use stepwise::{
+	core::{EvaluationMode, FeedbackKind, NodeId, Session, Value},
+	python::{parse_expression, parse_value},
 };
 
 fn session(source: &str) -> Session {
-	Session::new(source, EvaluationMode::ShortCircuit).unwrap()
+	Session::python(source, &BTreeMap::new(), EvaluationMode::ShortCircuit).unwrap()
 }
 
 #[test]
@@ -124,7 +127,12 @@ fn short_circuit_types_and_eager_exception_are_distinct() {
 	assert_eq!(practice.submit(0, "0").kind, FeedbackKind::WrongType);
 	assert!(practice.submit(0, "False").accepted());
 	assert_eq!(practice.history().len(), 1);
-	let mut eager: Session = Session::new("False and (3 / 0 > 1)", EvaluationMode::Eager).unwrap();
+	let mut eager: Session = Session::python(
+		"False and (3 / 0 > 1)",
+		&BTreeMap::new(),
+		EvaluationMode::Eager,
+	)
+	.unwrap();
 	assert_eq!(eager.submit(0, "False").kind, FeedbackKind::NeedsInner);
 	assert!(
 		eager
@@ -187,7 +195,7 @@ fn precedence_and_rules_have_expected_step_sequences() {
 fn final_negative_literals_are_values_without_recorded_answers() {
 	for source in ["-10", "-10.5", "-0", "-0.0", "- 10"] {
 		for mode in [EvaluationMode::ShortCircuit, EvaluationMode::Eager] {
-			let mut practice: Session = Session::new(source, mode).unwrap();
+			let mut practice: Session = Session::python(source, &BTreeMap::new(), mode).unwrap();
 			assert!(practice.is_finished(), "{source}");
 			assert!(practice.next_step().is_none());
 			assert!(practice.history().is_empty());

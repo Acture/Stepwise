@@ -6,52 +6,8 @@ use std::{
 
 use boolean_expression::{BDD, Expr as BooleanExpr};
 
-use crate::core::{Expr, ExprKind, NodeId, ParseError, UnaryOp, Value};
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum LogicOp {
-	And,
-	Or,
-	Implies,
-	Iff,
-}
-
-impl LogicOp {
-	pub fn symbol(self) -> &'static str {
-		match self {
-			Self::And => "∧",
-			Self::Or => "∨",
-			Self::Implies => "→",
-			Self::Iff => "↔",
-		}
-	}
-
-	pub fn apply(self, left: bool, right: bool) -> bool {
-		match self {
-			Self::And => left && right,
-			Self::Or => left || right,
-			Self::Implies => !left || right,
-			Self::Iff => left == right,
-		}
-	}
-
-	pub fn short_circuit(self, left: bool) -> Option<bool> {
-		match (self, left) {
-			(Self::And, false) => Some(false),
-			(Self::Or, true) | (Self::Implies, false) => Some(true),
-			_ => None,
-		}
-	}
-
-	pub fn rule(self) -> &'static str {
-		match self {
-			Self::And => "合取：两边都真才为真。",
-			Self::Or => "析取（相容或）：至少一边为真即为真。",
-			Self::Implies => "实质蕴涵：仅当前件真、后件假时为假。",
-			Self::Iff => "等价：两边真值相同时为真。",
-		}
-	}
-}
+use super::{LogicOp, Op};
+use crate::core::{Expr, ExprKind, Language, NodeId, ParseError, Value};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Formula {
@@ -263,26 +219,28 @@ impl Syntax {
 		let id: NodeId = *next;
 		*next += 1;
 		let kind: ExprKind = match &self.kind {
-			SyntaxKind::Atom(name) => ExprKind::Proposition(
-				name.clone(),
-				*bindings.get(name).ok_or_else(|| {
+			SyntaxKind::Atom(name) => ExprKind::Binding {
+				language: Language::Logic,
+				name: name.clone(),
+				value: Value::Bool(*bindings.get(name).ok_or_else(|| {
 					ParseError(format!(
 						"未给命题 {name} 赋值；使用 --assign {name}=true 或 {name}=false。"
 					))
-				})?,
-			),
+				})?),
+			},
 			SyntaxKind::Constant(value) => ExprKind::Value(Value::Bool(*value)),
-			SyntaxKind::Not(child) => ExprKind::Unary(
-				UnaryOp::LogicalNot,
-				Box::new(child.teaching_tree(bindings, next)?),
-			),
+			SyntaxKind::Not(child) => {
+				ExprKind::Operation(Op::Not.into(), vec![child.teaching_tree(bindings, next)?])
+			}
 			SyntaxKind::Group(child) => {
 				ExprKind::Group(Box::new(child.teaching_tree(bindings, next)?))
 			}
-			SyntaxKind::Binary(op, left, right) => ExprKind::Logic(
-				*op,
-				Box::new(left.teaching_tree(bindings, next)?),
-				Box::new(right.teaching_tree(bindings, next)?),
+			SyntaxKind::Binary(op, left, right) => ExprKind::Operation(
+				Op::Binary(*op).into(),
+				vec![
+					left.teaching_tree(bindings, next)?,
+					right.teaching_tree(bindings, next)?,
+				],
 			),
 		};
 		Ok(Expr {

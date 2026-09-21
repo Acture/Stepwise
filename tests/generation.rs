@@ -5,8 +5,8 @@ use std::{
 
 use num_traits::ToPrimitive;
 use stepwise::{
-	core::{EvaluationMode, NextStep, Session, Value},
-	exercises::{Exercise, Language},
+	core::{EvaluationMode, Language, NextStep, Session, Value},
+	exercises::Exercise,
 	generate,
 	progress::Progress,
 };

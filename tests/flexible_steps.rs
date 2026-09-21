@@ -1,9 +1,9 @@
 use std::collections::BTreeMap;
 
 use stepwise::{
-	core::{EvaluationMode, FeedbackKind, NodeId, Session, Value, parse_value},
-	exercises::Language,
+	core::{EvaluationMode, FeedbackKind, Language, NodeId, Session, Value},
 	generate,
+	python::parse_value,
 };
 
 fn node(session: &Session, text: &str) -> NodeId {
@@ -31,8 +31,7 @@ fn any_occurrence_replaces_the_whole_binding_with_one_undoable_answer() {
 		("x1".into(), parse_value("3").unwrap()),
 	]);
 	let mut session: Session =
-		Session::with_bindings("x1 + x ** 2 + (x)", &bindings, EvaluationMode::ShortCircuit)
-			.unwrap();
+		Session::python("x1 + x ** 2 + (x)", &bindings, EvaluationMode::ShortCircuit).unwrap();
 	let last_x: NodeId = node(&session, "x");
 	assert_eq!(session.replacement_ids(last_x).len(), 2);
 	assert_eq!(session.submit(last_x, "-2.0").kind, FeedbackKind::WrongType);
@@ -41,7 +40,7 @@ fn any_occurrence_replaces_the_whole_binding_with_one_undoable_answer() {
 	assert_eq!(session.render(), "x1 + (-2) ** 2 + (-2)");
 	assert_eq!(session.history().len(), 1);
 	assert_eq!(session.attempts().len(), 1);
-	let restored: Session = Session::with_bindings(session.source(), &bindings, session.mode())
+	let restored: Session = Session::python(session.source(), &bindings, session.mode())
 		.unwrap()
 		.replay(session.attempts())
 		.unwrap();
@@ -67,6 +66,23 @@ fn propositions_also_substitute_together_before_other_variables() {
 	assert_eq!(session.render(), "Q ∨ (P ∧ P)");
 }
 
+/// Short circuit restricts logic the same way it restricts Python: the right disjunction
+/// may still be skipped, so it cannot be computed before the conjunction decides.
+#[test]
+fn logic_short_circuit_defers_the_skippable_side_but_eager_does_not() {
+	let source: &str = "(False ∨ False) ∧ (True ∨ True)";
+	let mut guarded: Session =
+		Session::logic(source, &BTreeMap::new(), EvaluationMode::ShortCircuit).unwrap();
+	let right: NodeId = node(&guarded, "True ∨ True");
+	assert_eq!(guarded.submit(right, "True").kind, FeedbackKind::OutOfOrder);
+	answer(&mut guarded, "False ∨ False", "False");
+	assert_eq!(guarded.render(), "(False) ∧ (True ∨ True)");
+	let mut eager: Session =
+		Session::logic(source, &BTreeMap::new(), EvaluationMode::Eager).unwrap();
+	let right: NodeId = node(&eager, "True ∨ True");
+	assert!(eager.submit(right, "True").accepted());
+}
+
 #[test]
 fn equal_precedence_can_start_on_the_right_without_changing_association() {
 	for mode in [EvaluationMode::Eager, EvaluationMode::ShortCircuit] {
@@ -88,12 +104,13 @@ fn equal_precedence_can_start_on_the_right_without_changing_association() {
 		let mut session: Session = if source.contains('∧') {
 			Session::logic(source, &BTreeMap::new(), EvaluationMode::Eager).unwrap()
 		} else {
-			Session::new(source, EvaluationMode::ShortCircuit).unwrap()
+			Session::python(source, &BTreeMap::new(), EvaluationMode::ShortCircuit).unwrap()
 		};
 		answer(&mut session, first, input);
 		assert_eq!(session.render(), expected);
 	}
-	let mut session: Session = Session::new("20 - 5 - 2", EvaluationMode::ShortCircuit).unwrap();
+	let mut session: Session =
+		Session::python("20 - 5 - 2", &BTreeMap::new(), EvaluationMode::ShortCircuit).unwrap();
 	assert_eq!(
 		session.submit(session.root().id, "13").kind,
 		FeedbackKind::NeedsInner
@@ -105,7 +122,12 @@ fn equal_precedence_can_start_on_the_right_without_changing_association() {
 
 #[test]
 fn lower_precedence_and_unfinished_groups_still_cannot_be_skipped() {
-	let mut session: Session = Session::new("1 + 2 + 3 * 4", EvaluationMode::ShortCircuit).unwrap();
+	let mut session: Session = Session::python(
+		"1 + 2 + 3 * 4",
+		&BTreeMap::new(),
+		EvaluationMode::ShortCircuit,
+	)
+	.unwrap();
 	assert_eq!(
 		session.submit(node(&session, "1 + 2"), "3").kind,
 		FeedbackKind::OutOfOrder
@@ -113,8 +135,12 @@ fn lower_precedence_and_unfinished_groups_still_cannot_be_skipped() {
 	answer(&mut session, "3 * 4", "12");
 	answer(&mut session, "1 + 2", "3");
 	answer(&mut session, "3 + 12", "15");
-	let mut session: Session =
-		Session::new("2 * 3 + (4 + 5)", EvaluationMode::ShortCircuit).unwrap();
+	let mut session: Session = Session::python(
+		"2 * 3 + (4 + 5)",
+		&BTreeMap::new(),
+		EvaluationMode::ShortCircuit,
+	)
+	.unwrap();
 	assert!(session.check_selection(node(&session, "2 * 3")).is_ok());
 	answer(&mut session, "4 + 5", "9");
 	assert_eq!(
@@ -129,7 +155,7 @@ fn substitution_does_not_execute_a_short_circuited_branch() {
 		("flag".into(), Value::Bool(false)),
 		("x".into(), parse_value("0").unwrap()),
 	]);
-	let mut session: Session = Session::with_bindings(
+	let mut session: Session = Session::python(
 		"flag and (1 / x > 1)",
 		&bindings,
 		EvaluationMode::ShortCircuit,

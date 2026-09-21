@@ -6,9 +6,9 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 use stepwise::{
-	core::{EvaluationMode, Outcome, Session, Value, parse_value},
-	exercises::{self, Language},
-	generate,
+	core::{EvaluationMode, Language, Outcome, Session, Value},
+	exercises, generate,
+	python::parse_value,
 };
 
 #[derive(Clone, Serialize)]
@@ -141,8 +141,7 @@ fn matches_cpython_values_types_exceptions_and_float_bits() {
 			.map(|(name, literal)| (name.clone(), parse_value(literal).unwrap()))
 			.collect();
 		let mut session: Session =
-			Session::with_bindings(&original.source, &bindings, EvaluationMode::ShortCircuit)
-				.unwrap();
+			Session::python(&original.source, &bindings, EvaluationMode::ShortCircuit).unwrap();
 		let mut states: Vec<String> = vec![original.source.clone()];
 		if session.render() != original.source {
 			states.push(session.render().into());

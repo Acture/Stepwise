@@ -11,8 +11,8 @@ use unicode_width::UnicodeWidthStr;
 
 use super::{App, inline, render, transcript::Transcript};
 use crate::{
-	core::{EvaluationMode, NodeId},
-	exercises::{self, Exercise, Language},
+	core::{EvaluationMode, Language, NodeId},
+	exercises::{self, Exercise},
 	progress::Progress,
 };
 

@@ -5,8 +5,8 @@ use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 
 use crate::{
-	core::{EvaluationMode, Expr, ParseError, Value, next_step},
-	exercises::{Exercise, Language},
+	core::{EvaluationMode, Expr, Language, ParseError, Value, next_step},
+	exercises::Exercise,
 };
 
 /// Version the seed protocol when changing the grammar, sampling or acceptance rules.
@@ -26,18 +26,11 @@ pub fn generate(language: Language, seed: u64) -> Result<Exercise, ParseError> {
 		builder.bindings.clear();
 		let count: u32 = builder.rng.gen_range(5..=8);
 		let formula: Fragment = match language {
-			Language::Python if builder.rng.gen_bool(0.35) => builder.python_boolean(count),
-			Language::Python => builder.number(count),
-			Language::Logic => builder.logic(count),
+			Language::Python => crate::python::generate::sample(&mut builder, count),
+			Language::Logic => crate::logic::generate::sample(&mut builder, count),
 		};
 		let exercise: Exercise = Exercise {
-			id: format!(
-				"{PREFIX}{}-{seed}",
-				match language {
-					Language::Python => "python",
-					Language::Logic => "logic",
-				}
-			),
+			id: format!("{PREFIX}{}-{seed}", language.key()),
 			title: "随机练习".into(),
 			expression: formula.text,
 			goal: "每次应用一条规则；n 下一道随机题，p 返回本次练习的上一题。".into(),
@@ -64,11 +57,8 @@ pub fn restore(id: &str) -> Result<Option<Exercise>, ParseError> {
 	let (language, seed): (&str, &str) = suffix
 		.split_once('-')
 		.ok_or_else(|| ParseError("随机题编号缺少种子。".into()))?;
-	let language: Language = match language {
-		"python" => Language::Python,
-		"logic" => Language::Logic,
-		_ => return Err(ParseError("随机题语言无效。".into())),
-	};
+	let language: Language =
+		Language::from_key(language).ok_or_else(|| ParseError("随机题语言无效。".into()))?;
 	let seed: u64 = seed
 		.parse()
 		.map_err(|_| ParseError("随机题种子无效。".into()))?;
@@ -112,19 +102,20 @@ fn suitable(exercise: &Exercise) -> Result<bool, ParseError> {
 	Ok(true)
 }
 
-struct Fragment {
-	text: String,
+/// Source text plus the precedence it binds at, so a language only brackets what it must.
+pub(crate) struct Fragment {
+	pub(crate) text: String,
 	precedence: u8,
 }
 
 impl Fragment {
-	fn atom(text: String) -> Self {
+	pub(crate) fn atom(text: String) -> Self {
 		Self {
 			text,
 			precedence: 100,
 		}
 	}
-	fn grouped(self) -> Self {
+	pub(crate) fn grouped(self) -> Self {
 		Self::atom(format!("({})", self.text))
 	}
 	fn operand(self, minimum: u8) -> String {
@@ -134,7 +125,13 @@ impl Fragment {
 			self.text
 		}
 	}
-	fn binary(self, symbol: &str, precedence: u8, right: Self, right_associative: bool) -> Self {
+	pub(crate) fn binary(
+		self,
+		symbol: &str,
+		precedence: u8,
+		right: Self,
+		right_associative: bool,
+	) -> Self {
 		let left: String = self.operand(precedence + u8::from(right_associative));
 		let right: String = right.operand(precedence + u8::from(!right_associative));
 		Self {
@@ -142,7 +139,7 @@ impl Fragment {
 			precedence,
 		}
 	}
-	fn unary(self, symbol: &str, precedence: u8) -> Self {
+	pub(crate) fn unary(self, symbol: &str, precedence: u8) -> Self {
 		Self {
 			text: format!("{symbol}{}", self.operand(precedence)),
 			precedence,
@@ -150,113 +147,28 @@ impl Fragment {
 	}
 }
 
-struct Builder {
-	rng: ChaCha8Rng,
-	bindings: BTreeMap<String, String>,
+/// The seeded draw sequence shared by both grammars; each language owns its own shapes.
+pub(crate) struct Builder {
+	pub(crate) rng: ChaCha8Rng,
+	pub(crate) bindings: BTreeMap<String, String>,
 }
 
 impl Builder {
-	fn choose<'a>(&mut self, choices: &'a [&'a str]) -> &'a str {
+	pub(crate) fn choose<'a>(&mut self, choices: &'a [&'a str]) -> &'a str {
 		choices[self.rng.gen_range(0..choices.len() as u32) as usize]
 	}
-	fn variable(&mut self, logical: bool) -> Fragment {
-		let name: &str = self.choose(if logical {
-			&["P", "Q", "R", "S"]
-		} else {
-			&["x", "y", "z"]
-		});
+
+	/// Draw a name, then draw its literal only the first time that name appears.
+	pub(crate) fn variable<'a>(
+		&mut self,
+		names: &'a [&'a str],
+		literal: impl FnOnce(&mut ChaCha8Rng) -> String,
+	) -> Fragment {
+		let name: &str = self.choose(names);
 		if !self.bindings.contains_key(name) {
-			let literal: String = if logical {
-				if self.rng.gen_bool(0.5) {
-					"True"
-				} else {
-					"False"
-				}
-				.into()
-			} else {
-				self.rng.gen_range(-5..=9).to_string()
-			};
+			let literal: String = literal(&mut self.rng);
 			self.bindings.insert(name.into(), literal);
 		}
 		Fragment::atom(name.into())
-	}
-	fn number(&mut self, count: u32) -> Fragment {
-		if count == 0 {
-			return if self.bindings.is_empty() || self.rng.gen_bool(0.6) {
-				self.variable(false)
-			} else {
-				Fragment::atom(self.rng.gen_range(1..=9).to_string())
-			};
-		}
-		let expression: Fragment = if self.rng.gen_bool(0.15) {
-			self.number(count - 1).unary("-", 70)
-		} else {
-			let op: &str = self.choose(&["+", "-", "*", "//", "%", "/", "**"]);
-			if matches!(op, "//" | "%" | "/" | "**") {
-				// Positive literal divisors avoid accidental error exercises; powers stay small.
-				let right: Fragment = Fragment::atom(if op == "**" {
-					self.rng.gen_range(2..=3).to_string()
-				} else {
-					self.choose(&["2", "4"]).into()
-				});
-				self.number(count - 1).binary(
-					op,
-					if op == "**" { 80 } else { 60 },
-					right,
-					op == "**",
-				)
-			} else {
-				let left_count: u32 = self.rng.gen_range(0..count);
-				let left: Fragment = self.number(left_count);
-				let right: Fragment = self.number(count - 1 - left_count);
-				left.binary(op, if op == "*" { 60 } else { 50 }, right, false)
-			}
-		};
-		if self.rng.gen_bool(0.15) {
-			expression.grouped()
-		} else {
-			expression
-		}
-	}
-	fn comparison(&mut self, count: u32) -> Fragment {
-		let left_count: u32 = self.rng.gen_range(0..=count);
-		let left: Fragment = self.number(left_count);
-		let right: Fragment = self.number(count - left_count);
-		let op: &str = self.choose(&["<", "<=", ">", ">=", "==", "!="]);
-		left.binary(op, 40, right, false)
-	}
-	fn python_boolean(&mut self, count: u32) -> Fragment {
-		let left: Fragment = self.comparison(count / 2);
-		let mut right: Fragment = self.comparison(count - count / 2);
-		if self.rng.gen_bool(0.5) {
-			right = right.unary("not ", 30);
-		}
-		let op: &str = self.choose(&["and", "or"]);
-		left.binary(op, if op == "and" { 20 } else { 10 }, right, false)
-	}
-	fn logic(&mut self, count: u32) -> Fragment {
-		if count == 0 {
-			return self.variable(true);
-		}
-		let expression: Fragment = if self.rng.gen_bool(0.2) {
-			self.logic(count - 1).unary("¬", 90)
-		} else {
-			let left_count: u32 = self.rng.gen_range(0..count);
-			let left: Fragment = self.logic(left_count);
-			let right: Fragment = self.logic(count - 1 - left_count);
-			let op: &str = self.choose(&["∧", "∨", "→", "↔"]);
-			let precedence: u8 = match op {
-				"∧" => 70,
-				"∨" => 50,
-				"→" => 30,
-				_ => 10,
-			};
-			left.binary(op, precedence, right, op == "→")
-		};
-		if self.rng.gen_bool(0.15) {
-			expression.grouped()
-		} else {
-			expression
-		}
 	}
 }
