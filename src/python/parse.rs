@@ -4,11 +4,8 @@ use std::{
 	ops::Range,
 };
 
-use super::{BinaryOp, BoolOp, CompareOp, Expr, ExprKind, NodeId, UnaryOp, Value};
-
-#[derive(Clone, Debug, thiserror::Error)]
-#[error("{0}")]
-pub struct ParseError(pub String);
+use super::{BinaryOp, BoolOp, CompareOp, Op, UnaryOp, value};
+use crate::core::{Expr, ExprKind, Language, NodeId, ParseError, Value};
 
 pub fn parse_expression(source: &str) -> Result<Expr, ParseError> {
 	parse_bound_expression(source, &BTreeMap::new())
@@ -41,7 +38,7 @@ pub fn parse_bound_expression(
 		.rows()
 		.into_iter()
 		.filter_map(|(_, node)| match &node.kind {
-			ExprKind::Variable(name, _) => Some(name.as_str()),
+			ExprKind::Binding { name, .. } => Some(name.as_str()),
 			_ => None,
 		})
 		.collect();
@@ -53,6 +50,10 @@ pub fn parse_bound_expression(
 		return Err(ParseError("包含括号的表达式最多嵌套 32 层。".into()));
 	}
 	Ok(root)
+}
+
+fn operation(op: Op, operands: Vec<Expr>) -> ExprKind {
+	ExprKind::Operation(op.into(), operands)
 }
 
 fn convert(
@@ -71,15 +72,20 @@ fn convert(
 	let kind: ExprKind = match parsed {
 		ast::Expr::Name(node) => {
 			let name: String = node.id.to_string();
-			let value: Value = bindings
-				.get(&name)
-				.ok_or_else(|| {
-					ParseError(format!("未给变量 {name} 赋值；使用 --assign {name}=3。"))
-				})?
-				.clone()
-				.checked()
-				.map_err(|error| ParseError(error.to_string()))?;
-			ExprKind::Variable(name, value)
+			let value: Value = value::checked(
+				bindings
+					.get(&name)
+					.ok_or_else(|| {
+						ParseError(format!("未给变量 {name} 赋值；使用 --assign {name}=3。"))
+					})?
+					.clone(),
+			)
+			.map_err(|error| ParseError(error.to_string()))?;
+			ExprKind::Binding {
+				language: Language::Python,
+				name,
+				value,
+			}
 		}
 		ast::Expr::Constant(node) => {
 			let value: Value = match node.value {
@@ -92,11 +98,7 @@ fn convert(
 						.into(),
 				)),
 			};
-			ExprKind::Value(
-				value
-					.checked()
-					.map_err(|error| ParseError(error.to_string()))?,
-			)
+			ExprKind::Value(value::checked(value).map_err(|error| ParseError(error.to_string()))?)
 		}
 		ast::Expr::UnaryOp(node) => {
 			let op: UnaryOp = match node.op {
@@ -105,9 +107,9 @@ fn convert(
 				ast::UnaryOp::Not => UnaryOp::Not,
 				_ => return Err(ParseError("暂不支持按位运算。".into())),
 			};
-			ExprKind::Unary(
-				op,
-				Box::new(convert(*node.operand, bindings, next_id, depth + 1)?),
+			operation(
+				Op::Unary(op),
+				vec![convert(*node.operand, bindings, next_id, depth + 1)?],
 			)
 		}
 		ast::Expr::BinOp(node) => {
@@ -125,10 +127,12 @@ fn convert(
 					));
 				}
 			};
-			ExprKind::Binary(
-				op,
-				Box::new(convert(*node.left, bindings, next_id, depth + 1)?),
-				Box::new(convert(*node.right, bindings, next_id, depth + 1)?),
+			operation(
+				Op::Binary(op),
+				vec![
+					convert(*node.left, bindings, next_id, depth + 1)?,
+					convert(*node.right, bindings, next_id, depth + 1)?,
+				],
 			)
 		}
 		ast::Expr::BoolOp(node) => {
@@ -141,7 +145,7 @@ fn convert(
 				.into_iter()
 				.map(|value| convert(value, bindings, next_id, depth + 1))
 				.collect::<Result<_, _>>()?;
-			ExprKind::Bool(op, values)
+			operation(Op::Bool(op), values)
 		}
 		ast::Expr::Compare(node) => {
 			if node.ops.len() != 1 {
@@ -163,10 +167,12 @@ fn convert(
 				.into_iter()
 				.next()
 				.expect("parser supplies a comparator");
-			ExprKind::Compare(
-				op,
-				Box::new(convert(*node.left, bindings, next_id, depth + 1)?),
-				Box::new(convert(right, bindings, next_id, depth + 1)?),
+			operation(
+				Op::Compare(op),
+				vec![
+					convert(*node.left, bindings, next_id, depth + 1)?,
+					convert(right, bindings, next_id, depth + 1)?,
+				],
 			)
 		}
 		_ => {
@@ -232,17 +238,24 @@ fn add_groups(source: &str, root: &mut Expr, next_id: &mut NodeId) -> Result<(),
 /// Answers are literals, optionally signed. Never evaluate a student's expression as an answer.
 pub fn parse_value(input: &str) -> Result<Value, ParseError> {
 	let expression: Expr = parse_expression(input)?;
-	match expression.kind {
-		ExprKind::Value(value) => Ok(value),
-		ExprKind::Unary(op @ (UnaryOp::Positive | UnaryOp::Negative), operand) => {
-			match operand.kind {
-				ExprKind::Value(value @ (Value::Int(_) | Value::Float(_))) => value
-					.unary(op)
-					.map_err(|error| ParseError(error.to_string())),
-				_ => Err(ParseError("请输入一个值，不要填写待计算的表达式。".into())),
-			}
+	let signed: Option<(UnaryOp, ExprKind)> = match expression.kind {
+		ExprKind::Value(value) => return Ok(value),
+		ExprKind::Operation(crate::core::Op::Python(Op::Unary(op)), operands)
+			if matches!(op, UnaryOp::Positive | UnaryOp::Negative) =>
+		{
+			operands
+				.into_iter()
+				.next()
+				.map(|operand| (op, operand.kind))
 		}
-		_ => Err(ParseError(
+		_ => None,
+	};
+	match signed {
+		Some((op, ExprKind::Value(value @ (Value::Int(_) | Value::Float(_))))) => {
+			value::unary(&value, op).map_err(|error| ParseError(error.to_string()))
+		}
+		Some(_) => Err(ParseError("请输入一个值，不要填写待计算的表达式。".into())),
+		None => Err(ParseError(
 			"请输入一个值（例如 -3、2.0、False），不要填写待计算的表达式。".into(),
 		)),
 	}
