@@ -1,15 +1,8 @@
-use crate::core::{EvaluationMode, ParseError, Session, Value, parse_value};
-use crate::logic::parse_truth;
+use crate::core::{EvaluationMode, Language, ParseError, Session, Value};
+use crate::logic::{self, parse_truth};
+use crate::python::{self, parse_value};
 use serde::Deserialize;
 use std::collections::BTreeMap;
-
-#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "kebab-case")]
-pub enum Language {
-	#[default]
-	Python,
-	Logic,
-}
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -25,6 +18,7 @@ pub struct Exercise {
 }
 
 impl Exercise {
+	/// Bindings are stored as source literals; each language reads its own.
 	pub fn session(&self, mode: EvaluationMode) -> Result<Session, ParseError> {
 		match self.language {
 			Language::Python => {
@@ -33,7 +27,7 @@ impl Exercise {
 					.iter()
 					.map(|(name, literal)| Ok((name.clone(), parse_value(literal)?)))
 					.collect::<Result<_, ParseError>>()?;
-				Session::with_bindings(&self.expression, &bindings, mode)
+				python::session(&self.expression, &bindings, mode)
 			}
 			Language::Logic => {
 				let bindings: BTreeMap<String, bool> = self
@@ -41,7 +35,7 @@ impl Exercise {
 					.iter()
 					.map(|(name, literal)| Ok((name.clone(), parse_truth(literal)?)))
 					.collect::<Result<_, ParseError>>()?;
-				Session::logic(&self.expression, &bindings, mode)
+				logic::session(&self.expression, &bindings, mode)
 			}
 		}
 	}

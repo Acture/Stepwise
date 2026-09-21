@@ -121,7 +121,7 @@ cargo run --locked -- --logic --proof raa --check-proof examples/raa.json
 
 教学公式最多 2048 字节，Python 教学树（包括分组）最多 128 节点、32 层，整数结果最多 4096 个二进制位；逻辑公式最多 128 个词法单元、32 层解析嵌套，BDD 等价检查最多 12 个命题。证明最多 256 行、16 层假设。超出支持范围不冒充 Python 错误或学生算错。
 
-架构：`src/core` 提供稳定节点 ID、树替换、下一步、检查与历史；`src/logic` 提供符号解析、BDD 检查和自然演绎；`src/tui` 负责交互；`assets/exercises.json` 内嵌题库；`src/progress.rs` 保存并重放进度。Ratatui + Crossterm 提供终端界面，rustpython-parser 只负责 Python 解析。
+架构：`src/core` 提供与语言无关的教学机制：稳定节点 ID、树替换与来源映射、可选步骤检查、按类型的反馈、历史与重放；`src/python` 提供 Python 解析、运算规则、类型语义、优先级、短路规则、解释与出题语法；`src/logic` 提供符号解析、命题语义、BDD 检查、自然演绎与出题语法；`src/generate.rs` 提供共用的种子协议、采样流程与可完成性检查；`src/tui` 负责交互；`assets/exercises.json` 内嵌题库；`src/progress.rs` 保存并重放进度。core 只通过 `Language` 与 `Op` 两个小接口调用语言模块，不内联任何一种语言的规则。Ratatui + Crossterm 提供终端界面，rustpython-parser 只负责 Python 解析。
 
 ```fish
 cargo fmt --check

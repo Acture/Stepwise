@@ -21,7 +21,7 @@ impl Transcript {
 				lines.push(Line::from(self.current.clone()));
 				lines.push(Line::default());
 			}
-			lines.push(Line::from(app.session.mode_label()));
+			lines.push(Line::from(app.session.language().label()));
 			let bindings: String = app.exercises[app.index].assignments();
 			if !bindings.is_empty() {
 				lines.push(Line::from(bindings));

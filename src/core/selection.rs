@@ -1,4 +1,4 @@
-use super::{BinaryOp, BoolOp, EvaluationMode, Expr, ExprKind, NextStep, UnaryOp, next_step};
+use super::{EvaluationMode, Expr, ExprKind, NextStep, next_step};
 
 /// Bindings and ready groups are independent actions. Computations at the highest
 /// ready precedence can be chosen in either order, without reassociating the tree.
@@ -6,12 +6,7 @@ pub(super) fn available_steps(root: &Expr, mode: EvaluationMode) -> Vec<NextStep
 	let mut independent: Vec<NextStep> = root
 		.rows()
 		.into_iter()
-		.filter(|(_, node)| {
-			matches!(
-				node.kind,
-				ExprKind::Variable(..) | ExprKind::Proposition(..)
-			)
-		})
+		.filter(|(_, node)| matches!(node.kind, ExprKind::Binding { .. }))
 		.filter_map(|(_, node)| next_step(node, mode))
 		.collect();
 	collect_scope(root, mode, &mut independent);
@@ -36,69 +31,31 @@ fn collect(
 	independent: &mut Vec<NextStep>,
 	operations: &mut Vec<(u8, NextStep)>,
 ) {
-	if matches!(
-		root.kind,
-		ExprKind::Value(_) | ExprKind::Variable(..) | ExprKind::Proposition(..)
-	) {
+	if matches!(root.kind, ExprKind::Value(_) | ExprKind::Binding { .. }) {
 		return;
 	}
 	let Some(step) = next_step(root, mode) else {
 		return;
 	};
 	if step.node_id == root.id {
-		if matches!(root.kind, ExprKind::Group(_)) {
-			independent.push(step);
-		} else {
-			operations.push((precedence(root), step));
+		match &root.kind {
+			ExprKind::Operation(op, _) => operations.push((op.rules().precedence(), step)),
+			_ => independent.push(step),
 		}
 		return;
 	}
 	match &root.kind {
 		ExprKind::Group(child) => collect_scope(child, mode, independent),
-		ExprKind::Bool(_, children) if mode == EvaluationMode::ShortCircuit => {
+		ExprKind::Operation(op, operands) if op.rules().skips_operands(mode) => {
 			// Later operands may be skipped; wait until the first unfinished operand decides.
-			if let Some(child) = children.iter().find(|child| child.value().is_none()) {
+			if let Some(child) = operands.iter().find(|child| child.value().is_none()) {
 				collect(child, mode, independent, operations);
 			}
-		}
-		ExprKind::Logic(op, left, right)
-			if mode == EvaluationMode::ShortCircuit && *op != crate::logic::LogicOp::Iff =>
-		{
-			collect(
-				if left.value().is_none() { left } else { right },
-				mode,
-				independent,
-				operations,
-			);
 		}
 		_ => {
 			for child in root.children() {
 				collect(child, mode, independent, operations);
 			}
 		}
-	}
-}
-
-fn precedence(node: &Expr) -> u8 {
-	match node.kind {
-		ExprKind::Binary(BinaryOp::Power, ..) => 80,
-		ExprKind::Unary(UnaryOp::Positive | UnaryOp::Negative, _) => 70,
-		ExprKind::Binary(
-			BinaryOp::Multiply | BinaryOp::Divide | BinaryOp::FloorDivide | BinaryOp::Modulo,
-			..,
-		) => 60,
-		ExprKind::Binary(BinaryOp::Add | BinaryOp::Subtract, ..) => 50,
-		ExprKind::Compare(..) => 40,
-		ExprKind::Unary(UnaryOp::Not, _) => 30,
-		ExprKind::Bool(BoolOp::And, _) => 20,
-		ExprKind::Bool(BoolOp::Or, _) => 10,
-		ExprKind::Unary(UnaryOp::LogicalNot, _) => 90,
-		ExprKind::Logic(op, ..) => match op {
-			crate::logic::LogicOp::And => 70,
-			crate::logic::LogicOp::Or => 50,
-			crate::logic::LogicOp::Implies => 30,
-			crate::logic::LogicOp::Iff => 10,
-		},
-		_ => unreachable!("only computation nodes have precedence"),
 	}
 }
