@@ -1,8 +1,9 @@
 use std::collections::BTreeMap;
 
 use stepwise::{
-	core::{EvaluationMode, FeedbackKind, Session, Value, parse_value},
+	core::{EvaluationMode, FeedbackKind, Session, Value},
 	exercises::{self, Exercise},
+	python::parse_value,
 };
 
 fn bindings(entries: &[(&str, &str)]) -> BTreeMap<String, Value> {
@@ -32,7 +33,7 @@ fn answer(session: &mut Session, input: &str) {
 fn a_recommended_path_respects_dependencies_without_enforcing_variable_order() {
 	let values: BTreeMap<String, Value> = bindings(&[("x", "2"), ("y", "3"), ("z", "4")]);
 	let mut session: Session =
-		Session::with_bindings("x + y * z", &values, EvaluationMode::ShortCircuit).unwrap();
+		Session::python("x + y * z", &values, EvaluationMode::ShortCircuit).unwrap();
 	for (unit, input) in [
 		("x", "2"),
 		("y", "3"),
@@ -48,7 +49,7 @@ fn a_recommended_path_respects_dependencies_without_enforcing_variable_order() {
 			);
 		}
 		answer(&mut session, input);
-		let restored: Session = Session::with_bindings(session.source(), &values, session.mode())
+		let restored: Session = Session::python(session.source(), &values, session.mode())
 			.unwrap()
 			.replay(session.attempts())
 			.unwrap();
@@ -60,7 +61,7 @@ fn a_recommended_path_respects_dependencies_without_enforcing_variable_order() {
 
 #[test]
 fn exponent_associativity_does_not_reverse_variable_read_order() {
-	let mut session: Session = Session::with_bindings(
+	let mut session: Session = Session::python(
 		"-a ** b ** c",
 		&bindings(&[("a", "2"), ("b", "3"), ("c", "2")]),
 		EvaluationMode::ShortCircuit,
@@ -82,7 +83,7 @@ fn exponent_associativity_does_not_reverse_variable_read_order() {
 
 #[test]
 fn negative_power_bases_and_word_operators_keep_their_display_meaning() {
-	let mut session: Session = Session::with_bindings(
+	let mut session: Session = Session::python(
 		"(x) ** 2",
 		&bindings(&[("x", "-2")]),
 		EvaluationMode::ShortCircuit,
@@ -92,7 +93,8 @@ fn negative_power_bases_and_word_operators_keep_their_display_meaning() {
 		answer(&mut session, input);
 		assert_eq!(session.render(), display);
 	}
-	let mut session: Session = Session::new("not(False)", EvaluationMode::ShortCircuit).unwrap();
+	let mut session: Session =
+		Session::python("not(False)", &BTreeMap::new(), EvaluationMode::ShortCircuit).unwrap();
 	answer(&mut session, "False");
 	assert_eq!(session.render(), "not False");
 	answer(&mut session, "True");
@@ -107,7 +109,7 @@ fn variable_types_and_bindings_are_checked_before_starting() {
 		("-0.0", "0.0"),
 		("None", "False"),
 	] {
-		let mut session: Session = Session::with_bindings(
+		let mut session: Session = Session::python(
 			"x",
 			&bindings(&[("x", value)]),
 			EvaluationMode::ShortCircuit,
@@ -117,9 +119,9 @@ fn variable_types_and_bindings_are_checked_before_starting() {
 		assert!(session.history().is_empty());
 		answer(&mut session, value);
 	}
-	assert!(Session::new("x + 1", EvaluationMode::ShortCircuit).is_err());
+	assert!(Session::python("x + 1", &BTreeMap::new(), EvaluationMode::ShortCircuit).is_err());
 	assert!(
-		Session::with_bindings(
+		Session::python(
 			"x + 1",
 			&bindings(&[("x", "2"), ("typo", "3")]),
 			EvaluationMode::ShortCircuit
@@ -127,7 +129,7 @@ fn variable_types_and_bindings_are_checked_before_starting() {
 		.is_err()
 	);
 	assert!(
-		Session::with_bindings(
+		Session::python(
 			"x",
 			&BTreeMap::from([("x".into(), Value::Float(f64::INFINITY))]),
 			EvaluationMode::ShortCircuit
@@ -142,7 +144,7 @@ fn short_circuit_skips_variable_reads_and_groups_but_eager_does_not() {
 	let values: BTreeMap<String, Value> =
 		bindings(&[("flag", "False"), ("x", "3"), ("zero", "0"), ("limit", "1")]);
 	let mut short: Session =
-		Session::with_bindings(source, &values, EvaluationMode::ShortCircuit).unwrap();
+		Session::python(source, &values, EvaluationMode::ShortCircuit).unwrap();
 	answer(&mut short, "False");
 	let x: usize = short
 		.root()
@@ -156,8 +158,7 @@ fn short_circuit_skips_variable_reads_and_groups_but_eager_does_not() {
 	assert!(short.final_binary_step().is_none());
 	answer(&mut short, "False");
 	assert_eq!(short.history().len(), 2);
-	let mut eager: Session =
-		Session::with_bindings(source, &values, EvaluationMode::Eager).unwrap();
+	let mut eager: Session = Session::python(source, &values, EvaluationMode::Eager).unwrap();
 	for input in ["False", "3", "0", "ZeroDivisionError"] {
 		answer(&mut eager, input);
 	}
@@ -244,7 +245,8 @@ fn long_exercises_use_the_same_rules_in_both_modes() {
 #[test]
 fn only_a_whole_binary_pair_can_automatically_enter_a_blank() {
 	for source in ["2 + 3", "False and True", "2 > 1", "-2 ** 2"] {
-		let session: Session = Session::new(source, EvaluationMode::ShortCircuit).unwrap();
+		let session: Session =
+			Session::python(source, &BTreeMap::new(), EvaluationMode::ShortCircuit).unwrap();
 		assert_eq!(
 			session.final_binary_step().is_some(),
 			source != "-2 ** 2",
@@ -258,7 +260,8 @@ fn only_a_whole_binary_pair_can_automatically_enter_a_blank() {
 		"1 + 2 + 3",
 		"((3))",
 	] {
-		let session: Session = Session::new(source, EvaluationMode::ShortCircuit).unwrap();
+		let session: Session =
+			Session::python(source, &BTreeMap::new(), EvaluationMode::ShortCircuit).unwrap();
 		assert!(session.final_binary_step().is_none(), "{source}");
 	}
 }

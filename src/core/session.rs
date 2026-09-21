@@ -1,11 +1,12 @@
-use super::selection::available_steps;
-use super::surface::Surface;
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, ops::Range};
 
+use super::selection::available_steps;
+use super::surface::Surface;
+
 use super::{
-	EvalError, EvaluationMode, Expr, ExprKind, NextStep, NodeId, ParseError, UnaryOp, Value,
-	next_step, parse_bound_expression, parse_value,
+	EvalError, EvaluationMode, Expr, ExprKind, Language, NextStep, NodeId, ParseError, Value,
+	next_step,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -63,7 +64,7 @@ pub struct HistoryEntry {
 pub struct Session {
 	mode: EvaluationMode,
 	context: String,
-	logical: bool,
+	language: Language,
 	source: String,
 	root: Expr,
 	surface: Surface,
@@ -73,22 +74,41 @@ pub struct Session {
 }
 
 impl Session {
-	pub fn new(source: &str, mode: EvaluationMode) -> Result<Self, ParseError> {
-		Self::with_bindings(source, &BTreeMap::new(), mode)
-	}
-
-	pub fn with_bindings(
+	pub fn python(
 		source: &str,
 		bindings: &BTreeMap<String, Value>,
 		mode: EvaluationMode,
 	) -> Result<Self, ParseError> {
 		let source: String = source.trim().into();
-		let root: Expr = parse_bound_expression(&source, bindings)?;
+		let root: Expr = crate::python::parse_bound_expression(&source, bindings)?;
+		let context: String = format!("python\n{bindings:?}\n{source}");
+		Ok(Self::start(Language::Python, source, root, context, mode))
+	}
+
+	pub fn logic(
+		source: &str,
+		bindings: &BTreeMap<String, bool>,
+		mode: EvaluationMode,
+	) -> Result<Self, ParseError> {
+		let source: String = source.trim().into();
+		let root: Expr = crate::logic::parse_teaching_formula(&source, bindings)?;
+		let context: String = format!("logic\n{bindings:?}\n{source}");
+		Ok(Self::start(Language::Logic, source, root, context, mode))
+	}
+
+	/// `context` is part of the saved progress key, so each language spells its own.
+	fn start(
+		language: Language,
+		source: String,
+		root: Expr,
+		context: String,
+		mode: EvaluationMode,
+	) -> Self {
 		let surface: Surface = Surface::new(&source, &root);
 		let mut session: Self = Self {
 			mode,
-			context: format!("python\n{bindings:?}\n{source}"),
-			logical: false,
+			context,
+			language,
 			root,
 			surface,
 			source,
@@ -96,29 +116,8 @@ impl Session {
 			attempts: Vec::new(),
 			terminal_error: None,
 		};
-		session.finish_negative_literal();
-		Ok(session)
-	}
-
-	pub fn logic(
-		source: &str,
-		bindings: &std::collections::BTreeMap<String, bool>,
-		mode: EvaluationMode,
-	) -> Result<Self, ParseError> {
-		let source: &str = source.trim();
-		let root: Expr = crate::logic::parse_teaching_formula(source, bindings)?;
-		let surface: Surface = Surface::new(source, &root);
-		Ok(Self {
-			mode,
-			context: format!("logic\n{bindings:?}\n{}", source.trim()),
-			logical: true,
-			source: source.trim().into(),
-			root,
-			surface,
-			history: Vec::new(),
-			attempts: Vec::new(),
-			terminal_error: None,
-		})
+		session.finish_completed_expression();
+		session
 	}
 
 	pub fn progress_key(&self) -> String {
@@ -126,35 +125,22 @@ impl Session {
 		format!("{rules}\n{}\n{}", self.mode.key(), self.context)
 	}
 
-	/// A final minus sign and unsigned number already spell a complete numeric answer.
-	/// Do not collapse groups, inner negations, bool conversion, or double negatives.
-	fn finish_negative_literal(&mut self) {
-		let ExprKind::Unary(UnaryOp::Negative, operand) = &self.root.kind else {
+	/// A whole expression that already spells a complete answer finishes without a step.
+	/// The owning language decides; nothing inside the expression is collapsed.
+	fn finish_completed_expression(&mut self) {
+		let ExprKind::Operation(op, operands) = &self.root.kind else {
 			return;
 		};
-		let Some(value @ (Value::Int(_) | Value::Float(_))) = operand.value() else {
+		let Some(value) = op.rules().completed_value(operands) else {
 			return;
 		};
-		if value.to_string().starts_with('-') {
-			return;
-		}
-		let value: Value = value
-			.unary(UnaryOp::Negative)
-			.expect("negating a checked finite number stays in range");
 		self.root.replace(self.root.id, &value);
 		self.surface
 			.replace(self.root.id, &value.to_string(), &self.root);
 	}
-	pub fn mode_label(&self) -> &'static str {
-		if self.logical {
-			"命题逻辑"
-		} else {
-			"Python 运算练习"
-		}
-	}
 
-	pub fn is_logic(&self) -> bool {
-		self.logical
+	pub fn language(&self) -> Language {
+		self.language
 	}
 
 	pub fn replay(mut self, attempts: &[RecordedAttempt]) -> Result<Self, ParseError> {
@@ -200,11 +186,8 @@ impl Session {
 
 	/// Selection is redundant only for a whole binary expression with two known values.
 	pub fn final_binary_step(&self) -> Option<NodeId> {
-		use super::ExprKind;
-		let binary: bool = matches!(
-			&self.root.kind,
-			ExprKind::Binary(_, _, _) | ExprKind::Compare(_, _, _) | ExprKind::Logic(_, _, _)
-		) || matches!(&self.root.kind, ExprKind::Bool(_, values) if values.len() == 2);
+		let binary: bool =
+			matches!(&self.root.kind, ExprKind::Operation(_, operands) if operands.len() == 2);
 		(binary
 			&& !self.is_finished()
 			&& self
@@ -241,8 +224,12 @@ impl Session {
 			.into_iter()
 			.filter_map(|(_, node)| {
 				let matches: bool = match (&selected.kind, &node.kind) {
-					(ExprKind::Variable(name, _), ExprKind::Variable(other, _))
-					| (ExprKind::Proposition(name, _), ExprKind::Proposition(other, _)) => name == other,
+					(
+						ExprKind::Binding { name, .. },
+						ExprKind::Binding {
+							name: occurrence, ..
+						},
+					) => name == occurrence,
 					_ => node.id == node_id,
 				};
 				matches.then_some(node.id)
@@ -338,6 +325,7 @@ impl Session {
 			Err(feedback) => return feedback,
 		};
 		match &step.outcome {
+			// Only Python's numeric rules raise a limit, so the note names Python.
 			Err(EvalError::Limit(reason)) => Feedback::new(
 				FeedbackKind::Unsupported,
 				format!("超出首版支持范围：{reason} 这不是 Python 求值结果，也不计作答错。"),
@@ -359,12 +347,7 @@ impl Session {
 				}
 			}
 			Ok(expected) => {
-				let parsed: Result<Value, ParseError> = if self.logical {
-					crate::logic::parse_truth(input).map(Value::Bool)
-				} else {
-					parse_value(input)
-				};
-				let actual: Value = match parsed {
+				let actual: Value = match self.language.parse_answer(input) {
 					Ok(value) => value,
 					Err(error) => {
 						return Feedback::new(FeedbackKind::InvalidInput, error.to_string());
@@ -422,6 +405,19 @@ impl Session {
 		self.apply_step(step, None, feedback)
 	}
 
+	/// The note to show when a negative value at this node would change its parent's meaning.
+	fn negative_brackets(&self, node_id: NodeId) -> Option<&'static str> {
+		self.root.rows().iter().find_map(|(_, parent)| {
+			let ExprKind::Operation(op, operands) = &parent.kind else {
+				return None;
+			};
+			operands
+				.iter()
+				.position(|operand| operand.id == node_id)
+				.and_then(|index| op.rules().negative_brackets(index))
+		})
+	}
+
 	fn apply_step(
 		&mut self,
 		step: NextStep,
@@ -455,17 +451,18 @@ impl Session {
 						.push_str(&reason);
 				}
 				for node_id in ids {
-					let protect_negative_base: bool = value.to_string().starts_with('-') && self.root.rows().iter().any(|(_, parent)| matches!(&parent.kind, super::ExprKind::Binary(super::BinaryOp::Power, left, _) if left.id == node_id));
-					let replacement: String = if protect_negative_base {
-						format!("({value})")
-					} else {
-						value.to_string()
+					let brackets: Option<&str> = value
+						.to_string()
+						.starts_with('-')
+						.then(|| self.negative_brackets(node_id))
+						.flatten();
+					let replacement: String = match brackets {
+						Some(_) => format!("({value})"),
+						None => value.to_string(),
 					};
 					self.root.replace(node_id, &value);
 					self.surface.replace(node_id, &replacement, &self.root);
-					if protect_negative_base {
-						let reason: &str =
-							" 负数作为幂的底数时，显示保留必要括号以免改变含义；该值已完成本步。";
+					if let Some(reason) = brackets {
 						feedback.message.push_str(reason);
 						self.history
 							.last_mut()
@@ -474,7 +471,7 @@ impl Session {
 							.push_str(reason);
 					}
 				}
-				self.finish_negative_literal();
+				self.finish_completed_expression();
 			}
 			Err(error) => self.terminal_error = Some(error),
 		}

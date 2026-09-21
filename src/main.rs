@@ -2,8 +2,8 @@ use std::{collections::BTreeMap, error::Error, path::PathBuf, process::ExitCode}
 
 use clap::{ArgGroup, Parser};
 use stepwise::{
-	core::{EvaluationMode, ExprKind, ParseError, Session},
-	exercises::{self, Exercise, Language},
+	core::{EvaluationMode, ExprKind, Language, ParseError, Session},
+	exercises::{self, Exercise},
 	generate,
 	logic::{Formula, parse_formula, proof::Proof},
 	progress::Progress,
@@ -94,7 +94,7 @@ fn proof_for(args: &Args, name: &str) -> Result<Proof, Box<dyn Error>> {
 }
 
 fn trace(mut session: Session) -> Result<(), Box<dyn Error>> {
-	println!("{}\n{}", session.mode_label(), session.render());
+	println!("{}\n{}", session.language().label(), session.render());
 	while let Some(step) = session.next_step() {
 		let input: String = match step.outcome {
 			Ok(value) => value.to_string(),
@@ -273,8 +273,7 @@ fn execute(args: Args) -> Result<(), Box<dyn Error>> {
 		Some("eager") => EvaluationMode::Eager,
 		Some("short-circuit") => EvaluationMode::ShortCircuit,
 		_ if progress.current == exercises[index].id => progress.mode,
-		_ if args.logic => EvaluationMode::Eager,
-		_ => EvaluationMode::ShortCircuit,
+		_ => language.default_mode(),
 	};
 	if args.trace {
 		if !exercises[index].bindings.is_empty() {
