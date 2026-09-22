@@ -31,6 +31,9 @@ jobs:
       - name: Compare with CPython
         if: runner.os == 'Linux'
         run: cargo +stable test --locked --test python_oracle -- --ignored --nocapture
+      - name: Drive the terminal through a pty
+        if: runner.os != 'Windows'
+        run: cargo +stable test --locked --test terminal -- --ignored --nocapture
       - run: cargo +stable run --locked -- --logic --proof raa --check-proof examples/raa.json
 
   binary:

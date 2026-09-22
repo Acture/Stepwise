@@ -2,12 +2,13 @@ use std::{collections::BTreeMap, error::Error, path::PathBuf, process::ExitCode}
 
 use clap::{ArgGroup, Parser};
 use stepwise::{
-	core::{EvaluationMode, ExprKind, Language, ParseError, Session},
+	app::{self, Course, Practice},
+	core::{EvaluationMode, ExprKind, Language, Session},
 	exercises::{self, Exercise},
 	generate,
 	logic::{Formula, parse_formula, proof::Proof},
 	progress::Progress,
-	tui::{self, App},
+	tui,
 };
 
 #[derive(Parser, Debug)]
@@ -135,30 +136,6 @@ fn trace(mut session: Session) -> Result<(), Box<dyn Error>> {
 	Ok(())
 }
 
-fn default_exercise(
-	language: Language,
-	progress: &Progress,
-	exercises: &[Exercise],
-) -> Result<Exercise, ParseError> {
-	let saved: Option<Exercise> = generate::restore(&progress.current)?
-		.filter(|exercise| exercise.language == language)
-		.or_else(|| {
-			exercises
-				.iter()
-				.find(|exercise| exercise.id == progress.current)
-				.cloned()
-		});
-	if let Some(exercise) = saved {
-		let initial: Session = exercise.session(progress.mode)?;
-		let attempts: &[stepwise::core::RecordedAttempt] = progress.attempts(&initial);
-		let resume: bool = exercise.id.starts_with("random-") || !attempts.is_empty();
-		if resume && !initial.replay(attempts)?.is_finished() {
-			return Ok(exercise);
-		}
-	}
-	generate::generate(language, generate::fresh_seed())
-}
-
 fn execute(args: Args) -> Result<(), Box<dyn Error>> {
 	let language: Language = match (args.python, args.logic) {
 		(true, false) => Language::Python,
@@ -232,7 +209,7 @@ fn execute(args: Args) -> Result<(), Box<dyn Error>> {
 			args.seed.unwrap_or_else(generate::fresh_seed),
 		)?];
 	} else if args.expression.is_none() && args.exercise.is_none() && args.assign.is_empty() {
-		exercises = vec![default_exercise(language, &progress, &exercises)?];
+		exercises = vec![app::resume_or_generate(language, &progress, &exercises)?];
 	}
 	if let Some(expression) = args.expression {
 		exercises = vec![Exercise {
@@ -269,23 +246,21 @@ fn execute(args: Args) -> Result<(), Box<dyn Error>> {
 		}
 	}
 	exercises[index].bindings.extend(assigned);
-	let mode: EvaluationMode = match args.evaluation.as_deref() {
-		Some("eager") => EvaluationMode::Eager,
-		Some("short-circuit") => EvaluationMode::ShortCircuit,
-		_ if progress.current == exercises[index].id => progress.mode,
-		_ => language.default_mode(),
+	let requested: Option<EvaluationMode> = match args.evaluation.as_deref() {
+		Some("eager") => Some(EvaluationMode::Eager),
+		Some("short-circuit") => Some(EvaluationMode::ShortCircuit),
+		_ => None,
 	};
+	let mode: EvaluationMode = app::starting_mode(requested, &progress, &exercises[index]);
 	if args.trace {
 		if !exercises[index].bindings.is_empty() {
 			println!("{}", exercises[index].assignments());
 		}
 		return trace(exercises[index].session(mode)?);
 	}
-	// The chosen/default question starts a practice sequence; subsequent questions are generated.
-	tui::run(
-		App::new(vec![exercises[index].clone()], progress, 0, mode)?,
-		path,
-	)
+	// The chosen/default question starts a practice sequence; the course supplies the rest.
+	let course: Course = Course::random(vec![exercises.remove(index)], 0)?;
+	tui::run(Practice::new(course, progress, mode)?, path)
 }
 
 fn main() -> ExitCode {
