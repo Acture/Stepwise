@@ -1,5 +1,6 @@
 //! The terminal front end: an adapter over [`crate::app`]. It owns the inline viewport,
-//! key and mouse mapping, scrolling, the cursor and drawing — and nothing else. Teaching
+//! key and mouse mapping, scrolling, the cursor, drawing — and the words for every reason
+//! the app layer reports, since they name the keys only this front end binds. Teaching
 //! state lives in [`Practice`]; this module never keeps a second copy of it, and never
 //! decides what a step means.
 
@@ -7,6 +8,7 @@ mod inline;
 mod keys;
 mod proof_ui;
 mod render;
+mod say;
 #[cfg(test)]
 mod tests;
 mod viewport;
