@@ -10,6 +10,10 @@ mod value;
 pub use op::{BinaryOp, BoolOp, CompareOp, Op, UnaryOp};
 pub use parse::{parse_expression, parse_value};
 
+/// What a Python binding literal looks like, for a question file that wrote something else.
+/// Python owns these words, as it owns the literals.
+pub const LITERAL_FORM: &str = "Python 源码字面量，例如 2、-0.0、True、None";
+
 use std::collections::BTreeMap;
 
 use crate::core::{EvaluationMode, Expr, Language, ParseError, Session, Value};

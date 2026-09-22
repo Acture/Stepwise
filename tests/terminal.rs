@@ -132,8 +132,21 @@ fn the_inline_adapter_teaches_and_saves_through_a_real_terminal() {
 				"\u{3}",
 			],
 		),
+		// An imported set is the course: n walks the file and stops at its last question
+		// instead of drawing a random one, which only a running terminal can show.
+		run(
+			&[
+				"--python",
+				"--set",
+				concat!(env!("CARGO_MANIFEST_DIR"), "/examples/questions.toml"),
+				"--progress-file",
+				&file,
+			],
+			&["n", "n", "q"],
+		),
 	]);
-	let [expression, proof] = <[Capture; 2]>::try_from(captures).ok().expect("two runs");
+	let [expression, proof, imported] =
+		<[Capture; 3]>::try_from(captures).ok().expect("three runs");
 
 	// The inline viewport must never take over or wipe the screen, and must hand the
 	// terminal back the way it found it.
@@ -186,6 +199,20 @@ fn the_inline_adapter_teaches_and_saves_through_a_real_terminal() {
 		assert!(
 			proved.contains(&squashed(expected)),
 			"proof run missing {expected}"
+		);
+	}
+
+	// The imported set supplies the questions, in its own order, and ends rather than
+	// generating: `n` reaches the second question and `n` again reports the set has ended.
+	let walked: String = squashed(&imported.visible);
+	for expected in [
+		"flag + (zero == negative)", // the set's first question, not a generated one
+		"guard and (count / step)",  // n moves to the second
+		"已经是本题集的最后一题。",  // n at the last one says so instead of drawing
+	] {
+		assert!(
+			walked.contains(&squashed(expected)),
+			"imported-set run missing {expected}"
 		);
 	}
 

@@ -18,7 +18,7 @@ fn atomic_round_trip_and_mode_assignment_isolation() {
 	)
 	.unwrap();
 	assert!(short.submit(0, "False").accepted());
-	progress.record("short", &short);
+	progress.record("", "short", &short);
 	progress.save(&path).unwrap();
 	let saved: Progress = Progress::load(&path).unwrap();
 	assert_eq!(saved.attempts(&short), short.attempts());
@@ -32,7 +32,7 @@ fn atomic_round_trip_and_mode_assignment_isolation() {
 	)
 	.unwrap();
 	assert!(first.submit(0, "True").accepted());
-	progress.record("logic", &first);
+	progress.record("", "logic", &first);
 	let different_binding: Session = logic::session(
 		"P",
 		&BTreeMap::from([("P".into(), false)]),
@@ -79,6 +79,47 @@ fn malformed_progress_is_never_silently_reset() {
 	assert_eq!(fs::read_to_string(&path).unwrap(), "broken progress");
 }
 
+/// Version 1 pointed at a question without naming the set it came from, which this build
+/// cannot read as a pointer at all. It says so and leaves the file alone rather than
+/// guessing which set the name belonged to.
+#[test]
+fn a_progress_file_from_before_question_sets_is_refused_and_left_untouched() {
+	let directory: tempfile::TempDir = tempfile::tempdir().unwrap();
+	let path: std::path::PathBuf = directory.path().join("progress.json");
+	let version_one: &str =
+		r#"{"version":1,"current":"precedence","mode":"short-circuit","sessions":{},"proofs":{}}"#;
+	fs::write(&path, version_one).unwrap();
+	let refused: std::io::Error = Progress::load(&path).unwrap_err();
+	assert!(
+		refused.to_string().contains("不支持的进度版本"),
+		"{refused}"
+	);
+	assert_eq!(fs::read_to_string(&path).unwrap(), version_one);
+
+	// The same goes the other way: a file this build has never seen says the same thing
+	// instead of naming a field the reader happened to trip over first.
+	let later: &str = r#"{"version":3,"whatever":true}"#;
+	fs::write(&path, later).unwrap();
+	assert!(
+		Progress::load(&path)
+			.unwrap_err()
+			.to_string()
+			.contains("不支持的进度版本")
+	);
+	assert_eq!(fs::read_to_string(&path).unwrap(), later);
+
+	// A file this build wrote round-trips, set name and all.
+	let mut progress: Progress = Progress::default();
+	let mut session: Session =
+		python::session("1 + 2", &BTreeMap::new(), EvaluationMode::ShortCircuit).unwrap();
+	assert!(session.submit(0, "3").accepted());
+	progress.record("a-set", "a-question", &session);
+	progress.save(&path).unwrap();
+	let reloaded: Progress = Progress::load(&path).unwrap();
+	assert!(reloaded.points_at("a-set", "a-question"));
+	assert!(!reloaded.points_at("", "a-question"));
+}
+
 #[test]
 fn final_negative_rule_preserves_older_progress_without_replaying_the_extra_answer() {
 	let mut session: Session =
@@ -99,7 +140,7 @@ fn final_negative_rule_preserves_older_progress_without_replaying_the_extra_answ
 		.sessions
 		.insert(old_key.clone(), old_attempts.clone());
 	assert!(progress.attempts(&session).is_empty());
-	progress.record("negative", &session);
+	progress.record("", "negative", &session);
 	assert_eq!(progress.sessions[&old_key], old_attempts);
 	let restored: Session = python::session(session.source(), &BTreeMap::new(), session.mode())
 		.unwrap()
@@ -122,7 +163,7 @@ fn group_clicks_round_trip_without_fabricated_input_and_cannot_solve_operations(
 	assert_eq!(session.render(), "(3)");
 	assert_eq!(session.attempts()[0].input, None);
 	let mut progress: Progress = Progress::default();
-	progress.record("groups", &session);
+	progress.record("", "groups", &session);
 	progress.save(&path).unwrap();
 	let saved: Progress = Progress::load(&path).unwrap();
 	let restored: Session = python::session(session.source(), &BTreeMap::new(), session.mode())
@@ -149,7 +190,7 @@ fn python_assignments_types_and_signed_zero_have_separate_progress() {
 		assert!(progress.attempts(&session).is_empty());
 		let id: usize = session.next_step().unwrap().node_id;
 		assert!(session.submit(id, literal).accepted());
-		progress.record("typed", &session);
+		progress.record("", "typed", &session);
 		let restored: Session = python::session("(x)", &bindings, EvaluationMode::ShortCircuit)
 			.unwrap()
 			.replay(progress.attempts(&session))
