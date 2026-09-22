@@ -4,7 +4,8 @@ Offline Rust TUI for Python evaluation, propositional truth evaluation, and clas
 
 - Use tabs and explicit types. Keep the teaching rules separate from terminal rendering.
 - `cargo fmt --check`, `cargo clippy --locked --all-targets -- -D warnings`, `cargo test --locked` are the native gates.
-- Run `cargo test --locked --test python_oracle -- --ignored --nocapture` when changing Python semantics. Python is a development oracle, never a runtime dependency.
+- Run `cargo test --locked --test python_oracle -- --ignored --nocapture` when changing Python semantics, and `cargo test --locked --test terminal -- --ignored --nocapture` when changing the terminal adapter. Both are opted into because they need CPython and a pty; Python is a development oracle and a test driver, never a runtime dependency.
+- Evidence is a test, not a committed transcript. Anything `STATUS.md` claims must point at something runnable.
 - `src/core`: the language-neutral teaching machinery — stable tree IDs, substitution and source mapping, which steps are selectable, typed answer validation, feedback, history and replay. It reaches a language only through `Language` and the closed `Op` pair, and `src/core/language.rs` is the only file in core that names a language module — `rg 'crate::(python|logic)' src/core/` should report no other. Each language owns its own session constructor; no operator rule, precedence number or per-operator explanation lives in core. The shared feedback sentences core prints predate the split — keep them byte-identical rather than rewording them per language.
 - `src/python`: Python parsing, operator rules, numeric and type semantics, precedence, short-circuit operand rules, every Python explanation, and the Python question grammar.
 - `src/logic`: shared symbol aliases, propositional semantics and precedence, bounded BDD equivalence, scoped proof rules, and the propositional question grammar.

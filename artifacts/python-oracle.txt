@@ -1,8 +1,0 @@
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.20s
-     Running tests/python_oracle.rs (target/debug/deps/python_oracle-677d8201ad246193)
-
-running 1 test
-CPython oracle: 3361 original expressions and 15673 displayed states matched (types, values, exceptions, float bits).
-test matches_cpython_values_types_exceptions_and_float_bits ... ok
-
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.22s
