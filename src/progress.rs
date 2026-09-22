@@ -11,18 +11,22 @@ use tempfile::NamedTempFile;
 
 use crate::core::{EvaluationMode, RecordedAttempt, Session};
 
-/// The progress format this build reads. Version 1 predates question sets, so its pointer
-/// names a question without naming the set it came from; such a file is refused rather than
-/// half-read, and is left exactly as it was.
-const VERSION: u32 = 2;
+/// The progress format this build reads. Question sets did not change it: they added a name
+/// beside the pointer, and a file written before them simply has no name there, which is
+/// what a question belonging to no set says too. The records themselves — the work — are
+/// read either way.
+const VERSION: u32 = 1;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Progress {
 	version: u32,
-	/// The set [`Progress::current`] came from, empty for a random or custom question that
-	/// belongs to none. Paired with the ID it makes the pointer unambiguous: two sets may
-	/// both name a question `q1` without ever reopening each other's work.
+	/// The set [`Progress::current`] came from. Empty means the question in hand belongs to
+	/// no set — a generated or custom one — and a pointer written before sets existed reads
+	/// that way too, so it names nothing this build can reopen and practice starts on a new
+	/// question. Paired with the name it makes the pointer unambiguous: two sets may both
+	/// hold a question named `q1` without ever reopening each other's work.
+	#[serde(default)]
 	pub current_set: String,
 	pub current: String,
 	pub mode: EvaluationMode,

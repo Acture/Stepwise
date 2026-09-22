@@ -1,6 +1,8 @@
 use std::{collections::BTreeMap, fs};
 use stepwise::{
-	core::{EvaluationMode, RecordedAttempt, Session, Value},
+	app,
+	core::{EvaluationMode, Language, RecordedAttempt, Session, Value},
+	exercises::{self, Exercise},
 	logic,
 	progress::Progress,
 	python::{self, parse_value},
@@ -79,25 +81,68 @@ fn malformed_progress_is_never_silently_reset() {
 	assert_eq!(fs::read_to_string(&path).unwrap(), "broken progress");
 }
 
-/// Version 1 pointed at a question without naming the set it came from, which this build
-/// cannot read as a pointer at all. It says so and leaves the file alone rather than
-/// guessing which set the name belonged to.
+/// Question sets added a name beside the pointer; they did not change what a record is. A
+/// file written before them has no set name, which reads as "the question in hand belongs to
+/// no set" — the same thing a generated question says. So the pointer names nothing this
+/// build can reopen and practice starts on a new question, while the work itself is read,
+/// kept and still replayed by the question it belongs to.
 #[test]
-fn a_progress_file_from_before_question_sets_is_refused_and_left_untouched() {
+fn a_pointer_written_before_question_sets_draws_a_new_question_and_keeps_the_work() {
 	let directory: tempfile::TempDir = tempfile::tempdir().unwrap();
 	let path: std::path::PathBuf = directory.path().join("progress.json");
-	let version_one: &str =
-		r#"{"version":1,"current":"precedence","mode":"short-circuit","sessions":{},"proofs":{}}"#;
-	fs::write(&path, version_one).unwrap();
-	let refused: std::io::Error = Progress::load(&path).unwrap_err();
+	let embedded: Vec<Exercise> = exercises::builtin().unwrap().evaluations(Language::Python);
+	let precedence: &Exercise = embedded
+		.iter()
+		.find(|exercise| exercise.name == "precedence")
+		.expect("an embedded question");
+	let mut session: Session = precedence.session(EvaluationMode::ShortCircuit).unwrap();
+	let step: stepwise::core::NextStep = session.next_step().unwrap();
 	assert!(
-		refused.to_string().contains("不支持的进度版本"),
-		"{refused}"
+		session
+			.submit(step.node_id, &step.outcome.unwrap().to_string())
+			.accepted()
 	);
-	assert_eq!(fs::read_to_string(&path).unwrap(), version_one);
 
-	// The same goes the other way: a file this build has never seen says the same thing
-	// instead of naming a field the reader happened to trip over first.
+	// Write the file this build writes, then take the set name back out of it — that is
+	// exactly the shape a build from before question sets left behind.
+	let mut written: Progress = Progress::default();
+	written.record("builtin", "precedence", &session);
+	written.save(&path).unwrap();
+	let older: String = fs::read_to_string(&path)
+		.unwrap()
+		.lines()
+		.filter(|line| !line.contains("\"current_set\""))
+		.collect::<Vec<&str>>()
+		.join("\n");
+	assert!(!older.contains("current_set"));
+	fs::write(&path, &older).unwrap();
+
+	// It loads, and the record — the student's actual work — is still found by its question.
+	let loaded: Progress = Progress::load(&path).unwrap();
+	assert_eq!(loaded.current, "precedence");
+	assert_eq!(loaded.current_set, "");
+	assert_eq!(loaded.attempts(&session), session.attempts());
+
+	// The pointer names no set, so it names no question this build can reopen.
+	assert!(!loaded.points_at("builtin", "precedence"));
+	let drawn: Exercise = app::resume_or_generate(Language::Python, &loaded, &embedded).unwrap();
+	assert!(
+		drawn.name.starts_with("random-v1-python-"),
+		"{}",
+		drawn.name
+	);
+
+	// Moving on rewrites the pointer and leaves every earlier record where it was.
+	let mut moved_on: Progress = loaded.clone();
+	let drawn_session: Session = drawn.session(EvaluationMode::ShortCircuit).unwrap();
+	moved_on.record("", &drawn.name, &drawn_session);
+	moved_on.save(&path).unwrap();
+	let after: Progress = Progress::load(&path).unwrap();
+	assert_eq!(after.attempts(&session), session.attempts());
+	assert!(after.points_at("", &drawn.name));
+
+	// A version this build has never seen is a different matter: it is refused with the
+	// reason, not with whichever field the reader tripped over, and the file is left alone.
 	let later: &str = r#"{"version":3,"whatever":true}"#;
 	fs::write(&path, later).unwrap();
 	assert!(
@@ -107,17 +152,6 @@ fn a_progress_file_from_before_question_sets_is_refused_and_left_untouched() {
 			.contains("不支持的进度版本")
 	);
 	assert_eq!(fs::read_to_string(&path).unwrap(), later);
-
-	// A file this build wrote round-trips, set name and all.
-	let mut progress: Progress = Progress::default();
-	let mut session: Session =
-		python::session("1 + 2", &BTreeMap::new(), EvaluationMode::ShortCircuit).unwrap();
-	assert!(session.submit(0, "3").accepted());
-	progress.record("a-set", "a-question", &session);
-	progress.save(&path).unwrap();
-	let reloaded: Progress = Progress::load(&path).unwrap();
-	assert!(reloaded.points_at("a-set", "a-question"));
-	assert!(!reloaded.points_at("", "a-question"));
 }
 
 #[test]
