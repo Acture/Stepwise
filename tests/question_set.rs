@@ -964,12 +964,15 @@ fn a_language_whose_only_questions_are_proofs_says_so_instead_of_reporting_none(
 #[test]
 fn the_example_set_printed_in_the_readme_is_one_the_program_accepts() {
 	const README: &str = include_str!("../README.md");
-	let block: &str = README
-		.split("```toml\n")
+	// A checkout may hand this file either line ending, and so may a teacher: the block is
+	// found and read the same way regardless, and the CRLF form is asserted below.
+	let block: String = README
+		.split("```toml")
 		.nth(1)
 		.and_then(|rest| rest.split("```").next())
-		.expect("README documents the format with a toml block");
-	let documented: QuestionSet = QuestionSet::import(block).expect("the documented set loads");
+		.expect("README documents the format with a toml block")
+		.replace("\r\n", "\n");
+	let documented: QuestionSet = QuestionSet::import(&block).expect("the documented set loads");
 	assert_eq!(documented.name, "example-set");
 
 	// Both kinds are shown, and each field the block names is one the loader read.
@@ -988,4 +991,37 @@ fn the_example_set_printed_in_the_readme_is_one_the_program_accepts() {
 	assert_eq!(proof.conclusion, "R");
 	assert_eq!(proof.premises.len(), 3);
 	proof.proof().expect("its formulas parse");
+}
+
+/// A teacher writing a set on Windows produces CRLF, and an editor may convert a file either
+/// way. Line endings are the file's business, not the question's: the same set must read the
+/// same, character for character, however its lines end.
+#[test]
+fn a_set_reads_the_same_whichever_line_ending_its_file_uses() {
+	let lf: &str = EXAMPLE_TEXT;
+	let crlf: String = lf.replace("\r\n", "\n").replace('\n', "\r\n");
+	assert_ne!(lf.replace("\r\n", "\n"), crlf);
+
+	let straight: QuestionSet = QuestionSet::import(lf).expect("the shipped example loads");
+	let windows: QuestionSet = QuestionSet::import(&crlf).expect("its CRLF twin loads");
+	assert_eq!(straight.name, windows.name);
+	assert_eq!(straight.questions().len(), windows.questions().len());
+
+	// Down to the source a student sees and the literals their answers are compared against.
+	for (plain, carried) in straight.exercises().zip(windows.exercises()) {
+		assert_eq!(plain.name, carried.name);
+		assert_eq!(plain.expression, carried.expression);
+		assert_eq!(plain.bindings, carried.bindings);
+		assert_eq!(plain.note, carried.note);
+	}
+
+	// The CLI reads a file, not a checkout, so it sees whatever the teacher saved.
+	let directory: tempfile::TempDir = tempfile::tempdir().unwrap();
+	let path: PathBuf = write(&directory, "crlf.toml", &crlf);
+	let listed: Output = cli(&["--python", "--set", path.to_str().unwrap(), "--list"]);
+	assert!(listed.status.success(), "{}", err(&listed));
+	assert_eq!(
+		out(&listed),
+		out(&cli(&["--python", "--set", EXAMPLE_PATH, "--list"]))
+	);
 }
