@@ -138,7 +138,7 @@ fn the_inline_adapter_teaches_and_saves_through_a_real_terminal() {
 			&[
 				"--python",
 				"--set",
-				concat!(env!("CARGO_MANIFEST_DIR"), "/examples/questions.toml"),
+				concat!(env!("CARGO_MANIFEST_DIR"), "/questions/example.toml"),
 				"--progress-file",
 				&file,
 			],

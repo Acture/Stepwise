@@ -16,7 +16,7 @@ fn builtin(id: &str) -> Exercise {
 	exercises::builtin()
 		.unwrap()
 		.exercises()
-		.find(|exercise| exercise.id == id)
+		.find(|exercise| exercise.name == id)
 		.expect("embedded question")
 		.clone()
 }
@@ -134,13 +134,13 @@ fn a_selection_the_rules_forbid_only_changes_the_feedback() {
 fn a_finished_pair_of_brackets_is_removed_by_selection_and_saves_no_answer() {
 	let nested: Exercise = Exercise {
 		set: String::new(),
-		id: "nested".into(),
+		name: "nested".into(),
 		title: "nested".into(),
 		expression: "((3))".into(),
-		goal: String::new(),
 		language: Language::Python,
 		bindings: BTreeMap::new(),
 		evaluation: None,
+		note: None,
 	};
 	let mut session: Practice = practice(
 		vec![nested.clone()],
@@ -179,13 +179,13 @@ fn a_finished_pair_of_brackets_is_removed_by_selection_and_saves_no_answer() {
 fn one_answer_substitutes_every_occurrence_of_the_same_name() {
 	let repeated: Exercise = Exercise {
 		set: String::new(),
-		id: "repeated".into(),
+		name: "repeated".into(),
 		title: "repeated".into(),
 		expression: "x + y * x".into(),
-		goal: String::new(),
 		language: Language::Python,
 		bindings: BTreeMap::from([("x".into(), "2".into()), ("y".into(), "3".into())]),
 		evaluation: None,
+		note: None,
 	};
 	let mut session: Practice = practice(
 		vec![repeated],
@@ -244,14 +244,14 @@ fn the_next_question_is_generated_and_going_back_restores_the_earlier_attempts()
 	assert!(session.submit());
 
 	assert!(session.next_question().unwrap());
-	assert!(session.question().id.starts_with("random-v1-python-"));
+	assert!(session.question().name.starts_with("random-v1-python-"));
 	assert!(!session.question().bindings.is_empty());
 	assert!(session.session().history().is_empty());
 	assert_eq!(session.course().index(), 1);
 	let generated: String = session.session().source().into();
 
 	assert!(session.previous_question().unwrap());
-	assert_eq!(session.question().id, "precedence");
+	assert_eq!(session.question().name, "precedence");
 	assert_eq!(session.session().render(), "2 + (12)");
 	assert_eq!(session.session().history().len(), 1);
 
@@ -269,15 +269,15 @@ fn an_ordered_course_stops_at_its_last_question_without_generating_one() {
 		Practice::new(course, Progress::default(), EvaluationMode::ShortCircuit).unwrap();
 
 	assert!(session.next_question().unwrap());
-	assert_eq!(session.question().id, "true-division");
+	assert_eq!(session.question().name, "true-division");
 
 	assert!(!session.next_question().unwrap());
-	assert_eq!(session.question().id, "true-division");
+	assert_eq!(session.question().name, "true-division");
 	assert_eq!(session.course().questions().len(), 2);
 	assert_eq!(session.report(), &Report::Notice(Notice::CourseEnded));
 
 	assert!(session.previous_question().unwrap());
-	assert_eq!(session.question().id, "precedence");
+	assert_eq!(session.question().name, "precedence");
 }
 
 #[test]
@@ -288,7 +288,7 @@ fn a_default_launch_resumes_unfinished_work_and_replaces_a_finished_question() {
 	let fresh: Exercise =
 		stepwise::app::resume_or_generate(Language::Python, &Progress::default(), &embedded)
 			.unwrap();
-	assert!(fresh.id.starts_with("random-v1-python-"));
+	assert!(fresh.name.starts_with("random-v1-python-"));
 
 	// An unfinished embedded question comes back.
 	let mut session: Practice = practice(
@@ -305,7 +305,7 @@ fn a_default_launch_resumes_unfinished_work_and_replaces_a_finished_question() {
 	assert_eq!(
 		stepwise::app::resume_or_generate(Language::Python, &unfinished, &embedded)
 			.unwrap()
-			.id,
+			.name,
 		"precedence"
 	);
 	assert_eq!(
@@ -321,7 +321,7 @@ fn a_default_launch_resumes_unfinished_work_and_replaces_a_finished_question() {
 	assert!(
 		stepwise::app::resume_or_generate(Language::Python, &absent, &embedded)
 			.unwrap()
-			.id
+			.name
 			.starts_with("random-v1-python-")
 	);
 	assert_eq!(unfinished.sessions, absent.sessions);
@@ -345,17 +345,17 @@ fn a_default_launch_resumes_unfinished_work_and_replaces_a_finished_question() {
 	assert!(
 		stepwise::app::resume_or_generate(Language::Python, session.progress(), &embedded)
 			.unwrap()
-			.id
+			.name
 			.starts_with("random-v1-python-")
 	);
 
 	// A saved random question is reconstructed from its versioned seed alone.
 	let mut random: Progress = Progress::default();
-	random.current = generate::generate(Language::Logic, 42).unwrap().id;
+	random.current = generate::generate(Language::Logic, 42).unwrap().name;
 	random.mode = EvaluationMode::Eager;
 	let restored: Exercise =
 		stepwise::app::resume_or_generate(Language::Logic, &random, &[]).unwrap();
-	assert_eq!(restored.id, random.current);
+	assert_eq!(restored.name, random.current);
 	assert_eq!(
 		stepwise::app::starting_mode(None, &random, &restored),
 		EvaluationMode::Eager
@@ -478,13 +478,13 @@ fn the_draft_and_selection_contract_holds_without_a_front_end() {
 fn every_notice_the_app_layer_raises_is_a_reason_and_carries_no_sentence() {
 	let pair: Exercise = Exercise {
 		set: String::new(),
-		id: "pair".into(),
+		name: "pair".into(),
 		title: "pair".into(),
 		expression: "2 + 3".into(),
-		goal: String::new(),
 		language: Language::Python,
 		bindings: BTreeMap::new(),
 		evaluation: None,
+		note: None,
 	};
 	// A whole binary expression over two values opens its own blank and says why.
 	let mut session: Practice = practice(
@@ -609,10 +609,10 @@ fn changing_question_archives_a_new_header_and_the_first_question_has_no_earlier
 
 	// Going back before the first question keeps it, and still reports a recordable change.
 	assert!(session.previous_question().unwrap());
-	assert_eq!(session.question().id, "long-arithmetic");
+	assert_eq!(session.question().name, "long-arithmetic");
 	assert_eq!(session.course().index(), 0);
 	assert!(session.previous_question().unwrap());
-	assert_eq!(session.question().id, "long-arithmetic");
+	assert_eq!(session.question().name, "long-arithmetic");
 	assert_eq!(session.course().index(), 0);
 	assert_eq!(session.course().questions().len(), 2);
 }
@@ -627,56 +627,56 @@ fn changing_question_archives_a_new_header_and_the_first_question_has_no_earlier
 /// them, or reordered them at all, would walk `add, div, mul` instead.
 const ORDERED_SET: &str = r##"
 version = 1
-id = "ordered-set"
+name = "ordered-set"
 title = "顺序题集"
 
 [[questions]]
 kind = "evaluation"
-id = "mul"
+name = "mul"
 title = "先乘后加"
 language = "python"
 expression = "2 + (3 * 4)"
-goal = "选出下一步执行的子表达式。"
+note = "选出下一步执行的子表达式。"
 
 [[questions]]
 kind = "evaluation"
-id = "div"
+name = "div"
 title = "除法的类型"
 language = "python"
 expression = "6 / (1 + 2)"
-goal = "结果的类型也是答案的一部分。"
+note = "结果的类型也是答案的一部分。"
 
 [[questions]]
 kind = "evaluation"
-id = "add"
+name = "add"
 title = "只剩一步"
 language = "python"
 expression = "1 + 2"
-goal = "整个式子只是一次加法。"
+note = "整个式子只是一次加法。"
 "##;
 
 /// A set carrying both question kinds and both languages, for what a course may be asked
 /// to filter out of one file.
 const MIXED_SET: &str = r##"
 version = 1
-id = "mixed-set"
+name = "mixed-set"
 title = "混合题集"
 
 [[questions]]
 kind = "evaluation"
-id = "py-one"
+name = "py-one"
 title = "第一道 Python 题"
 language = "python"
 expression = "2 + (3 * 4)"
-goal = "先乘后加。"
+note = "先乘后加。"
 
 [[questions]]
 kind = "evaluation"
-id = "logic-one"
+name = "logic-one"
 title = "一行真值表"
 language = "logic"
 expression = "(P → Q) ∧ ¬Q → ¬P"
-goal = "只算这一个赋值。"
+note = "只算这一个赋值。"
 
 [questions.bindings]
 P = "True"
@@ -684,52 +684,52 @@ Q = "False"
 
 [[questions]]
 kind = "proof"
-id = "chain"
+name = "chain"
 title = "连续两次肯定前件"
 premises = ["P -> Q", "Q -> R", "P"]
 conclusion = "R"
-goal = "每行写「公式 ; 规则 ; 引用行」。"
+note = "每行写「公式 ; 规则 ; 引用行」。"
 
 [[questions]]
 kind = "evaluation"
-id = "py-two"
+name = "py-two"
 title = "第二道 Python 题"
 language = "python"
 expression = "6 / (1 + 2)"
-goal = "结果的类型也是答案的一部分。"
+note = "结果的类型也是答案的一部分。"
 "##;
 
 /// One set whose questions differ in where their opening strategy comes from: a field of
 /// their own, or the default of the language they are written in.
 const MODE_SET: &str = r##"
 version = 1
-id = "mode-set"
+name = "mode-set"
 title = "开场策略"
 
 [[questions]]
 kind = "evaluation"
-id = "eager-q"
+name = "eager-q"
 title = "关掉短路之后"
 language = "python"
 expression = "False and (6 / 3)"
-goal = "短路开着时右边整支跳过；这题默认关掉短路。"
+note = "短路开着时右边整支跳过；这题默认关掉短路。"
 evaluation = "eager"
 
 [[questions]]
 kind = "evaluation"
-id = "plain-q"
+name = "plain-q"
 title = "跳过的右边"
 language = "python"
 expression = "False and (1 + 2)"
-goal = "括号里的运算一定会执行吗？"
+note = "括号里的运算一定会执行吗？"
 
 [[questions]]
 kind = "evaluation"
-id = "logic-q"
+name = "logic-q"
 title = "一行真值表"
 language = "logic"
 expression = "(P → Q) ∧ ¬Q → ¬P"
-goal = "只算这一个赋值。"
+note = "只算这一个赋值。"
 
 [questions.bindings]
 P = "True"
@@ -743,24 +743,24 @@ fn set_around(set_id: &str, name: &str, expression: &str) -> String {
 	format!(
 		r##"
 version = 1
-id = "{set_id}"
+name = "{set_id}"
 title = "{name}"
 
 [[questions]]
 kind = "evaluation"
-id = "warmup"
+name = "warmup"
 title = "热身"
 language = "python"
 expression = "1 + 2"
-goal = "先做一步。"
+note = "先做一步。"
 
 [[questions]]
 kind = "evaluation"
-id = "q1"
+name = "q1"
 title = "{name}的第一题"
 language = "python"
 expression = "{expression}"
-goal = "{name}要问的事。"
+note = "{name}要问的事。"
 "##
 	)
 }
@@ -772,7 +772,7 @@ fn imported(text: &str) -> exercises::QuestionSet {
 fn ids(questions: &[Exercise]) -> Vec<&str> {
 	questions
 		.iter()
-		.map(|exercise| exercise.id.as_str())
+		.map(|exercise| exercise.name.as_str())
 		.collect()
 }
 
@@ -832,21 +832,21 @@ fn an_ordered_course_over_an_imported_set_walks_the_file_and_ends_at_its_last_qu
 	assert_eq!(session.question().set, "ordered-set");
 
 	assert!(session.next_question().unwrap());
-	assert_eq!(session.question().id, "div");
+	assert_eq!(session.question().name, "div");
 	assert!(session.next_question().unwrap());
-	assert_eq!(session.question().id, "add");
+	assert_eq!(session.question().name, "add");
 
 	// The end of the file is the end of the practice: no question is drawn to fill it.
 	assert!(!session.next_question().unwrap());
 	assert_eq!(session.report(), &Report::Notice(Notice::CourseEnded));
-	assert_eq!(session.question().id, "add");
+	assert_eq!(session.question().name, "add");
 	assert_eq!(session.course().questions().len(), 3);
 	assert_eq!(ids(session.course().questions()), ["mul", "div", "add"]);
 
 	assert!(session.previous_question().unwrap());
-	assert_eq!(session.question().id, "div");
+	assert_eq!(session.question().name, "div");
 	assert!(session.previous_question().unwrap());
-	assert_eq!(session.question().id, "mul");
+	assert_eq!(session.question().name, "mul");
 	assert_eq!(session.course().index(), 0);
 }
 
@@ -1022,7 +1022,7 @@ fn the_set_a_question_came_from_travels_into_the_progress_and_a_random_one_carri
 	);
 	drawn.record();
 	assert!(drawn.progress().current_set.is_empty());
-	assert_eq!(drawn.progress().current, random.id);
+	assert_eq!(drawn.progress().current, random.name);
 }
 
 #[test]
@@ -1110,7 +1110,7 @@ fn one_file_may_mix_languages_and_question_kinds_and_a_course_gets_only_what_it_
 
 	let mut session: Practice = ordered(&set.evaluations(Language::Python), 0, Progress::default());
 	assert!(session.next_question().unwrap());
-	assert_eq!(session.question().id, "py-two");
+	assert_eq!(session.question().name, "py-two");
 	assert!(!session.next_question().unwrap());
 	assert_eq!(session.report(), &Report::Notice(Notice::CourseEnded));
 }

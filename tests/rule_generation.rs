@@ -230,7 +230,10 @@ fn long_exercises_use_the_same_rules_in_both_modes() {
 		("long-python-logic", "True"),
 		("long-logic", "False"),
 	] {
-		let exercise: &Exercise = exercises.iter().find(|exercise| exercise.id == id).unwrap();
+		let exercise: &Exercise = exercises
+			.iter()
+			.find(|exercise| exercise.name == id)
+			.unwrap();
 		for mode in [EvaluationMode::ShortCircuit, EvaluationMode::Eager] {
 			let mut session: Session = exercise.session(mode).unwrap();
 			while let Some(step) = session.next_step() {

@@ -17,16 +17,16 @@ use stepwise::{
 };
 
 /// The shipped example, reached both as text (parsing) and as a path (the CLI).
-const EXAMPLE_TEXT: &str = include_str!("../examples/questions.toml");
-const EXAMPLE_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/examples/questions.toml");
+const EXAMPLE_TEXT: &str = include_str!("../questions/example.toml");
+const EXAMPLE_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/questions/example.toml");
 
 /// A well-formed Python question; a rejection fixture spoils exactly one part of it.
-const PYTHON_FIELDS: &str = "id = \"q1\"\ntitle = \"一道题\"\nlanguage = \"python\"\nexpression = \"1 + 2\"\ngoal = \"题面\"";
+const PYTHON_FIELDS: &str = "name = \"q1\"\ntitle = \"一道题\"\nlanguage = \"python\"\nexpression = \"1 + 2\"\nnote = \"题面\"";
 /// A well-formed proof question, for the same purpose.
-const PROOF_FIELDS: &str = "id = \"p1\"\ntitle = \"一道证明题\"\npremises = [\"P -> Q\", \"P\"]\nconclusion = \"Q\"\ngoal = \"题面\"";
+const PROOF_FIELDS: &str = "name = \"p1\"\ntitle = \"一道证明题\"\npremises = [\"P -> Q\", \"P\"]\nconclusion = \"Q\"\nnote = \"题面\"";
 
 fn header(id: &str, title: &str) -> String {
-	format!("version = 1\nid = \"{id}\"\ntitle = \"{title}\"\n")
+	format!("version = 1\nname = \"{id}\"\ntitle = \"{title}\"\n")
 }
 
 /// A set with the usual valid metadata and whatever body the test is about.
@@ -119,21 +119,25 @@ fn write(directory: &tempfile::TempDir, name: &str, text: &str) -> PathBuf {
 #[test]
 fn the_embedded_set_parses_as_version_one_and_stamps_every_question_with_its_own_name() {
 	let set: QuestionSet = exercises::builtin().unwrap();
-	assert_eq!(set.id, "builtin");
+	assert_eq!(set.name, "builtin");
 	assert_eq!(set.version(), exercises::FORMAT_VERSION);
 	assert_eq!(set.version(), 1);
 	assert_eq!(set.questions().len(), 20);
 	assert!(set.description.is_some());
 
 	// Every embedded question is an evaluation question, so the three views agree.
-	let listed: Vec<&str> = set.questions().iter().map(Question::id).collect();
+	let listed: Vec<&str> = set.questions().iter().map(Question::name).collect();
 	let walked: Vec<&str> = set
 		.exercises()
-		.map(|exercise| exercise.id.as_str())
+		.map(|exercise| exercise.name.as_str())
 		.collect();
 	assert_eq!(listed, walked);
 	for exercise in set.exercises() {
-		assert_eq!(exercise.set, "builtin", "{} lost its set name", exercise.id);
+		assert_eq!(
+			exercise.set, "builtin",
+			"{} lost its set name",
+			exercise.name
+		);
 	}
 
 	let python: Vec<Exercise> = set.evaluations(Language::Python);
@@ -143,7 +147,7 @@ fn the_embedded_set_parses_as_version_one_and_stamps_every_question_with_its_own
 	let split: Vec<&str> = python
 		.iter()
 		.chain(logic.iter())
-		.map(|exercise| exercise.id.as_str())
+		.map(|exercise| exercise.name.as_str())
 		.collect();
 	let mut sorted: Vec<&str> = split.clone();
 	sorted.sort_unstable();
@@ -175,10 +179,10 @@ fn one_set_carries_python_logic_and_proof_questions_with_their_fields_intact() {
 		"{}{}{}{}",
 		header("mixed", "混合题集"),
 		evaluation(
-			"id = \"py\"\ntitle = \"除法\"\nlanguage = \"python\"\nexpression = \"guard and (count / step)\"\ngoal = \"题面一\"\nevaluation = \"eager\"\n[questions.bindings]\nguard = \"False\"\ncount = \"6\"\nstep = \"3\""
+			"name = \"py\"\ntitle = \"除法\"\nlanguage = \"python\"\nexpression = \"guard and (count / step)\"\nnote = \"题面一\"\nevaluation = \"eager\"\n[questions.bindings]\nguard = \"False\"\ncount = \"6\"\nstep = \"3\""
 		),
 		evaluation(
-			"id = \"lg\"\ntitle = \"真值\"\nlanguage = \"logic\"\nexpression = \"P ∧ Q\"\ngoal = \"题面二\"\n[questions.bindings]\nP = \"True\"\nQ = \"False\""
+			"name = \"lg\"\ntitle = \"真值\"\nlanguage = \"logic\"\nexpression = \"P ∧ Q\"\nnote = \"题面二\"\n[questions.bindings]\nP = \"True\"\nQ = \"False\""
 		),
 		proof_question(PROOF_FIELDS),
 	);
@@ -190,11 +194,10 @@ fn one_set_carries_python_logic_and_proof_questions_with_their_fields_intact() {
 	assert_eq!(python.set, "mixed");
 	assert_eq!(python.language, Language::Python);
 	assert_eq!(python.expression, "guard and (count / step)");
-	assert_eq!(python.goal, "题面一");
+	assert_eq!(python.note.as_deref(), Some("题面一"));
 	assert_eq!(python.evaluation, Some(EvaluationMode::Eager));
 	assert_eq!(python.mode(), EvaluationMode::Eager);
 	assert_eq!(python.assignments(), "count=6 guard=False step=3");
-	contains(&python.prompt(), "题面一");
 
 	let logic: &Exercise = set.find("lg").unwrap().evaluation().unwrap();
 	assert_eq!(logic.language, Language::Logic);
@@ -211,7 +214,7 @@ fn one_set_carries_python_logic_and_proof_questions_with_their_fields_intact() {
 	};
 	assert_eq!(proof_question.premises, ["P -> Q", "P"]);
 	assert_eq!(proof_question.conclusion, "Q");
-	assert_eq!(proof_question.goal, "题面");
+	assert_eq!(proof_question.note.as_deref(), Some("题面"));
 	assert_eq!(proof_question.sequent(), "P -> Q，P ⊢ Q");
 	let proof: Proof = proof_question.proof().unwrap();
 	assert_eq!(proof.lines().len(), 2);
@@ -223,7 +226,7 @@ fn one_set_carries_python_logic_and_proof_questions_with_their_fields_intact() {
 fn binding_literals_keep_their_python_type_and_their_sign() {
 	let parsed = |literal: &str| -> Value {
 		let text: String = set(&evaluation(&format!(
-			"id = \"q\"\ntitle = \"取值\"\nlanguage = \"python\"\nexpression = \"x\"\ngoal = \"题面\"\n[questions.bindings]\nx = \"{literal}\""
+			"name = \"q\"\ntitle = \"取值\"\nlanguage = \"python\"\nexpression = \"x\"\nnote = \"题面\"\n[questions.bindings]\nx = \"{literal}\""
 		)));
 		let exercise: Exercise = QuestionSet::parse(&text)
 			.unwrap()
@@ -290,7 +293,7 @@ fn only_this_format_version_loads_and_it_must_be_written_down() {
 	contains(&wrong.to_string(), "version = 1");
 
 	let missing: String = syntax(&format!(
-		"id = \"probe\"\ntitle = \"探针题集\"\n{}",
+		"name = \"probe\"\ntitle = \"探针题集\"\n{}",
 		evaluation(PYTHON_FIELDS)
 	));
 	contains(&missing, "version");
@@ -377,24 +380,24 @@ fn a_question_states_its_kind_and_only_a_known_one() {
 }
 
 #[test]
-fn question_ids_are_present_unique_and_titles_are_not_blank() {
+fn question_names_are_present_unique_and_titles_are_not_blank() {
 	let duplicate: Invalid = invalid(&set(&format!(
 		"{}{}",
 		evaluation(PYTHON_FIELDS),
 		evaluation(&PYTHON_FIELDS.replace("expression = \"1 + 2\"", "expression = \"2 + 3\""))
 	)));
 	assert_eq!(duplicate.question.as_deref(), Some("q1"));
-	assert_eq!(duplicate.field, "id");
-	contains(&duplicate.to_string(), "题目 q1 的 id 字段");
+	assert_eq!(duplicate.field, "name");
+	contains(&duplicate.to_string(), "题目 q1 的 name 字段");
 	contains(&duplicate.to_string(), "重复");
 
-	let blank_id: Invalid = invalid(&set(&evaluation(
-		&PYTHON_FIELDS.replace("id = \"q1\"", "id = \"  \""),
+	let blank_name: Invalid = invalid(&set(&evaluation(
+		&PYTHON_FIELDS.replace("name = \"q1\"", "name = \"  \""),
 	)));
-	assert_eq!(blank_id.question.as_deref(), Some("#1"));
-	assert_eq!(blank_id.field, "id");
-	contains(&blank_id.to_string(), "题目 #1 的 id 字段");
-	contains(&blank_id.to_string(), "题目 ID 不能为空");
+	assert_eq!(blank_name.question.as_deref(), Some("#1"));
+	assert_eq!(blank_name.field, "name");
+	contains(&blank_name.to_string(), "题目 #1 的 name 字段");
+	contains(&blank_name.to_string(), "题目名称不能为空");
 
 	let blank_title: Invalid = invalid(&set(&evaluation(
 		&PYTHON_FIELDS.replace("title = \"一道题\"", "title = \"\""),
@@ -406,14 +409,14 @@ fn question_ids_are_present_unique_and_titles_are_not_blank() {
 
 #[test]
 fn a_set_needs_a_name_a_title_and_at_least_one_question() {
-	let blank_id: Invalid = invalid(&format!(
+	let blank_name: Invalid = invalid(&format!(
 		"{}{}",
 		header("", "探针题集"),
 		evaluation(PYTHON_FIELDS)
 	));
-	assert_eq!(blank_id.question, None);
-	assert_eq!(blank_id.field, "id");
-	contains(&blank_id.to_string(), "题集 ID 不能为空");
+	assert_eq!(blank_name.question, None);
+	assert_eq!(blank_name.field, "name");
+	contains(&blank_name.to_string(), "题集名称不能为空");
 
 	let blank_title: Invalid = invalid(&format!(
 		"{}{}",
@@ -431,7 +434,7 @@ fn a_set_needs_a_name_a_title_and_at_least_one_question() {
 #[test]
 fn a_binding_must_be_a_source_literal_of_its_own_language() {
 	let python: Invalid = invalid(&set(&evaluation(
-		"id = \"q1\"\ntitle = \"一道题\"\nlanguage = \"python\"\nexpression = \"x + 1\"\ngoal = \"题面\"\n[questions.bindings]\nx = \"maybe\"",
+		"name = \"q1\"\ntitle = \"一道题\"\nlanguage = \"python\"\nexpression = \"x + 1\"\nnote = \"题面\"\n[questions.bindings]\nx = \"maybe\"",
 	)));
 	assert_eq!(python.question.as_deref(), Some("q1"));
 	assert_eq!(python.field, "bindings");
@@ -439,7 +442,7 @@ fn a_binding_must_be_a_source_literal_of_its_own_language() {
 	contains(&python.to_string(), "Python 源码字面量");
 
 	let logic: Invalid = invalid(&set(&evaluation(
-		"id = \"q2\"\ntitle = \"一道题\"\nlanguage = \"logic\"\nexpression = \"P ∧ Q\"\ngoal = \"题面\"\n[questions.bindings]\nP = \"True\"\nQ = \"perhaps\"",
+		"name = \"q2\"\ntitle = \"一道题\"\nlanguage = \"logic\"\nexpression = \"P ∧ Q\"\nnote = \"题面\"\n[questions.bindings]\nP = \"True\"\nQ = \"perhaps\"",
 	)));
 	assert_eq!(logic.question.as_deref(), Some("q2"));
 	assert_eq!(logic.field, "bindings");
@@ -492,7 +495,7 @@ fn broken_toml_is_reported_with_the_line_and_column_to_fix() {
 fn a_set_is_refused_when_it_holds_too_many_questions_or_too_many_bytes() {
 	let question = |index: usize| -> String {
 		evaluation(&format!(
-			"id = \"q{index}\"\ntitle = \"第 {index} 题\"\nlanguage = \"python\"\nexpression = \"1 + {index}\"\ngoal = \"题面\""
+			"name = \"q{index}\"\ntitle = \"第 {index} 题\"\nlanguage = \"python\"\nexpression = \"1 + {index}\"\nnote = \"题面\""
 		))
 	};
 	let at_limit: String = set(&(0..1024).map(question).collect::<String>());
@@ -508,7 +511,7 @@ fn a_set_is_refused_when_it_holds_too_many_questions_or_too_many_bytes() {
 
 	// Valid TOML, refused on weight alone: the size rule is its own check.
 	let heavy: String = format!(
-		"version = 1\nid = \"heavy\"\ntitle = \"t\"\ndescription = \"{}\"\n{}",
+		"version = 1\nname = \"heavy\"\ntitle = \"t\"\ndescription = \"{}\"\n{}",
 		"x".repeat(1 << 20),
 		evaluation(PYTHON_FIELDS)
 	);
@@ -529,7 +532,7 @@ fn a_set_is_refused_when_it_holds_too_many_questions_or_too_many_bytes() {
 #[test]
 fn a_question_that_ends_in_an_exception_loads_and_is_practised_to_that_exception() {
 	let text: String = set(&evaluation(
-		"id = \"boom\"\ntitle = \"除以零\"\nlanguage = \"python\"\nexpression = \"6 / 0\"\ngoal = \"题面\"",
+		"name = \"boom\"\ntitle = \"除以零\"\nlanguage = \"python\"\nexpression = \"6 / 0\"\nnote = \"题面\"",
 	));
 	let set: QuestionSet = QuestionSet::parse(&text).unwrap();
 	let exercise: &Exercise = set.find("boom").unwrap().evaluation().unwrap();
@@ -567,7 +570,7 @@ fn a_question_that_ends_in_an_exception_loads_and_is_practised_to_that_exception
 #[test]
 fn the_shipped_example_parses_and_its_proof_is_checked_by_the_same_rules() {
 	let set: QuestionSet = QuestionSet::parse(EXAMPLE_TEXT).unwrap();
-	assert_eq!(set.id, "example-set");
+	assert_eq!(set.name, "example-set");
 	assert_eq!(set.version(), 1);
 	assert_eq!(set.questions().len(), 4);
 	assert_eq!(set.evaluations(Language::Python).len(), 2);
@@ -825,7 +828,7 @@ fn a_set_that_does_not_load_never_touches_the_progress_file() {
 #[test]
 fn a_set_from_a_later_protocol_names_the_version_even_though_its_fields_are_unknown_here() {
 	let later: String = format!(
-		"version = 2\nid = \"probe\"\ntitle = \"探针题集\"\ndifficulty = \"hard\"\n{}",
+		"version = 2\nname = \"probe\"\ntitle = \"探针题集\"\ndifficulty = \"hard\"\n{}",
 		evaluation(PYTHON_FIELDS)
 	);
 	// The unknown field alone would be a TOML refusal; the version is read before it.
@@ -848,7 +851,7 @@ fn an_imported_file_may_not_call_itself_the_embedded_set() {
 		evaluation(PYTHON_FIELDS)
 	);
 	assert_eq!(
-		QuestionSet::parse(&claiming).unwrap().id,
+		QuestionSet::parse(&claiming).unwrap().name,
 		exercises::BUILTIN_SET
 	);
 	let SetError::Invalid(refused) = QuestionSet::import(&claiming).unwrap_err() else {
@@ -859,7 +862,7 @@ fn an_imported_file_may_not_call_itself_the_embedded_set() {
 
 	// Any other name imports, and the embedded set still loads through `parse`.
 	assert!(QuestionSet::import(&set(&evaluation(PYTHON_FIELDS))).is_ok());
-	assert_eq!(exercises::builtin().unwrap().id, exercises::BUILTIN_SET);
+	assert_eq!(exercises::builtin().unwrap().name, exercises::BUILTIN_SET);
 
 	let directory: tempfile::TempDir = tempfile::tempdir().unwrap();
 	let path: PathBuf = write(&directory, "claiming.toml", &claiming);
@@ -884,7 +887,7 @@ fn the_same_set_bytes_are_the_same_set_at_any_path() {
 	// The identity the progress pointer uses comes from the file's contents, not its path.
 	let parsed: QuestionSet = QuestionSet::import(EXAMPLE_TEXT).unwrap();
 	for exercise in parsed.exercises() {
-		assert_eq!(exercise.set, parsed.id);
+		assert_eq!(exercise.set, parsed.name);
 	}
 }
 
@@ -954,4 +957,35 @@ fn a_language_whose_only_questions_are_proofs_says_so_instead_of_reporting_none(
 	assert!(python.status.success());
 	assert!(out(&python).is_empty());
 	contains(&err(&python), "没有 --python 的题目");
+}
+
+/// README documents the format with a whole TOML file. A documented example that no longer
+/// loads is worse than none, so the one in the manual goes through the real loader.
+#[test]
+fn the_example_set_printed_in_the_readme_is_one_the_program_accepts() {
+	const README: &str = include_str!("../README.md");
+	let block: &str = README
+		.split("```toml\n")
+		.nth(1)
+		.and_then(|rest| rest.split("```").next())
+		.expect("README documents the format with a toml block");
+	let documented: QuestionSet = QuestionSet::import(block).expect("the documented set loads");
+	assert_eq!(documented.name, "example-set");
+
+	// Both kinds are shown, and each field the block names is one the loader read.
+	assert_eq!(documented.questions().len(), 2);
+	let python: &Exercise = documented
+		.find("literal-types")
+		.and_then(Question::evaluation)
+		.expect("the documented evaluation question");
+	assert_eq!(python.language, Language::Python);
+	assert_eq!(python.mode(), EvaluationMode::Eager);
+	assert_eq!(python.bindings["negative"], "-0.0");
+	assert!(python.note.is_some());
+	let Some(Question::Proof(proof)) = documented.find("chain") else {
+		panic!("the documented proof question")
+	};
+	assert_eq!(proof.conclusion, "R");
+	assert_eq!(proof.premises.len(), 3);
+	proof.proof().expect("its formulas parse");
 }

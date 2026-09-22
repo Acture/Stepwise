@@ -20,14 +20,14 @@ pub fn resume_or_generate(
 	} else {
 		questions
 			.iter()
-			.find(|exercise| progress.points_at(&exercise.set, &exercise.id))
+			.find(|exercise| progress.points_at(&exercise.set, &exercise.name))
 			.filter(|exercise| exercise.language == language)
 			.cloned()
 	};
 	if let Some(exercise) = saved {
 		let initial: Session = exercise.session(progress.mode)?;
 		let attempts: &[RecordedAttempt] = progress.attempts(&initial);
-		let resume: bool = exercise.id.starts_with("random-") || !attempts.is_empty();
+		let resume: bool = exercise.name.starts_with("random-") || !attempts.is_empty();
 		if resume && !initial.replay(attempts)?.is_finished() {
 			return Ok(exercise);
 		}
@@ -47,7 +47,7 @@ pub fn resume_in_set(
 ) -> Result<usize, ParseError> {
 	let remembered: usize = questions
 		.iter()
-		.position(|exercise| progress.points_at(&exercise.set, &exercise.id))
+		.position(|exercise| progress.points_at(&exercise.set, &exercise.name))
 		.unwrap_or(0);
 	for (index, exercise) in questions.iter().enumerate().skip(remembered) {
 		let initial: Session = exercise.session(starting_mode(requested, progress, exercise))?;
@@ -67,7 +67,7 @@ pub fn starting_mode(
 	exercise: &Exercise,
 ) -> EvaluationMode {
 	requested.unwrap_or_else(|| {
-		if progress.points_at(&exercise.set, &exercise.id) {
+		if progress.points_at(&exercise.set, &exercise.name) {
 			progress.mode
 		} else {
 			exercise.mode()

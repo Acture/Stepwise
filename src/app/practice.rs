@@ -322,6 +322,6 @@ impl Practice {
 	pub fn record(&mut self) {
 		let question: &Exercise = self.course.current();
 		self.progress
-			.record(&question.set, &question.id, &self.session);
+			.record(&question.set, &question.name, &self.session);
 	}
 }

@@ -79,17 +79,17 @@ impl Progress {
 
 	/// Point at this question and save its attempts. The set name travels with the ID, so
 	/// the pointer names one question of one set and nothing else.
-	pub fn record(&mut self, set: &str, exercise_id: &str, session: &Session) {
+	pub fn record(&mut self, set: &str, question: &str, session: &Session) {
 		self.current_set = set.into();
-		self.current = exercise_id.into();
+		self.current = question.into();
 		self.mode = session.mode();
 		self.sessions
 			.insert(session.progress_key(), session.attempts().to_vec());
 	}
 
 	/// True when the saved pointer names exactly this question of exactly this set.
-	pub fn points_at(&self, set: &str, exercise_id: &str) -> bool {
-		self.current_set == set && self.current == exercise_id
+	pub fn points_at(&self, set: &str, question: &str) -> bool {
+		self.current_set == set && self.current == question
 	}
 
 	pub fn attempts(&self, session: &Session) -> &[RecordedAttempt] {
