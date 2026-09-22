@@ -1,0 +1,80 @@
+# 一份可直接运行的外部题集示例。内置题集用的是同一个协议、同一条加载路径：
+#
+#   cargo run --locked -- --python --set questions/example.toml --list
+#   cargo run --locked -- --python --set questions/example.toml
+#   cargo run --locked -- --logic  --set questions/example.toml
+#
+# 题集只写题面和条件。下一步是什么、答案是多少、为什么，都由程序里的运算与推理
+# 规则从下面的式子算出来；这里没有、也不能有逐步解法。
+
+# 只认这个版本号；写别的版本会被拒绝，而不是猜着读。
+version = 1
+# 题集的稳定身份。进度按它保存：改文件名、换目录都不影响，改名字才算另一套题。
+name = "example-set"
+title = "示例题集"
+description = "Python 求值、命题逻辑求值与自然演绎各一到两题，用来演示题集文件怎么写。"
+
+# ---------------------------------------------------------------------------
+# 求值题：kind = "evaluation"，给出语言、表达式和变量取值。
+# ---------------------------------------------------------------------------
+
+[[questions]]
+kind = "evaluation"
+name = "literal-types"
+title = "赋值写的是源码字面量"
+language = "python"
+expression = "flag + (zero == negative)"
+# note 可选：给人看的一句话，机器检查不了它，所以也不要求写。
+note = "先把三个变量代入，再比较 0 和 -0.0，最后让两个布尔值相加。"
+
+# 取值一律写成字符串形式的**该语言字面量**，由对应的语言模块解析，不先转成 TOML 的
+# 数字或布尔值——那样会丢掉这里正要教的区别：
+#   "0"     Python 的整数零
+#   "0.0"   浮点零，和 "0" 不是同一个答案
+#   "-0.0"  负零，和 "0.0" 相等但不是同一个浮点数
+#   "True"  布尔真，不是 1，也不是 TOML 的 true
+[questions.bindings]
+flag = "True"
+zero = "0"
+negative = "-0.0"
+
+[[questions]]
+kind = "evaluation"
+name = "eager-division"
+title = "关掉短路之后"
+language = "python"
+expression = "guard and (count / step)"
+note = "短路开着时右边整支跳过；这题默认关掉短路，于是除法真的执行。"
+# 求值题可以指定开场策略。学生仍可以按 s 切换，两种策略各存各的进度。
+evaluation = "eager"
+
+[questions.bindings]
+guard = "False"
+count = "6"
+step = "0"
+
+[[questions]]
+kind = "evaluation"
+name = "modus-ponens-truth"
+title = "一行真值表"
+language = "logic"
+expression = "(P → Q) ∧ ¬Q → ¬P"
+note = "只算这一个赋值；要证明所有赋值下成立，那是下面那道证明题的事。"
+
+[questions.bindings]
+P = "True"
+Q = "False"
+
+# ---------------------------------------------------------------------------
+# 证明题：kind = "proof"，只给前提和结论公式。
+# premises / conclusion 是公式，是真正被检查的东西；note 和求值题一样，是可选的说明文字。
+# 短路是求值策略，对证明没有意义，写 evaluation 字段会被拒绝。
+# ---------------------------------------------------------------------------
+
+[[questions]]
+kind = "proof"
+name = "chain"
+title = "连续两次肯定前件"
+premises = ["P -> Q", "Q -> R", "P"]
+conclusion = "R"
+note = "每行写「公式 ; 规则 ; 引用行」；规则、引用行和假设作用域都会被检查。"

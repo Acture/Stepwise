@@ -101,11 +101,11 @@ fn matches_cpython_values_types_exceptions_and_float_bits() {
 			bindings: BTreeMap::new(),
 		})
 		.collect();
-	for exercise in exercises::builtin().unwrap() {
+	for exercise in exercises::builtin().unwrap().exercises() {
 		if matches!(exercise.language, Language::Python) && !exercise.bindings.is_empty() {
 			originals.push(Case {
-				source: exercise.expression,
-				bindings: exercise.bindings,
+				source: exercise.expression.clone(),
+				bindings: exercise.bindings.clone(),
 			});
 		}
 	}
