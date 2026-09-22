@@ -9,39 +9,37 @@ use ratatui::{
 };
 use unicode_width::UnicodeWidthChar;
 
-use super::app::App;
-use crate::core::{Expr, NodeId};
+use super::keys::Screen;
+use crate::core::NodeId;
 
-pub(super) fn draw(frame: &mut Frame<'_>, app: &mut App) -> Option<Position> {
-	app.expression_area = Rect::default();
-	app.expression_hits.clear();
-	draw_expression(frame, app, frame.area())
+pub(super) fn draw(frame: &mut Frame<'_>, screen: &mut Screen) -> Option<Position> {
+	screen.expression_area = Rect::default();
+	screen.expression_hits.clear();
+	draw_expression(frame, screen, frame.area())
 }
 
-fn feedback_style(app: &App) -> Style {
-	Style::default().fg(if app.feedback_good {
+fn feedback_style(screen: &Screen) -> Style {
+	Style::default().fg(if screen.practice.feedback_good() {
 		Color::Green
 	} else {
 		Color::Yellow
 	})
 }
 
-/// Each rendered character retains the source node under it. Inline drafts never mutate the AST.
-fn draw_expression(frame: &mut Frame<'_>, app: &mut App, area: Rect) -> Option<Position> {
+/// Each rendered character keeps the node the app layer puts under it. Inline drafts are
+/// drawn from `draft_spans`; nothing here decides what a draft replaces.
+fn draw_expression(frame: &mut Frame<'_>, screen: &mut Screen, area: Rect) -> Option<Position> {
 	if area.is_empty() {
 		return None;
 	}
-	app.expression_area = area;
+	screen.expression_area = area;
+	let editing: Option<NodeId> = screen.practice.draft();
+	let input: String = screen.practice.input().into();
+	let edited: Vec<(NodeId, Range<usize>)> = screen.practice.draft_spans();
 	let (source, ranges): (&str, &BTreeMap<NodeId, Range<usize>>) =
-		app.session.render_with_ranges();
-	let edited: Vec<(NodeId, Range<usize>)> = app
-		.editing
-		.into_iter()
-		.flat_map(|id| app.session.replacement_ids(id))
-		.map(|id| (id, ranges[&id].clone()))
-		.collect();
+		screen.practice.session().render_with_ranges();
 	let mut cells: Vec<(char, Style, Option<NodeId>)> = Vec::new();
-	if app.editing.is_some() {
+	if editing.is_some() {
 		cells.extend(
 			format!("{source}\n")
 				.chars()
@@ -49,38 +47,25 @@ fn draw_expression(frame: &mut Frame<'_>, app: &mut App, area: Rect) -> Option<P
 		);
 	}
 	let mut cursor_index: Option<usize> = None;
-	let nodes: Vec<(usize, &Expr)> = app.session.root().rows();
-	let selected: Option<&Range<usize>> = ranges.get(&app.selected);
+	let selected: Option<&Range<usize>> = ranges.get(&screen.practice.selected());
 	let mut index: usize = 0;
 	while index < source.len() {
-		if let Some((id, range)) = edited.iter().find(|(_, range)| index == range.start) {
+		if let Some((node_id, range)) = edited.iter().find(|(_, range)| index == range.start) {
 			let style: Style = Style::default().fg(Color::Yellow).underlined().bold();
-			let draft: &str = if app.input.is_empty() {
-				"____"
-			} else {
-				&app.input
-			};
-			if app.input.is_empty() && app.editing == Some(*id) {
+			let draft: &str = if input.is_empty() { "____" } else { &input };
+			if input.is_empty() && editing == Some(*node_id) {
 				cursor_index = Some(cells.len());
 			}
-			cells.extend(
-				draft
-					.chars()
-					.map(|character| (character, style, app.editing)),
-			);
-			if !app.input.is_empty() && app.editing == Some(*id) {
+			cells.extend(draft.chars().map(|character| (character, style, editing)));
+			if !input.is_empty() && editing == Some(*node_id) {
 				cursor_index = Some(cells.len());
-				cells.push((' ', style, app.editing));
+				cells.push((' ', style, editing));
 			}
 			index = range.end;
 			continue;
 		}
 		let character: char = source[index..].chars().next().expect("inside expression");
-		let node_id: Option<NodeId> = nodes
-			.iter()
-			.filter(|(_, node)| node.value().is_none() && ranges[&node.id].contains(&index))
-			.max_by_key(|(depth, _)| *depth)
-			.map(|(_, node)| node.id);
+		let node_id: Option<NodeId> = screen.practice.node_at(index);
 		let style: Style =
 			if selected.is_some_and(|range| range.contains(&index)) && edited.is_empty() {
 				Style::default().fg(Color::Cyan)
@@ -90,13 +75,13 @@ fn draw_expression(frame: &mut Frame<'_>, app: &mut App, area: Rect) -> Option<P
 		cells.push((character, style, node_id));
 		index += character.len_utf8();
 	}
-	if let Some(error) = app.session.terminal_error() {
+	if let Some(error) = screen.practice.session().terminal_error() {
 		cells.extend(
 			format!("\n完成：{}", error.name().unwrap_or("异常"))
 				.chars()
 				.map(|character| (character, Style::default().fg(Color::Green), None)),
 		);
-	} else if app.session.is_finished() {
+	} else if screen.practice.session().is_finished() {
 		cells.extend(
 			"\n完成 · n 下一题 / u 撤销"
 				.chars()
@@ -104,9 +89,9 @@ fn draw_expression(frame: &mut Frame<'_>, app: &mut App, area: Rect) -> Option<P
 		);
 	}
 	cells.extend(
-		format!("\n{}", app.feedback)
+		format!("\n{}", screen.practice.feedback())
 			.chars()
-			.map(|character| (character, feedback_style(app), None)),
+			.map(|character| (character, feedback_style(screen), None)),
 	);
 	cells.extend(
 		"\nEnter确认 Esc取消 ?帮助 Ctrl+C退出"
@@ -145,24 +130,24 @@ fn draw_expression(frame: &mut Frame<'_>, app: &mut App, area: Rect) -> Option<P
 			.push(Span::styled(character.to_string(), style));
 		column = column.saturating_add(width);
 	}
-	app.view_scroll.update(lines.len(), area.height);
-	if app.follow_tail {
-		app.view_scroll.offset = 0;
+	screen.view_scroll.update(lines.len(), area.height);
+	if screen.follow_tail {
+		screen.view_scroll.offset = 0;
 	}
-	if app.follow_tail
+	if screen.follow_tail
 		&& let Some((_, row)) = cursor
 	{
-		if row < app.view_scroll.offset {
-			app.view_scroll.offset = row;
+		if row < screen.view_scroll.offset {
+			screen.view_scroll.offset = row;
 		}
-		if row >= app.view_scroll.offset.saturating_add(area.height) {
-			app.view_scroll.offset = row.saturating_sub(area.height - 1);
+		if row >= screen.view_scroll.offset.saturating_add(area.height) {
+			screen.view_scroll.offset = row.saturating_sub(area.height - 1);
 		}
 	}
-	let offset: u16 = app.view_scroll.offset;
+	let offset: u16 = screen.view_scroll.offset;
 	for (column, row, width, id) in hits {
 		if row >= offset && row - offset < area.height && width > 0 {
-			app.expression_hits.push((
+			screen.expression_hits.push((
 				Rect::new(area.x + column, area.y + row - offset, width, 1),
 				id,
 			));

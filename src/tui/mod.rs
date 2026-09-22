@@ -1,10 +1,14 @@
-mod app;
+//! The terminal front end: an adapter over [`crate::app`]. It owns the inline viewport,
+//! key and mouse mapping, scrolling, the cursor and drawing — and nothing else. Teaching
+//! state lives in [`Practice`]; this module never keeps a second copy of it, and never
+//! decides what a step means.
+
 mod inline;
+mod keys;
 mod proof_ui;
 mod render;
 #[cfg(test)]
 mod tests;
-mod transcript;
 mod viewport;
 
 use std::{
@@ -13,43 +17,55 @@ use std::{
 };
 
 use crossterm::event;
-use ratatui::text::Text;
+use ratatui::text::{Line, Text};
 
 use inline::{InlineTerminal, TerminalGuard};
-use transcript::Transcript;
+use keys::Screen;
 
-pub use app::App;
+use crate::app::{Practice, Transcript};
+
 pub use proof_ui::run_proof;
 
-pub fn run(mut app: App, progress_path: Option<PathBuf>) -> Result<(), Box<dyn std::error::Error>> {
+/// Archived lines as the inline terminal wants them; the app layer names no widget type.
+fn text(lines: Vec<String>) -> Text<'static> {
+	Text::from(
+		lines
+			.into_iter()
+			.map(Line::from)
+			.collect::<Vec<Line<'static>>>(),
+	)
+}
+
+pub fn run(
+	practice: Practice,
+	progress_path: Option<PathBuf>,
+) -> Result<(), Box<dyn std::error::Error>> {
 	if !io::stdin().is_terminal() || !io::stdout().is_terminal() {
 		return Err("交互练习需要终端。可使用 --list 查看题目，或 --trace 查看逐步演示。".into());
 	}
+	let mut screen: Screen = Screen::new(practice);
 	let _guard: TerminalGuard = TerminalGuard::enter()?;
 	let mut terminal: InlineTerminal = InlineTerminal::new()?;
 	let mut transcript: Transcript = Transcript::default();
 	loop {
-		let added: Text<'static> = transcript.sync(&app);
-		if !added.lines.is_empty() {
-			terminal.append(added)?;
+		let added: Vec<String> = transcript.sync(&screen.practice);
+		if !added.is_empty() {
+			terminal.append(text(added))?;
 		}
-		terminal.draw(|frame| render::draw(frame, &mut app))?;
-		let changed: bool = app.handle(event::read()?)?;
-		if changed || app.quit {
-			app.record();
+		terminal.draw(|frame| render::draw(frame, &mut screen))?;
+		let changed: bool = screen.handle(event::read()?)?;
+		if changed || screen.quit {
+			screen.practice.record();
 			if let Some(path) = &progress_path {
-				app.progress.save(path)?;
+				screen.practice.progress().save(path)?;
 			}
 		}
-		if app.quit {
-			let result: String = if let Some(error) = app.session.terminal_error() {
-				format!(
-					"{}\n{}",
-					app.session.render(),
-					error.name().unwrap_or("异常")
-				)
+		if screen.quit {
+			let session: &crate::core::Session = screen.practice.session();
+			let result: String = if let Some(error) = session.terminal_error() {
+				format!("{}\n{}", session.render(), error.name().unwrap_or("异常"))
 			} else {
-				app.session.render().into()
+				session.render().into()
 			};
 			terminal.finish(Text::raw(result))?;
 			return Ok(());
