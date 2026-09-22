@@ -31,7 +31,7 @@ fn at(practice: &Practice, token: &str) -> NodeId {
 		.render()
 		.find(token)
 		.expect("token is displayed");
-	practice.node_at(index).expect("a selectable node")
+	practice.node_owners()[index].expect("a selectable node")
 }
 
 #[test]
@@ -48,6 +48,7 @@ fn a_whole_question_is_selected_answered_undone_and_resumed_without_a_terminal()
 	assert!(!session.select(multiply));
 	assert_eq!(session.draft(), Some(multiply));
 	assert!(session.input().is_empty());
+	assert_eq!(session.feedback(), "在 ____ 处填值，Enter 检查；Esc 取消。");
 	assert!(!session.feedback().contains("12"));
 	assert!(session.session().history().is_empty());
 	assert_eq!(session.draft_spans().len(), 1);
@@ -133,11 +134,11 @@ fn a_finished_pair_of_brackets_is_removed_by_selection_and_saves_no_answer() {
 		EvaluationMode::ShortCircuit,
 	);
 	// The outer pair is not finished yet, so selecting it removes nothing.
-	let outer: NodeId = session.node_at(0).unwrap();
+	let outer: NodeId = session.node_owners()[0].unwrap();
 	assert!(!session.select(outer));
 	assert!(session.session().history().is_empty());
 
-	let inner: NodeId = session.node_at(1).unwrap();
+	let inner: NodeId = session.node_owners()[1].unwrap();
 	assert!(session.select(inner));
 	assert_eq!(session.session().render(), "(3)");
 	assert!(session.draft().is_none());
@@ -175,7 +176,7 @@ fn one_answer_substitutes_every_occurrence_of_the_same_name() {
 		Progress::default(),
 		EvaluationMode::ShortCircuit,
 	);
-	let first: NodeId = session.node_at(0).unwrap();
+	let first: NodeId = session.node_owners()[0].unwrap();
 	assert!(!session.select(first));
 	// Both blanks belong to one answer, and a front end reads them straight off.
 	let spans: Vec<(NodeId, std::ops::Range<usize>)> = session.draft_spans();
@@ -396,4 +397,87 @@ fn a_proof_is_submitted_undone_and_resumed_from_its_saved_commands() {
 			.is_finished()
 	);
 	assert!(!resumed.undo());
+}
+
+#[test]
+fn the_draft_and_selection_contract_holds_without_a_front_end() {
+	let mut session: Practice = practice(
+		vec![builtin("independent-sums")],
+		Progress::default(),
+		EvaluationMode::ShortCircuit,
+	);
+	assert_eq!(session.feedback(), "点击一处 → ____ → 填值 → Enter。");
+
+	// A hint names the next step; it never opens a draft or fills one in.
+	session.hint();
+	assert!(session.feedback().contains("下一步选择"));
+	assert!(session.draft().is_none());
+	assert!(session.session().attempts().is_empty());
+
+	// Keyboard-style navigation walks the nodes still waiting for a step.
+	let before: NodeId = session.selected();
+	session.select_next();
+	assert_ne!(session.selected(), before);
+	session.select_previous();
+	assert_eq!(session.selected(), before);
+
+	// Navigating away drops an open draft rather than carrying it to another node.
+	let left: NodeId = at(&session, "2 + 3");
+	session.select(left);
+	session.paste("5");
+	assert_eq!(session.input(), "5");
+	session.select_next();
+	assert!(session.draft().is_none());
+	assert!(session.input().is_empty());
+
+	// The draft refuses control characters and stops at its own limit.
+	session.select(at(&session, "2 + 3"));
+	assert!(!session.type_character('\n'));
+	assert!(!session.type_character('\t'));
+	assert!(session.input().is_empty());
+	session.paste(&"9".repeat(4096));
+	assert_eq!(session.input().len(), 2048);
+	assert!(!session.type_character('9'));
+	session.clear_input();
+	assert!(session.input().is_empty());
+	assert!(session.draft().is_some());
+	session.backspace();
+	session.cancel();
+	assert!(session.draft().is_none());
+	assert!(session.session().history().is_empty());
+}
+
+#[test]
+fn changing_question_archives_a_new_header_and_the_first_question_has_no_earlier_one() {
+	let mut session: Practice = practice(
+		vec![builtin("long-arithmetic")],
+		Progress::default(),
+		EvaluationMode::ShortCircuit,
+	);
+	let mut transcript: Transcript = Transcript::default();
+	// Nothing is archived before a step: just the language and this question's valuation.
+	let opening: Vec<String> = transcript.sync(&session);
+	assert_eq!(opening.len(), 2);
+	assert_eq!(opening[0], "Python 运算练习");
+	assert_eq!(opening[1], session.question().assignments());
+	assert!(opening[1].contains("a=2"));
+
+	// Moving to a generated question starts a fresh header block below the old state.
+	let previous: String = session.session().render().into();
+	assert!(session.next_question().unwrap());
+	let switched: Vec<String> = transcript.sync(&session);
+	assert_eq!(switched[0], previous);
+	assert_eq!(switched[1], "");
+	assert_eq!(switched[2], "Python 运算练习");
+	assert_eq!(switched[3], session.question().assignments());
+	assert!(transcript.sync(&session).is_empty());
+
+	// Going back before the first question keeps it, and still reports a recordable change.
+	assert!(session.previous_question().unwrap());
+	assert_eq!(session.question().id, "long-arithmetic");
+	assert_eq!(session.course().index(), 0);
+	assert!(session.previous_question().unwrap());
+	assert_eq!(session.question().id, "long-arithmetic");
+	assert_eq!(session.course().index(), 0);
+	assert_eq!(session.course().questions().len(), 2);
 }

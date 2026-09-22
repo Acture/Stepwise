@@ -47,6 +47,7 @@ fn draw_expression(frame: &mut Frame<'_>, screen: &mut Screen, area: Rect) -> Op
 		);
 	}
 	let mut cursor_index: Option<usize> = None;
+	let owners: Vec<Option<NodeId>> = screen.practice.node_owners();
 	let selected: Option<&Range<usize>> = ranges.get(&screen.practice.selected());
 	let mut index: usize = 0;
 	while index < source.len() {
@@ -65,7 +66,7 @@ fn draw_expression(frame: &mut Frame<'_>, screen: &mut Screen, area: Rect) -> Op
 			continue;
 		}
 		let character: char = source[index..].chars().next().expect("inside expression");
-		let node_id: Option<NodeId> = screen.practice.node_at(index);
+		let node_id: Option<NodeId> = owners[index];
 		let style: Style =
 			if selected.is_some_and(|range| range.contains(&index)) && edited.is_empty() {
 				Style::default().fg(Color::Cyan)

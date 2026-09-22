@@ -76,10 +76,8 @@ impl Course {
 		Ok(true)
 	}
 
-	/// Move back through the questions already drawn. False at the first one.
-	pub fn backward(&mut self) -> bool {
-		let moved: bool = self.index > 0;
+	/// Move back through the questions already drawn, stopping at the first one.
+	pub fn backward(&mut self) {
 		self.index = self.index.saturating_sub(1);
-		moved
 	}
 }
