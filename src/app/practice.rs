@@ -97,21 +97,32 @@ impl Practice {
 			.collect()
 	}
 
-	/// The node a byte of the rendered expression belongs to: the deepest one still waiting
-	/// for a step, so a part that already holds a value is not selectable.
-	pub fn node_at(&self, index: usize) -> Option<NodeId> {
-		let (_, ranges) = self.session.render_with_ranges();
-		self.session
-			.root()
-			.rows()
+	/// The node each byte of the rendered expression belongs to: the deepest one still
+	/// waiting for a step, so a part that already holds a value is not selectable. A front
+	/// end maps its own coordinates through this instead of walking the tree itself, and
+	/// one call answers a whole redraw.
+	pub fn node_owners(&self) -> Vec<Option<NodeId>> {
+		let (source, ranges) = self.session.render_with_ranges();
+		let mut owners: Vec<Option<(usize, NodeId)>> = vec![None; source.len()];
+		for (depth, node) in self.session.root().rows() {
+			if node.value().is_some() {
+				continue;
+			}
+			for index in ranges[&node.id].clone() {
+				// A deeper node wins the byte, and the last of equal depth, as display order.
+				if owners[index].is_none_or(|(covering, _)| depth >= covering) {
+					owners[index] = Some((depth, node.id));
+				}
+			}
+		}
+		owners
 			.into_iter()
-			.filter(|(_, node)| node.value().is_none() && ranges[&node.id].contains(&index))
-			.max_by_key(|(depth, _)| *depth)
-			.map(|(_, node)| node.id)
+			.map(|owner| owner.map(|(_, node_id)| node_id))
+			.collect()
 	}
 
 	/// The nodes still waiting for a step, in display order; the root when none remain.
-	pub fn selectable(&self) -> Vec<NodeId> {
+	fn selectable(&self) -> Vec<NodeId> {
 		let mut ids: Vec<NodeId> = self
 			.session
 			.root()
