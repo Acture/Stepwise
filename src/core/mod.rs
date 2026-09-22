@@ -4,8 +4,10 @@
 //! to [`crate::python`] and [`crate::logic`], reached only through [`Language`] and [`Op`];
 //! `language.rs` is the only file here that names them, and each language builds its own
 //! session through `Session::new`.
-//! The feedback sentences core itself prints are shared by both languages and predate this
-//! split; a few still use Python vocabulary and are kept byte-identical on purpose.
+//! Core words only what it judged — an attempt, or the next step a hint names. Those
+//! sentences are shared by both languages and predate this split; a few still use Python
+//! vocabulary and are kept byte-identical on purpose. It words nothing about the practice
+//! around a step; the layer above types those reasons and a front end says them.
 
 mod ast;
 mod error;

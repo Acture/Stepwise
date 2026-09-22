@@ -10,8 +10,9 @@ use crate::{
 };
 
 /// The keys this front end binds. Only the terminal knows them, so the sentence lives here
-/// rather than in the app layer.
-const HELP: &str = "点击当前式的子表达式 → 原位变成 ____ → 填值 → Enter 提交；填错不推进，Esc 取消。↑↓/j k 选择，PgUp/PgDn 滚动当前内容；历史使用终端自身滚动，s 短路开关，u 撤销，r 重做，n 下一道随机题，p 上一题，q 或 Ctrl+C 退出。";
+/// rather than in the app layer, next to the words [`super::say`] puts to every reason the
+/// app layer reports.
+pub(super) const HELP: &str = "点击当前式的子表达式 → 原位变成 ____ → 填值 → Enter 提交；填错不推进，Esc 取消。↑↓/j k 选择，PgUp/PgDn 滚动当前内容；历史使用终端自身滚动，s 短路开关，u 撤销，r 重做，n 下一道随机题，p 上一题，q 或 Ctrl+C 退出。";
 
 /// The terminal's own state around one practice: where each node was drawn, how the active
 /// area scrolls, and whether this run is ending. The [`Practice`] is the single source of

@@ -1,5 +1,6 @@
 use std::cmp::Ordering;
 
+use super::{Notice, Report};
 use crate::{
 	core::ParseError,
 	logic::proof::{Proof, ProofLine},
@@ -17,8 +18,7 @@ pub struct ProofPractice {
 	proof: Proof,
 	progress: Progress,
 	input: String,
-	feedback: String,
-	feedback_good: bool,
+	report: Report,
 }
 
 impl ProofPractice {
@@ -32,8 +32,7 @@ impl ProofPractice {
 			proof,
 			progress,
 			input: String::new(),
-			feedback: "下一行：公式 ; 规则 ; 引用行。Enter 检查，F1 查看规则。".into(),
-			feedback_good: false,
+			report: Report::Notice(Notice::ProofStart),
 		})
 	}
 
@@ -46,20 +45,17 @@ impl ProofPractice {
 	pub fn input(&self) -> &str {
 		&self.input
 	}
-	pub fn feedback(&self) -> &str {
-		&self.feedback
-	}
-	pub fn feedback_good(&self) -> bool {
-		self.feedback_good
+	/// What to show after the last operation; see [`super::Practice::report`].
+	pub fn report(&self) -> &Report {
+		&self.report
 	}
 	pub fn is_finished(&self) -> bool {
 		self.proof.is_finished()
 	}
 
-	/// Show a message the front end owns, such as the rule reference or its key help.
+	/// Show a sentence the front end owns, such as the rule reference or its key help.
 	pub fn note(&mut self, message: impl Into<String>) {
-		self.feedback = message.into();
-		self.feedback_good = false;
+		self.report = Report::Note(message.into());
 	}
 
 	/// Add one character to the draft. False when it is a control character or would pass
@@ -94,13 +90,17 @@ impl ProofPractice {
 		match self.proof.submit(&self.input) {
 			Ok(message) => {
 				self.input.clear();
-				self.feedback = message;
-				self.feedback_good = true;
+				self.report = Report::Taught {
+					message,
+					accepted: true,
+				};
 				true
 			}
 			Err(error) => {
-				self.feedback = error.to_string();
-				self.feedback_good = false;
+				self.report = Report::Taught {
+					message: error.to_string(),
+					accepted: false,
+				};
 				false
 			}
 		}
@@ -111,8 +111,7 @@ impl ProofPractice {
 		if !self.proof.undo() {
 			return false;
 		}
-		self.feedback = "已撤销上一行，并恢复对应的假设作用域。".into();
-		self.feedback_good = false;
+		self.report = Report::Notice(Notice::ProofUndone);
 		true
 	}
 

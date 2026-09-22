@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 
 use stepwise::{
-	app::{Course, Practice, ProofPractice, Supply, Transcript},
+	app::{Course, Notice, Practice, ProofPractice, Report, Supply, Transcript},
 	core::{EvaluationMode, Language, NodeId},
 	exercises::{self, Exercise},
 	generate,
@@ -22,6 +22,15 @@ fn builtin(id: &str) -> Exercise {
 
 fn practice(questions: Vec<Exercise>, progress: Progress, mode: EvaluationMode) -> Practice {
 	Practice::new(Course::random(questions, 0).unwrap(), progress, mode).unwrap()
+}
+
+/// The sentence the teaching rules worded. A reason carries none, and a test asking for
+/// one where the app layer reported a reason is itself the failure.
+fn taught(report: &Report) -> &str {
+	match report {
+		Report::Taught { message, .. } => message,
+		other => panic!("expected a sentence from the teaching rules, got {other:?}"),
+	}
 }
 
 /// Front ends point at a byte of the rendered expression, exactly as a click would.
@@ -43,20 +52,22 @@ fn a_whole_question_is_selected_answered_undone_and_resumed_without_a_terminal()
 	);
 	assert_eq!(session.session().render(), "2 + (3 * 4)");
 
-	// Selecting opens a blank and says so; it never fills in or reveals the value.
+	// Selecting opens a blank and reports why. The reason carries no sentence at all, so it
+	// cannot leak the value the way a worded prompt could.
 	let multiply: NodeId = at(&session, "3 * 4");
 	assert!(!session.select(multiply));
 	assert_eq!(session.draft(), Some(multiply));
 	assert!(session.input().is_empty());
-	assert_eq!(session.feedback(), "在 ____ 处填值，Enter 检查；Esc 取消。");
-	assert!(!session.feedback().contains("12"));
+	assert_eq!(session.report(), &Report::Notice(Notice::DraftOpen));
 	assert!(session.session().history().is_empty());
 	assert_eq!(session.draft_spans().len(), 1);
 
-	// A wrong answer keeps the draft and leaves the session exactly where it was.
+	// A wrong answer keeps the draft and leaves the session exactly where it was, and what
+	// the rules say about it still withholds the right answer.
 	session.paste("13");
 	assert!(!session.submit());
-	assert!(!session.feedback_good());
+	assert!(!session.report().good());
+	assert!(!taught(session.report()).contains("12"));
 	assert_eq!(session.input(), "13");
 	assert_eq!(session.session().render(), "2 + (3 * 4)");
 	assert!(session.session().attempts().is_empty());
@@ -64,7 +75,7 @@ fn a_whole_question_is_selected_answered_undone_and_resumed_without_a_terminal()
 	session.backspace();
 	assert!(session.type_character('2'));
 	assert!(session.submit());
-	assert!(session.feedback_good());
+	assert!(session.report().good());
 	assert_eq!(session.session().render(), "2 + (12)");
 	assert!(session.draft().is_none());
 
@@ -102,7 +113,7 @@ fn a_selection_the_rules_forbid_only_changes_the_feedback() {
 	let outer: NodeId = at(&session, "*");
 	assert!(!session.select(outer));
 	assert!(session.draft().is_none());
-	assert!(session.feedback().contains("不能跳过"));
+	assert!(taught(session.report()).contains("不能跳过"));
 	assert!(session.session().history().is_empty());
 
 	// A skipped branch stays unselectable while short circuit is on.
@@ -114,7 +125,7 @@ fn a_selection_the_rules_forbid_only_changes_the_feedback() {
 	let division: NodeId = at(&short, "/");
 	assert!(!short.select(division));
 	assert!(short.draft().is_none());
-	assert!(short.feedback().contains("跳过"));
+	assert!(taught(short.report()).contains("跳过"));
 	assert!(short.session().attempts().is_empty());
 }
 
@@ -258,7 +269,7 @@ fn an_ordered_course_stops_at_its_last_question_without_generating_one() {
 	assert!(!session.next_question().unwrap());
 	assert_eq!(session.question().id, "true-division");
 	assert_eq!(session.course().questions().len(), 2);
-	assert!(session.feedback().contains("最后一题"));
+	assert_eq!(session.report(), &Report::Notice(Notice::CourseEnded));
 
 	assert!(session.previous_question().unwrap());
 	assert_eq!(session.question().id, "precedence");
@@ -368,7 +379,7 @@ fn a_proof_is_submitted_undone_and_resumed_from_its_saved_commands() {
 	// Semantic equivalence never authorises a step.
 	session.paste("Q ; and-intro ; 1,2");
 	assert!(!session.submit());
-	assert!(!session.feedback_good());
+	assert!(!session.report().good());
 	assert_eq!(session.proof().lines().len(), 2);
 
 	session.clear_input();
@@ -406,11 +417,11 @@ fn the_draft_and_selection_contract_holds_without_a_front_end() {
 		Progress::default(),
 		EvaluationMode::ShortCircuit,
 	);
-	assert_eq!(session.feedback(), "点击一处 → ____ → 填值 → Enter。");
+	assert_eq!(session.report(), &Report::Notice(Notice::Start));
 
 	// A hint names the next step; it never opens a draft or fills one in.
 	session.hint();
-	assert!(session.feedback().contains("下一步选择"));
+	assert!(taught(session.report()).contains("下一步选择"));
 	assert!(session.draft().is_none());
 	assert!(session.session().attempts().is_empty());
 
@@ -445,6 +456,114 @@ fn the_draft_and_selection_contract_holds_without_a_front_end() {
 	session.cancel();
 	assert!(session.draft().is_none());
 	assert!(session.session().history().is_empty());
+}
+
+/// Every notice the app layer raises arrives as a reason with no sentence behind it, so a
+/// second front end answers the same reasons instead of copying the terminal's wording.
+#[test]
+fn every_notice_the_app_layer_raises_is_a_reason_and_carries_no_sentence() {
+	let pair: Exercise = Exercise {
+		id: "pair".into(),
+		title: "pair".into(),
+		expression: "2 + 3".into(),
+		goal: String::new(),
+		language: Language::Python,
+		bindings: BTreeMap::new(),
+	};
+	// A whole binary expression over two values opens its own blank and says why.
+	let mut session: Practice = practice(
+		vec![pair.clone()],
+		Progress::default(),
+		EvaluationMode::ShortCircuit,
+	);
+	assert_eq!(session.report(), &Report::Notice(Notice::FinalPair));
+	session.paste("5");
+	assert!(session.submit());
+	assert!(session.report().good());
+
+	// With no step left, a hint has nothing to name and reports that instead.
+	session.hint();
+	assert_eq!(session.report(), &Report::Notice(Notice::NoNextStep));
+
+	assert!(session.undo());
+	assert_eq!(session.report(), &Report::Notice(Notice::Undone));
+	assert!(session.reset().unwrap());
+	assert_eq!(session.report(), &Report::Notice(Notice::Restarted));
+
+	// Switching strategy reports which one is now running, not a sentence about it.
+	assert!(session.toggle_mode().unwrap());
+	assert_eq!(
+		session.report(),
+		&Report::Notice(Notice::ModeSwitched(EvaluationMode::Eager))
+	);
+	assert!(session.toggle_mode().unwrap());
+	assert_eq!(
+		session.report(),
+		&Report::Notice(Notice::ModeSwitched(EvaluationMode::ShortCircuit))
+	);
+
+	// A question a student has not finished opens on the starting reason.
+	let mut course: Practice = practice(
+		vec![builtin("precedence")],
+		Progress::default(),
+		EvaluationMode::ShortCircuit,
+	);
+	assert_eq!(course.report(), &Report::Notice(Notice::Start));
+	// A sentence the front end owns still passes through untouched.
+	course.note("front-end help");
+	assert_eq!(course.report(), &Report::Note("front-end help".into()));
+
+	// Proofs report their own two reasons the same way.
+	let goal: Proof = Proof::new(
+		vec![
+			parse_formula("P").unwrap(),
+			parse_formula("P -> Q").unwrap(),
+		],
+		parse_formula("Q").unwrap(),
+	);
+	let mut proof: ProofPractice = ProofPractice::new(goal, Progress::default()).unwrap();
+	assert_eq!(proof.report(), &Report::Notice(Notice::ProofStart));
+	proof.paste("Q ; mp ; 1,2");
+	assert!(proof.submit());
+	assert!(proof.report().good());
+	assert!(proof.undo());
+	assert_eq!(proof.report(), &Report::Notice(Notice::ProofUndone));
+	proof.note("front-end rules");
+	assert_eq!(proof.report(), &Report::Note("front-end rules".into()));
+}
+
+/// Taking a step back and starting the question over both shorten the attempts, and the
+/// archived record has to say which happened. That marker is the permanent record every
+/// front end writes, so the app layer words it rather than a front end — these are the
+/// exact lines, and this is the only place they are written.
+#[test]
+fn the_archived_marker_says_whether_a_step_was_taken_back_or_the_question_restarted() {
+	let mut session: Practice = practice(
+		vec![builtin("precedence")],
+		Progress::default(),
+		EvaluationMode::ShortCircuit,
+	);
+	let mut transcript: Transcript = Transcript::default();
+	assert_eq!(transcript.sync(&session), ["Python 运算练习"]);
+
+	let multiply: NodeId = at(&session, "3 * 4");
+	session.select(multiply);
+	session.paste("12");
+	assert!(session.submit());
+	assert_eq!(transcript.sync(&session), ["2 + (3 * 4)"]);
+
+	assert!(session.undo());
+	assert_eq!(session.report(), &Report::Notice(Notice::Undone));
+	assert_eq!(transcript.sync(&session), ["↶ 已撤销上一步。"]);
+
+	// Starting over reaches the same branch and has to be told apart from an undo.
+	session.select(multiply);
+	session.paste("12");
+	assert!(session.submit());
+	assert_eq!(transcript.sync(&session), ["2 + (3 * 4)"]);
+	assert!(session.reset().unwrap());
+	assert_eq!(session.report(), &Report::Notice(Notice::Restarted));
+	assert_eq!(transcript.sync(&session), ["↶ 已重新开始本题。"]);
 }
 
 #[test]
