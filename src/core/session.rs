@@ -216,14 +216,16 @@ impl Session {
 			.collect()
 	}
 
-	pub fn hint(&self) -> String {
-		match self.next_step() {
-			Some(step) => format!(
+	/// The next step worth naming, or `None` where none is left. A question with no next step
+	/// is a notice about the practice rather than something core judged, so core says nothing
+	/// about it and the layer above carries that reason instead.
+	pub fn hint(&self) -> Option<String> {
+		self.next_step().map(|step| {
+			format!(
 				"下一步选择：{}。先判断应用哪条规则，再填写值或异常名。",
 				self.root.find(step.node_id).expect("step exists").render()
-			),
-			None => "本题已结束。可以按 n 进入下一题，或按 u 撤销。".into(),
-		}
+			)
+		})
 	}
 
 	/// Validate the student's selection without supplying or revealing a replacement value.

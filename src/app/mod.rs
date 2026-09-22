@@ -10,17 +10,25 @@
 //! draft stands for, which node a character belongs to and which display states to archive
 //! all come from here.
 //!
+//! Wording runs the other way. A [`Report`] is a sentence the teaching rules already worded,
+//! a sentence a front end handed in through `note`, or a [`Notice`]: a closed reason with no
+//! sentence at all, because several of them can only be said by naming a key or an input
+//! device that a front end alone knows. Nothing here spells a notice, so a second front end
+//! answers the same reasons instead of copying a first one's words.
+//!
 //! Persistence stays at the boundary: the caller loads a [`crate::progress::Progress`],
 //! hands it over, and writes it back out after an operation reports a change. Deciding when
 //! to touch the disk belongs to the process that owns the terminal or the window.
 
 mod course;
+mod notice;
 mod practice;
 mod proof;
 mod start;
 mod transcript;
 
 pub use course::{Course, Supply};
+pub use notice::{Notice, Report};
 pub use practice::Practice;
 pub use proof::ProofPractice;
 pub use start::{resume_or_generate, starting_mode};

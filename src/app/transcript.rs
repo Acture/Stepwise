@@ -1,15 +1,46 @@
-use super::Practice;
+use super::{Notice, Practice, Report};
 use crate::core::{HistoryEntry, RecordedAttempt};
 
 /// A front end's cursor over the practice history: which display states it has already
 /// archived. The rule is a teaching one — archive a state only when the displayed text
 /// actually changed, and mark a step that was taken back — so a terminal and a window
 /// archive exactly the same lines.
+///
+/// The marker for a step taken back is worded here, like the one
+/// [`super::ProofPractice::appended`] writes. An archived line is the permanent record of
+/// what happened, so every front end writes the same one; a [`Notice`] is a live reason a
+/// front end answers in its own words. The two share their words with [`Notice::Undone`] and
+/// [`Notice::Restarted`] today and are free to stop: taking the marker from whatever the
+/// front end had just said would make the shared record front-end-specific, which is the one
+/// thing the rule above forbids.
 #[derive(Default)]
 pub struct Transcript {
 	key: String,
 	attempts: Vec<RecordedAttempt>,
 	current: String,
+}
+
+/// What the record says about a step that was taken back. Only an undo and a restart
+/// shorten the attempts, so every other reason reads as an undo — spelled out rather than
+/// waved through with a wildcard, because a reason added later has to be decided here too
+/// instead of quietly inheriting a marker that would misreport the record.
+fn taken_back(report: &Report) -> &'static str {
+	match report {
+		Report::Notice(Notice::Restarted) => "已重新开始本题。",
+		Report::Notice(
+			Notice::Undone
+			| Notice::Start
+			| Notice::DraftOpen
+			| Notice::FinalPair
+			| Notice::NoNextStep
+			| Notice::ModeSwitched(_)
+			| Notice::CourseEnded
+			| Notice::ProofStart
+			| Notice::ProofUndone,
+		)
+		| Report::Taught { .. }
+		| Report::Note(_) => "已撤销上一步。",
+	}
 }
 
 impl Transcript {
@@ -32,7 +63,7 @@ impl Transcript {
 		} else if attempts.starts_with(&self.attempts) {
 			self.attempts.len()
 		} else {
-			lines.push(format!("↶ {}", practice.feedback()));
+			lines.push(format!("↶ {}", taken_back(practice.report())));
 			attempts.len()
 		};
 		let history: &[HistoryEntry] = practice.session().history();

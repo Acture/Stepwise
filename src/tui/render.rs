@@ -9,21 +9,13 @@ use ratatui::{
 };
 use unicode_width::UnicodeWidthChar;
 
-use super::keys::Screen;
+use super::{keys::Screen, say};
 use crate::core::NodeId;
 
 pub(super) fn draw(frame: &mut Frame<'_>, screen: &mut Screen) -> Option<Position> {
 	screen.expression_area = Rect::default();
 	screen.expression_hits.clear();
 	draw_expression(frame, screen, frame.area())
-}
-
-fn feedback_style(screen: &Screen) -> Style {
-	Style::default().fg(if screen.practice.feedback_good() {
-		Color::Green
-	} else {
-		Color::Yellow
-	})
 }
 
 /// Each rendered character keeps the node the app layer puts under it. Inline drafts are
@@ -89,10 +81,12 @@ fn draw_expression(frame: &mut Frame<'_>, screen: &mut Screen, area: Rect) -> Op
 				.map(|character| (character, Style::default().fg(Color::Green), None)),
 		);
 	}
+	let (feedback, good): (String, bool) = say::feedback(screen.practice.report());
+	let style: Style = Style::default().fg(if good { Color::Green } else { Color::Yellow });
 	cells.extend(
-		format!("\n{}", screen.practice.feedback())
+		format!("\n{feedback}")
 			.chars()
-			.map(|character| (character, feedback_style(screen), None)),
+			.map(|character| (character, style, None)),
 	);
 	cells.extend(
 		"\nEnter确认 Esc取消 ?帮助 Ctrl+C退出"
