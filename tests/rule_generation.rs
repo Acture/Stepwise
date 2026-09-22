@@ -223,14 +223,17 @@ fn logic_groups_preserve_aliases_and_require_separate_steps() {
 
 #[test]
 fn long_exercises_use_the_same_rules_in_both_modes() {
-	let exercises: Vec<Exercise> = exercises::builtin().unwrap();
+	let exercises: Vec<Exercise> = exercises::builtin().unwrap().exercises().cloned().collect();
 	for (id, expected) in [
 		("long-arithmetic", "-0.5"),
 		("long-power", "-504.0"),
 		("long-python-logic", "True"),
 		("long-logic", "False"),
 	] {
-		let exercise: &Exercise = exercises.iter().find(|exercise| exercise.id == id).unwrap();
+		let exercise: &Exercise = exercises
+			.iter()
+			.find(|exercise| exercise.name == id)
+			.unwrap();
 		for mode in [EvaluationMode::ShortCircuit, EvaluationMode::Eager] {
 			let mut session: Session = exercise.session(mode).unwrap();
 			while let Some(step) = session.next_step() {

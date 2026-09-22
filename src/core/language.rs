@@ -4,10 +4,9 @@ use super::{EvaluationMode, Expr, Outcome, ParseError, Value};
 
 /// The teaching languages. Core owns the shared flow; each language owns its own
 /// parsing, operator rules and explanations, reached only through this interface.
-#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum Language {
-	#[default]
 	Python,
 	Logic,
 }
@@ -48,6 +47,15 @@ impl Language {
 		match self {
 			Self::Python => crate::python::parse_value(input),
 			Self::Logic => crate::logic::parse_truth(input).map(Value::Bool),
+		}
+	}
+
+	/// What a binding literal of this language must look like, for a question file that got
+	/// one wrong. The language owns the words, as it owns the literals.
+	pub fn literal_form(self) -> &'static str {
+		match self {
+			Self::Python => crate::python::LITERAL_FORM,
+			Self::Logic => crate::logic::LITERAL_FORM,
 		}
 	}
 

@@ -30,12 +30,15 @@ pub fn generate(language: Language, seed: u64) -> Result<Exercise, ParseError> {
 			Language::Logic => crate::logic::generate::sample(&mut builder, count),
 		};
 		let exercise: Exercise = Exercise {
-			id: format!("{PREFIX}{}-{seed}", language.key()),
+			// A generated question belongs to no set; its seeded ID is its whole identity.
+			set: String::new(),
+			name: format!("{PREFIX}{}-{seed}", language.key()),
 			title: "随机练习".into(),
 			expression: formula.text,
-			goal: "每次应用一条规则；n 下一道随机题，p 返回本次练习的上一题。".into(),
 			language,
 			bindings: builder.bindings.clone(),
+			evaluation: None,
+			note: None,
 		};
 		if suitable(&exercise)? {
 			return Ok(exercise);
@@ -46,12 +49,12 @@ pub fn generate(language: Language, seed: u64) -> Result<Exercise, ParseError> {
 	)))
 }
 
-/// The ID is a versioned seed, so the current random question resumes without a second store.
-pub fn restore(id: &str) -> Result<Option<Exercise>, ParseError> {
-	if !id.starts_with("random-") {
+/// The name is a versioned seed, so the current random question resumes without a second store.
+pub fn restore(name: &str) -> Result<Option<Exercise>, ParseError> {
+	if !name.starts_with("random-") {
 		return Ok(None);
 	}
-	let suffix: &str = id.strip_prefix(PREFIX).ok_or_else(|| {
+	let suffix: &str = name.strip_prefix(PREFIX).ok_or_else(|| {
 		ParseError("无法恢复这个版本的随机题。请用 --random 开始新题，原进度保留。".into())
 	})?;
 	let (language, seed): (&str, &str) = suffix

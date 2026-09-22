@@ -1,0 +1,233 @@
+# Stepwise 内置题集。格式与外部导入的题集完全相同：同一个协议，同一条加载路径。
+# 字段说明与编写方法见 README「题集文件」，可直接运行的示例见 questions/example.toml。
+
+version = 1
+name = "builtin"
+title = "内置题库"
+description = "随程序一起发行的默认题集：Python 求值与命题逻辑求值。"
+
+[[questions]]
+kind = "evaluation"
+name = "precedence"
+title = "先乘后加"
+language = "python"
+expression = "2 + (3 * 4)"
+note = "选出下一步执行的子表达式，再填入它的值。"
+
+[[questions]]
+kind = "evaluation"
+name = "independent-sums"
+title = "同优先级任选"
+language = "python"
+expression = "(2 + 3) * (4 + 5)"
+note = "两边的加法可任选先后，括号仍须单独处理。"
+
+[[questions]]
+kind = "evaluation"
+name = "short-circuit"
+title = "跳过的右边"
+language = "python"
+expression = "False and (3 / 0 > 1)"
+note = "括号里的运算一定会执行吗？"
+
+[[questions]]
+kind = "evaluation"
+name = "true-division"
+title = "除法的类型"
+language = "python"
+expression = "6 / (1 + 2)"
+note = "结果的类型也是答案的一部分。"
+
+[[questions]]
+kind = "evaluation"
+name = "floor-division"
+title = "负数整除"
+language = "python"
+expression = "-7 // 3"
+note = "一元负号也是一步；随后观察向下取整。"
+
+[[questions]]
+kind = "evaluation"
+name = "modulo"
+title = "余数的符号"
+language = "python"
+expression = "7 % -3"
+note = "Python 的余数和除数有什么关系？"
+
+[[questions]]
+kind = "evaluation"
+name = "operand-return"
+title = "不只是布尔值"
+language = "python"
+expression = "(0 or 5) and (2 + 3)"
+note = "and 和 or 返回哪个操作数？"
+
+[[questions]]
+kind = "evaluation"
+name = "not"
+title = "判断真假"
+language = "python"
+expression = "not (2 > 3)"
+note = "比较和 not 各应用一次规则。"
+
+[[questions]]
+kind = "evaluation"
+name = "power"
+title = "乘方与负号"
+language = "python"
+expression = "-2 ** 2"
+note = "负号和乘方，谁先结合？"
+
+[[questions]]
+kind = "evaluation"
+name = "exception"
+title = "在哪里停止"
+language = "python"
+expression = "(1 + 2) / (3 - 3)"
+note = "如果没有数值结果，填写 Python 异常名，例如 ZeroDivisionError。"
+
+[[questions]]
+kind = "evaluation"
+name = "or-short-circuit"
+title = "真值也会短路"
+language = "python"
+expression = "3 or (1 / 0)"
+note = "选位置、填结果，同时保留操作数的类型。"
+
+[[questions]]
+kind = "evaluation"
+name = "bool-arithmetic"
+title = "布尔值参加运算"
+language = "python"
+expression = "True + (False == 0)"
+note = "相等比较与答案的类型检查是两件不同的事。"
+
+[[questions]]
+kind = "evaluation"
+name = "long-arithmetic"
+title = "长公式：混合算术与变量"
+language = "python"
+expression = "(a + b * c ** 2 - d // e % f) / (g - h) + -i ** 2 + j ** -k"
+note = "变量可任意顺序代入；区分乘方、一元负号、乘除整除余数和加减，括号另走一步。"
+
+[questions.bindings]
+a = "2"
+b = "3"
+c = "2"
+d = "17"
+e = "3"
+f = "4"
+g = "10"
+h = "6"
+i = "2"
+j = "2"
+k = "2"
+
+[[questions]]
+kind = "evaluation"
+name = "long-power"
+title = "长公式：乘方结合方向"
+language = "python"
+expression = "-a ** b ** c + (-d) ** e + f * g // h % i - j / (k + m)"
+note = "变量可任意顺序代入，乘方仍按右结合的结构计算；比较 -a ** b 和 (-d) ** e。"
+
+[questions.bindings]
+a = "2"
+b = "3"
+c = "2"
+d = "3"
+e = "2"
+f = "5"
+g = "7"
+h = "3"
+i = "4"
+j = "12"
+k = "1"
+m = "2"
+
+[[questions]]
+kind = "evaluation"
+name = "long-python-logic"
+title = "长公式：比较、真假值与短路"
+language = "python"
+expression = "not (a + b * c ** 2 <= limit) and (flag or d // e % f == target) or (not spare and g / h != ratio)"
+note = "比较算术、比较、not、and、or 的优先级，切换短路观察哪些子式会被跳过。"
+
+[questions.bindings]
+a = "2"
+b = "3"
+c = "2"
+limit = "10"
+flag = "False"
+d = "17"
+e = "3"
+f = "4"
+target = "1"
+spare = "False"
+g = "9"
+h = "3"
+ratio = "4.0"
+
+[[questions]]
+kind = "evaluation"
+name = "logic-and"
+title = "合取与否定"
+language = "logic"
+expression = "P & ~Q"
+note = "先代入命题真值，再应用逻辑联结词。"
+
+[questions.bindings]
+P = "True"
+Q = "False"
+
+[[questions]]
+kind = "evaluation"
+name = "logic-implies"
+title = "实质蕴涵"
+language = "logic"
+expression = "P -> (Q | ~P)"
+note = "用 s 切换短路策略，比较求值过程。"
+
+[questions.bindings]
+P = "False"
+Q = "True"
+
+[[questions]]
+kind = "evaluation"
+name = "logic-iff"
+title = "蕴涵与等价"
+language = "logic"
+expression = "(P -> Q) <-> (~P | Q)"
+note = "当前赋值下相同，不足以证明所有赋值下等价。"
+
+[questions.bindings]
+P = "True"
+Q = "False"
+
+[[questions]]
+kind = "evaluation"
+name = "logic-demorgan"
+title = "德摩根律的一行真值"
+language = "logic"
+expression = "~(P & Q) <-> (~P | ~Q)"
+note = "本题只计算这个赋值；等价检查另用 --equivalent。"
+
+[questions.bindings]
+P = "True"
+Q = "True"
+
+[[questions]]
+kind = "evaluation"
+name = "long-logic"
+title = "长公式：五种联结词与嵌套"
+language = "logic"
+expression = "¬P ∧ Q ∨ R → S ↔ (P → Q → R) ∧ ¬(S ∨ U) ∨ ((V ↔ Q) ∧ (R → ¬U))"
+note = "非、且、或、蕴涵、等价：按优先级逐步代入和求值，逐层去括号。"
+
+[questions.bindings]
+P = "True"
+Q = "False"
+R = "True"
+S = "False"
+U = "False"
+V = "True"

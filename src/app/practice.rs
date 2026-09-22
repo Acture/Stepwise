@@ -320,7 +320,8 @@ impl Practice {
 	/// Copy this question's attempts into the progress snapshot. Writing that snapshot out
 	/// belongs to the caller, so the app layer never touches the file system.
 	pub fn record(&mut self) {
+		let question: &Exercise = self.course.current();
 		self.progress
-			.record(&self.course.current().id, &self.session);
+			.record(&question.set, &question.name, &self.session);
 	}
 }
