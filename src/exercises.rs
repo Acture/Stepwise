@@ -46,7 +46,7 @@ pub struct QuestionSet {
 	/// Stable across edits and moves. Saved progress follows this name, never the path the
 	/// file happens to sit at, so renaming the file keeps the work and renaming the set
 	/// deliberately parts with it.
-	pub id: String,
+	pub name: String,
 	pub title: String,
 	#[serde(default)]
 	pub description: Option<String>,
@@ -77,12 +77,16 @@ pub struct Exercise {
 	/// other's work.
 	#[serde(skip)]
 	pub set: String,
-	pub id: String,
+	pub name: String,
 	pub title: String,
 	pub language: Language,
 	pub expression: String,
-	/// The prose shown with the question, not a formula.
-	pub goal: String,
+	/// Optional prose for a front end to show. Nothing can check it — a sentence is either
+	/// true of the question or it is not, and only a reader can tell — so nothing requires
+	/// it either. A question with no note is complete: every step, value and explanation
+	/// comes from the rules applied to `expression`.
+	#[serde(default)]
+	pub note: Option<String>,
 	/// Source literals of `language`, parsed by that language alone: `"0"` is not `"0.0"`,
 	/// `"-0.0"` is not `"0.0"`, and `"True"` is not `"1"`. Writing them as TOML numbers would
 	/// lose exactly those distinctions, so they stay strings.
@@ -94,19 +98,22 @@ pub struct Exercise {
 	pub evaluation: Option<EvaluationMode>,
 }
 
-/// A natural-deduction question. `conclusion` is the formula to derive; `goal` is prose, as
-/// it is on [`Exercise`]. Short circuit is an evaluation strategy and has no meaning here,
-/// so `deny_unknown_fields` refuses an `evaluation` field on this type.
+/// A natural-deduction question: the premises given and the formula to derive. Short circuit
+/// is an evaluation strategy and has no meaning here, so `deny_unknown_fields` refuses an
+/// `evaluation` field on this type.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProofQuestion {
-	pub id: String,
+	pub name: String,
 	pub title: String,
-	/// The prose shown with the question, not a formula.
-	pub goal: String,
 	#[serde(default)]
 	pub premises: Vec<String>,
+	/// The formula to derive. Unlike the prose beside it, this one is checked: the proof is
+	/// finished only when the rules put it outside every assumption.
 	pub conclusion: String,
+	/// Optional prose, as on [`Exercise::note`].
+	#[serde(default)]
+	pub note: Option<String>,
 }
 
 /// Why a set was refused. Both spell the question and the field to correct; neither names a
@@ -190,10 +197,10 @@ impl QuestionSet {
 			.into());
 		}
 		let mut set: Self = toml::from_str(text).map_err(|error| SetError::Syntax(error.into()))?;
-		let name: String = set.id.clone();
+		let owner: String = set.name.clone();
 		for question in &mut set.questions {
 			if let Question::Evaluation(exercise) = question {
-				exercise.set = name.clone();
+				exercise.set = owner.clone();
 			}
 		}
 		set.validate()?;
@@ -204,7 +211,7 @@ impl QuestionSet {
 	/// a file has to answer — it may not call itself [`BUILTIN_SET`].
 	pub fn import(text: &str) -> Result<Self, SetError> {
 		let set: Self = Self::parse(text)?;
-		if set.id == BUILTIN_SET {
+		if set.name == BUILTIN_SET {
 			return Err(Invalid::set(
 				"id",
 				format!("题集 ID {BUILTIN_SET} 留给内置题集；进度按 ID 保存，请另取一个 ID。"),
@@ -220,8 +227,10 @@ impl QuestionSet {
 	pub fn questions(&self) -> &[Question] {
 		&self.questions
 	}
-	pub fn find(&self, id: &str) -> Option<&Question> {
-		self.questions.iter().find(|question| question.id() == id)
+	pub fn find(&self, name: &str) -> Option<&Question> {
+		self.questions
+			.iter()
+			.find(|question| question.name() == name)
 	}
 	/// Every evaluation question, in the order the set lists them. The embedded set stays
 	/// reachable this way without going through a file.
@@ -239,10 +248,10 @@ impl QuestionSet {
 	}
 
 	fn validate(&self) -> Result<(), Invalid> {
-		if self.id.trim().is_empty() {
+		if self.name.trim().is_empty() {
 			return Err(Invalid::set(
-				"id",
-				"题集 ID 不能为空：进度按它保存，换一个 ID 就是另一套题。".into(),
+				"name",
+				"题集名称不能为空：进度按它保存，换一个名称就是另一套题。".into(),
 			));
 		}
 		if self.title.trim().is_empty() {
@@ -262,20 +271,20 @@ impl QuestionSet {
 		}
 		let mut seen: BTreeSet<&str> = BTreeSet::new();
 		for (index, question) in self.questions.iter().enumerate() {
-			let id: &str = question.id();
-			if id.trim().is_empty() {
-				// There is no name to quote, so the position in the file is the locator.
+			let name: &str = question.name();
+			if name.trim().is_empty() {
+				// There is nothing to quote, so the position in the file is the locator.
 				return Err(Invalid::question(
 					&format!("#{}", index + 1),
-					"id",
-					"题目 ID 不能为空。".into(),
+					"name",
+					"题目名称不能为空。".into(),
 				));
 			}
-			if !seen.insert(id) {
+			if !seen.insert(name) {
 				return Err(Invalid::question(
-					id,
-					"id",
-					"题目 ID 在同一题集内重复。".into(),
+					name,
+					"name",
+					"题目名称在同一题集内重复。".into(),
 				));
 			}
 			question.validate()?;
@@ -300,9 +309,9 @@ impl Invalid {
 			message,
 		}
 	}
-	fn question(id: &str, field: &'static str, message: String) -> Self {
+	fn question(name: &str, field: &'static str, message: String) -> Self {
 		Self {
-			question: Some(id.into()),
+			question: Some(name.into()),
 			field,
 			message,
 		}
@@ -310,10 +319,10 @@ impl Invalid {
 }
 
 impl Question {
-	pub fn id(&self) -> &str {
+	pub fn name(&self) -> &str {
 		match self {
-			Self::Evaluation(exercise) => &exercise.id,
-			Self::Proof(question) => &question.id,
+			Self::Evaluation(exercise) => &exercise.name,
+			Self::Proof(question) => &question.name,
 		}
 	}
 	pub fn title(&self) -> &str {
@@ -339,7 +348,7 @@ impl Question {
 	fn validate(&self) -> Result<(), Invalid> {
 		if self.title().trim().is_empty() {
 			return Err(Invalid::question(
-				self.id(),
+				self.name(),
 				"title",
 				"题目标题不能为空。".into(),
 			));
@@ -388,14 +397,6 @@ impl Exercise {
 			.collect::<Vec<_>>()
 			.join(" ")
 	}
-	pub fn prompt(&self) -> String {
-		if self.bindings.is_empty() {
-			self.goal.clone()
-		} else {
-			format!("赋值：{}。{}", self.assignments(), self.goal)
-		}
-	}
-
 	/// A question a student can actually be given: every literal is one this language reads,
 	/// and the source parses against exactly these names. A question that ends in an
 	/// exception is legal teaching material and passes.
@@ -409,7 +410,7 @@ impl Exercise {
 			// meant for a student typing an answer.
 			if parsed.is_err() {
 				return Err(Invalid::question(
-					&self.id,
+					&self.name,
 					"bindings",
 					format!(
 						"{name} = \"{literal}\" 不是可用的取值；这里要写{}。",
@@ -420,7 +421,7 @@ impl Exercise {
 		}
 		self.session(self.mode())
 			.map(drop)
-			.map_err(|error| Invalid::question(&self.id, "expression", error.to_string()))
+			.map_err(|error| Invalid::question(&self.name, "expression", error.to_string()))
 	}
 }
 
@@ -444,7 +445,7 @@ impl ProofQuestion {
 	fn validate(&self) -> Result<(), Invalid> {
 		if self.premises.len() > MAX_PREMISES {
 			return Err(Invalid::question(
-				&self.id,
+				&self.name,
 				"premises",
 				format!(
 					"证明题有 {} 条前提，超过上限 {MAX_PREMISES} 条。",
@@ -455,7 +456,7 @@ impl ProofQuestion {
 		for (index, source) in self.premises.iter().enumerate() {
 			parse_formula(source).map_err(|error| {
 				Invalid::question(
-					&self.id,
+					&self.name,
 					"premises",
 					format!("第 {} 条「{source}」：{error}", index + 1),
 				)
@@ -463,12 +464,12 @@ impl ProofQuestion {
 		}
 		parse_formula(&self.conclusion)
 			.map(drop)
-			.map_err(|error| Invalid::question(&self.id, "conclusion", error.to_string()))
+			.map_err(|error| Invalid::question(&self.name, "conclusion", error.to_string()))
 	}
 }
 
 /// The set that ships inside the binary: the default value of the one load path, read from
 /// the same TOML protocol an imported file uses.
 pub fn builtin() -> Result<QuestionSet, SetError> {
-	QuestionSet::parse(include_str!("../assets/exercises.toml"))
+	QuestionSet::parse(include_str!("../questions/builtin.toml"))
 }

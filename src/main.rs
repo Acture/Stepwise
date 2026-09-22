@@ -116,13 +116,13 @@ fn no_questions(set: &QuestionSet, language: Language) -> String {
 	if proofs {
 		format!(
 			"题集 {} 里 --{} 只有证明题；用 --exercise ID 选一道，或用 --list 查看。",
-			set.id,
+			set.name,
 			language.key()
 		)
 	} else {
 		format!(
 			"题集 {} 里没有 --{} 的题目；用 --list 查看题集内容。",
-			set.id,
+			set.name,
 			language.key()
 		)
 	}
@@ -136,7 +136,7 @@ fn choose(
 	id: &str,
 	language: Language,
 ) -> Result<usize, Box<dyn Error>> {
-	if let Some(index) = questions.iter().position(|exercise| exercise.id == id) {
+	if let Some(index) = questions.iter().position(|exercise| exercise.name == id) {
 		return Ok(index);
 	}
 	Err(match set.find(id) {
@@ -148,7 +148,7 @@ fn choose(
 		),
 		None => format!(
 			"题集 {} 里没有题目 {id}；用 --{} --list 查看可用 ID。",
-			set.id,
+			set.name,
 			language.key()
 		),
 	}
@@ -269,7 +269,11 @@ fn execute(args: Args) -> Result<(), Box<dyn Error>> {
 				}
 				Question::Proof(proof) => (proof.sequent(), String::new()),
 			};
-			println!("{}\t{}\t{source}\t{extra}", question.id(), question.title());
+			println!(
+				"{}\t{}\t{source}\t{extra}",
+				question.name(),
+				question.title()
+			);
 			listed += 1;
 		}
 		if listed == 0 {
@@ -302,7 +306,7 @@ fn execute(args: Args) -> Result<(), Box<dyn Error>> {
 	// A set's proof question opens the same practice, checked by the same rules.
 	if let Some(Question::Proof(question)) = args.exercise.as_deref().and_then(|id| set.find(id)) {
 		if language != Language::Logic {
-			return Err(format!("题目 {} 是证明题，请改用 --logic。", question.id).into());
+			return Err(format!("题目 {} 是证明题，请改用 --logic。", question.name).into());
 		}
 		if args.trace {
 			return Err("证明题没有逐步演示；用 --check-proof 检查已保存的步骤。".into());
@@ -315,7 +319,7 @@ fn execute(args: Args) -> Result<(), Box<dyn Error>> {
 		.flatten()
 		.next()
 		{
-			return Err(format!("题目 {} 是证明题，{flag} 对它没有意义。", question.id).into());
+			return Err(format!("题目 {} 是证明题，{flag} 对它没有意义。", question.name).into());
 		}
 		return tui::run_proof(question.proof()?, progress, path);
 	}
@@ -331,7 +335,7 @@ fn execute(args: Args) -> Result<(), Box<dyn Error>> {
 	} else if let Some(expression) = args.expression {
 		questions = vec![Exercise {
 			set: String::new(),
-			id: if args.logic {
+			name: if args.logic {
 				"custom-logic"
 			} else {
 				"custom-python"
@@ -340,9 +344,9 @@ fn execute(args: Args) -> Result<(), Box<dyn Error>> {
 			title: "自定义练习".into(),
 			language,
 			expression,
-			goal: "同名变量一起代入，同优先级的独立子式任选先后。".into(),
 			bindings: BTreeMap::new(),
 			evaluation: None,
+			note: None,
 		}];
 		0
 	} else if let Some(id) = &args.exercise {
@@ -359,7 +363,7 @@ fn execute(args: Args) -> Result<(), Box<dyn Error>> {
 		}
 		questions
 			.iter()
-			.position(|exercise| progress.points_at(&exercise.set, &exercise.id))
+			.position(|exercise| progress.points_at(&exercise.set, &exercise.name))
 			.unwrap_or(0)
 	} else {
 		questions = vec![app::resume_or_generate(language, &progress, &questions)?];

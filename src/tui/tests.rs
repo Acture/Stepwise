@@ -37,13 +37,13 @@ fn custom(source: &str, language: Language, mode: EvaluationMode) -> Screen {
 	screen(
 		vec![Exercise {
 			set: String::new(),
-			id: "test".into(),
+			name: "test".into(),
 			title: "test".into(),
 			expression: source.into(),
-			goal: String::new(),
 			language,
 			bindings: Default::default(),
 			evaluation: None,
+			note: None,
 		}],
 		Progress::default(),
 		0,
@@ -178,16 +178,16 @@ fn click_creates_inline_blank_and_only_correct_answer_appends_history() {
 fn clicking_a_repeated_variable_blanks_and_substitutes_every_occurrence() {
 	let exercise: Exercise = Exercise {
 		set: String::new(),
-		id: "repeated-variable".into(),
+		name: "repeated-variable".into(),
 		title: "repeated variable".into(),
 		expression: "x + y * x".into(),
-		goal: String::new(),
 		language: Language::Python,
 		bindings: std::collections::BTreeMap::from([
 			("x".into(), "2".into()),
 			("y".into(), "3".into()),
 		]),
 		evaluation: None,
+		note: None,
 	};
 	let mut app: Screen = screen(
 		vec![exercise],
@@ -212,13 +212,13 @@ fn clicking_a_repeated_variable_blanks_and_substitutes_every_occurrence() {
 fn final_pair_auto_blank_survives_resume_undo_and_reset_without_auto_solving() {
 	let exercise: Exercise = Exercise {
 		set: String::new(),
-		id: "variables".into(),
+		name: "variables".into(),
 		title: "variables".into(),
 		expression: "x + 3".into(),
-		goal: String::new(),
 		language: Language::Python,
 		bindings: std::collections::BTreeMap::from([("x".into(), "2".into())]),
 		evaluation: None,
+		note: None,
 	};
 	let mut app: Screen = screen(
 		vec![exercise.clone()],
@@ -477,7 +477,7 @@ fn long_logic_conjunction_click_is_accepted_before_disjunction_and_implication()
 	let exercise: Exercise = exercises::builtin()
 		.unwrap()
 		.exercises()
-		.find(|exercise| exercise.id == "long-logic")
+		.find(|exercise| exercise.name == "long-logic")
 		.unwrap()
 		.clone();
 	let mut app: Screen = screen(
@@ -535,7 +535,12 @@ fn next_generates_questions_and_previous_restores_the_prior_attempts() {
 	app.handle(Event::Paste("12".into())).unwrap();
 	assert!(app.handle(key(KeyCode::Enter)).unwrap());
 	assert!(app.handle(key(KeyCode::Char('n'))).unwrap());
-	assert!(app.practice.question().id.starts_with("random-v1-python-"));
+	assert!(
+		app.practice
+			.question()
+			.name
+			.starts_with("random-v1-python-")
+	);
 	let generated: String = app.practice.session().source().into();
 	assert_ne!(first, generated);
 	assert!(!app.practice.question().bindings.is_empty());
