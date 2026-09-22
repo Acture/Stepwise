@@ -223,7 +223,7 @@ fn logic_groups_preserve_aliases_and_require_separate_steps() {
 
 #[test]
 fn long_exercises_use_the_same_rules_in_both_modes() {
-	let exercises: Vec<Exercise> = exercises::builtin().unwrap();
+	let exercises: Vec<Exercise> = exercises::builtin().unwrap().exercises().cloned().collect();
 	for (id, expected) in [
 		("long-arithmetic", "-0.5"),
 		("long-power", "-504.0"),

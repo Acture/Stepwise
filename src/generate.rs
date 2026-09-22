@@ -30,12 +30,15 @@ pub fn generate(language: Language, seed: u64) -> Result<Exercise, ParseError> {
 			Language::Logic => crate::logic::generate::sample(&mut builder, count),
 		};
 		let exercise: Exercise = Exercise {
+			// A generated question belongs to no set; its seeded ID is its whole identity.
+			set: String::new(),
 			id: format!("{PREFIX}{}-{seed}", language.key()),
 			title: "随机练习".into(),
 			expression: formula.text,
 			goal: "每次应用一条规则；n 下一道随机题，p 返回本次练习的上一题。".into(),
 			language,
 			bindings: builder.bindings.clone(),
+			evaluation: None,
 		};
 		if suitable(&exercise)? {
 			return Ok(exercise);

@@ -11,10 +11,19 @@ use tempfile::NamedTempFile;
 
 use crate::core::{EvaluationMode, RecordedAttempt, Session};
 
+/// The progress format this build reads. Version 1 predates question sets, so its pointer
+/// names a question without naming the set it came from; such a file is refused rather than
+/// half-read, and is left exactly as it was.
+const VERSION: u32 = 2;
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Progress {
 	version: u32,
+	/// The set [`Progress::current`] came from, empty for a random or custom question that
+	/// belongs to none. Paired with the ID it makes the pointer unambiguous: two sets may
+	/// both name a question `q1` without ever reopening each other's work.
+	pub current_set: String,
 	pub current: String,
 	pub mode: EvaluationMode,
 	/// Key includes both strategy and source; progress must not cross semantic modes.
@@ -25,7 +34,8 @@ pub struct Progress {
 impl Default for Progress {
 	fn default() -> Self {
 		Self {
-			version: 1,
+			version: VERSION,
+			current_set: String::new(),
 			current: String::new(),
 			mode: EvaluationMode::ShortCircuit,
 			sessions: BTreeMap::new(),
@@ -47,25 +57,39 @@ impl Progress {
 	}
 
 	pub fn load(path: &Path) -> io::Result<Self> {
-		let file: fs::File = match fs::File::open(path) {
-			Ok(file) => file,
+		let text: String = match fs::read_to_string(path) {
+			Ok(text) => text,
 			Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Self::default()),
 			Err(error) => return Err(error),
 		};
-		let progress: Self = serde_json::from_reader(file).map_err(io::Error::other)?;
-		if progress.version != 1 {
+		// The version is read on its own first. A file from another build has fields this one
+		// does not know, and a raw deserializer complaint would bury the reason.
+		#[derive(Deserialize)]
+		struct Declared {
+			version: u32,
+		}
+		let declared: Declared = serde_json::from_str(&text).map_err(io::Error::other)?;
+		if declared.version != VERSION {
 			return Err(io::Error::other(
 				"不支持的进度版本；请指定新的 --progress-file 或使用 --no-save。原文件未改动。",
 			));
 		}
-		Ok(progress)
+		serde_json::from_str(&text).map_err(io::Error::other)
 	}
 
-	pub fn record(&mut self, exercise_id: &str, session: &Session) {
+	/// Point at this question and save its attempts. The set name travels with the ID, so
+	/// the pointer names one question of one set and nothing else.
+	pub fn record(&mut self, set: &str, exercise_id: &str, session: &Session) {
+		self.current_set = set.into();
 		self.current = exercise_id.into();
 		self.mode = session.mode();
 		self.sessions
 			.insert(session.progress_key(), session.attempts().to_vec());
+	}
+
+	/// True when the saved pointer names exactly this question of exactly this set.
+	pub fn points_at(&self, set: &str, exercise_id: &str) -> bool {
+		self.current_set == set && self.current == exercise_id
 	}
 
 	pub fn attempts(&self, session: &Session) -> &[RecordedAttempt] {

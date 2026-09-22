@@ -8,6 +8,10 @@ mod op;
 pub mod proof;
 
 pub use formula::{Formula, parse_formula, parse_truth};
+
+/// What a propositional binding literal looks like, for a question file that wrote something
+/// else. Logic owns these words, as it owns the truth values.
+pub const LITERAL_FORM: &str = "真值 True / False（也接受 true/false、T / F、真 / 假）";
 pub use op::{LogicOp, Op};
 
 use std::collections::BTreeMap;

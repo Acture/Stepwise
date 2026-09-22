@@ -81,7 +81,7 @@ fn versioned_seed_restores_the_exact_question_and_partial_progress() {
 			);
 		}
 		let mut progress: Progress = Progress::default();
-		progress.record(&exercise.id, &session);
+		progress.record(&exercise.set, &exercise.id, &session);
 		progress.save(&path).unwrap();
 		let progress: Progress = Progress::load(&path).unwrap();
 		let restored: Exercise = generate::restore(&progress.current).unwrap().unwrap();
@@ -180,7 +180,7 @@ fn seeded_random_cli_is_repeatable_and_rejects_conflicting_modes() {
 		assert!(
 			!stepwise::exercises::builtin()
 				.unwrap()
-				.iter()
+				.exercises()
 				.any(|exercise| exercise.expression == source)
 		);
 	}
