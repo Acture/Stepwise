@@ -14,6 +14,7 @@ use ratatui::{
 
 use super::{
 	inline::{InlineTerminal, TerminalGuard},
+	say,
 	viewport::{self, Scroll},
 };
 use crate::{
@@ -99,13 +100,12 @@ impl ProofScreen {
 			.style(Style::default().fg(Color::Cyan)),
 			header,
 		);
-		let text: Text<'_> = Text::raw(self.practice.feedback().to_owned()).style(
-			Style::default().fg(if self.practice.feedback_good() {
-				Color::Green
-			} else {
-				Color::Yellow
-			}),
-		);
+		let (feedback, good): (String, bool) = say::feedback(self.practice.report());
+		let text: Text<'_> = Text::raw(feedback).style(Style::default().fg(if good {
+			Color::Green
+		} else {
+			Color::Yellow
+		}));
 		viewport::draw_text(frame, body, text, &mut self.scroll);
 		let cursor: Option<Position> = viewport::draw_input(frame, input, self.practice.input());
 		frame.render_widget(

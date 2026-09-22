@@ -8,9 +8,9 @@ use ratatui::{
 };
 use unicode_width::UnicodeWidthStr;
 
-use super::{inline, keys::Screen, render};
+use super::{inline, keys::Screen, render, say};
 use crate::{
-	app::{Course, Practice, Transcript},
+	app::{Course, Notice, Practice, Report, Transcript},
 	core::{EvaluationMode, Language, NodeId},
 	exercises::{self, Exercise},
 	progress::Progress,
@@ -50,6 +50,10 @@ fn custom(source: &str, language: Language, mode: EvaluationMode) -> Screen {
 }
 fn key(code: KeyCode) -> Event {
 	Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
+}
+/// The sentence this front end actually draws for whatever the app layer reports.
+fn feedback(app: &Screen) -> String {
+	say::feedback(app.practice.report()).0
 }
 fn screen_text(terminal: &Terminal<TestBackend>) -> String {
 	let buffer: &ratatui::buffer::Buffer = terminal.backend().buffer();
@@ -147,7 +151,7 @@ fn click_creates_inline_blank_and_only_correct_answer_appends_history() {
 	assert_eq!(app.practice.session().render(), "2 + (12)");
 	click_text(&mut app, &terminal, "+");
 	assert!(app.practice.draft().is_none());
-	assert!(app.practice.feedback().contains("不能跳过"));
+	assert!(feedback(&app).contains("不能跳过"));
 	let terminal: Terminal<TestBackend> = draw(&mut app, 40, 8);
 	assert!(click_text(&mut app, &terminal, "("));
 	assert_eq!(
@@ -270,7 +274,7 @@ fn incorrect_selection_does_not_blank_or_advance_and_short_circuit_is_selectable
 	let terminal: Terminal<TestBackend> = draw(&mut app, 40, 8);
 	click_text(&mut app, &terminal, "*");
 	assert!(app.practice.draft().is_none());
-	assert!(app.practice.feedback().contains("不能跳过"));
+	assert!(feedback(&app).contains("不能跳过"));
 	let terminal: Terminal<TestBackend> = draw(&mut app, 40, 8);
 	click_text(&mut app, &terminal, "4 + 5");
 	assert_eq!(app.practice.draft(), Some(node(&app, "4 + 5")));
@@ -287,7 +291,7 @@ fn incorrect_selection_does_not_blank_or_advance_and_short_circuit_is_selectable
 	let terminal: Terminal<TestBackend> = draw(&mut app, 40, 8);
 	click_text(&mut app, &terminal, "/");
 	assert!(app.practice.draft().is_none());
-	assert!(app.practice.feedback().contains("跳过"));
+	assert!(feedback(&app).contains("跳过"));
 	let terminal: Terminal<TestBackend> = draw(&mut app, 40, 8);
 	click_text(&mut app, &terminal, "and");
 	assert_eq!(app.practice.draft(), Some(app.practice.session().root().id));
@@ -401,7 +405,7 @@ fn screenshot_groups_are_independent_and_ready_groups_need_only_a_click() {
 		assert!(
 			app.practice.draft().is_some(),
 			"{token}: {}",
-			app.practice.feedback()
+			feedback(&app)
 		);
 		assert!(app.practice.session().history().is_empty());
 	}
@@ -490,7 +494,7 @@ fn long_logic_conjunction_click_is_accepted_before_disjunction_and_implication()
 	let terminal: Terminal<TestBackend> = draw(&mut app, 120, 5);
 	click_text(&mut app, &terminal, "∨ R");
 	assert!(app.practice.draft().is_none());
-	assert!(app.practice.feedback().contains("False ∧ False"));
+	assert!(feedback(&app).contains("False ∧ False"));
 	let terminal: Terminal<TestBackend> = draw(&mut app, 120, 5);
 	click_text(&mut app, &terminal, "∧ False");
 	assert_eq!(app.practice.draft(), Some(node(&app, "False ∧ False")));
@@ -691,7 +695,7 @@ fn final_negative_result_finishes_without_another_answer_in_live_and_restored_hi
 		.practice
 		.select(restored.practice.session().root().id);
 	assert!(restored.practice.draft().is_none());
-	assert!(restored.practice.feedback().contains("已结束"));
+	assert!(feedback(&restored).contains("已结束"));
 }
 
 #[test]
@@ -732,6 +736,60 @@ fn native_history_reaches_terminal_scrollback() {
 	assert!(scrollback.contains("1 + 2 + 3"));
 	assert!(screen_text(&terminal).contains("36"));
 	assert!(app.practice.session().is_finished());
+}
+
+/// The app layer reports reasons; these are the words this terminal has always shown for
+/// them. `say` matches [`Notice`] exhaustively, so a new reason cannot reach a front end
+/// unworded — this pins what the worded ones say.
+#[test]
+fn every_reported_reason_keeps_the_sentence_this_terminal_showed_before() {
+	for (notice, sentence) in [
+		(Notice::Start, "点击一处 → ____ → 填值 → Enter。"),
+		(Notice::DraftOpen, "在 ____ 处填值，Enter 检查；Esc 取消。"),
+		(
+			Notice::FinalPair,
+			"只剩两个值，直接填入本步结果，Enter 检查。",
+		),
+		(
+			Notice::NoNextStep,
+			"本题已结束。可以按 n 进入下一题，或按 u 撤销。",
+		),
+		(Notice::Undone, "已撤销上一步。"),
+		(Notice::Restarted, "已重新开始本题。"),
+		(
+			Notice::ModeSwitched(EvaluationMode::ShortCircuit),
+			"已切换：短路开启。进度分别保存。",
+		),
+		(
+			Notice::ModeSwitched(EvaluationMode::Eager),
+			"已切换：短路关闭 · 全部求值。进度分别保存。",
+		),
+		(Notice::CourseEnded, "已经是本题集的最后一题。"),
+		(
+			Notice::ProofStart,
+			"下一行：公式 ; 规则 ; 引用行。Enter 检查，F1 查看规则。",
+		),
+		(
+			Notice::ProofUndone,
+			"已撤销上一行，并恢复对应的假设作用域。",
+		),
+	] {
+		let (shown, good): (String, bool) = say::feedback(&Report::Notice(notice));
+		assert_eq!(shown, sentence);
+		assert!(!good, "a reason is never good news: {notice:?}");
+	}
+	// A sentence the rules or this front end already worded passes through unchanged.
+	assert_eq!(
+		say::feedback(&Report::Taught {
+			message: "正确。".into(),
+			accepted: true,
+		}),
+		("正确。".into(), true)
+	);
+	assert_eq!(
+		say::feedback(&Report::Note(super::keys::HELP.into())),
+		(super::keys::HELP.into(), false)
+	);
 }
 
 #[test]

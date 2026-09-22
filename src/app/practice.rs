@@ -1,6 +1,6 @@
 use std::ops::Range;
 
-use super::Course;
+use super::{Course, Notice, Report};
 use crate::{
 	core::{EvaluationMode, ExprKind, Feedback, NodeId, ParseError, RecordedAttempt, Session},
 	exercises::Exercise,
@@ -23,8 +23,7 @@ pub struct Practice {
 	selected: NodeId,
 	input: String,
 	editing: Option<NodeId>,
-	feedback: String,
-	feedback_good: bool,
+	report: Report,
 }
 
 impl Practice {
@@ -47,13 +46,11 @@ impl Practice {
 			selected,
 			input: String::new(),
 			editing,
-			feedback: if editing.is_some() {
-				"只剩两个值，直接填入本步结果，Enter 检查。"
+			report: Report::Notice(if editing.is_some() {
+				Notice::FinalPair
 			} else {
-				"点击一处 → ____ → 填值 → Enter。"
-			}
-			.into(),
-			feedback_good: false,
+				Notice::Start
+			}),
 		})
 	}
 
@@ -79,11 +76,10 @@ impl Practice {
 	pub fn input(&self) -> &str {
 		&self.input
 	}
-	pub fn feedback(&self) -> &str {
-		&self.feedback
-	}
-	pub fn feedback_good(&self) -> bool {
-		self.feedback_good
+	/// What to show after the last operation. A [`Notice`] arrives as a reason alone, so
+	/// no key name and no input device is spelled anywhere below a front end.
+	pub fn report(&self) -> &Report {
+		&self.report
 	}
 
 	/// Every source range the open draft stands for. One typed answer replaces all of them,
@@ -163,15 +159,13 @@ impl Practice {
 		}
 		self.selected = node_id;
 		self.cancel();
-		self.feedback_good = false;
 		if matches!(
 			self.session.root().find(node_id).map(|node| &node.kind),
 			Some(ExprKind::Group(_))
 		) {
 			let feedback: Feedback = self.session.remove_group(node_id);
 			let accepted: bool = feedback.accepted();
-			self.feedback_good = accepted;
-			self.feedback = feedback.message;
+			self.report = feedback.into();
 			if accepted {
 				self.open_final_pair();
 			}
@@ -180,11 +174,9 @@ impl Practice {
 		match self.session.check_selection(node_id) {
 			Ok(()) => {
 				self.editing = Some(node_id);
-				self.feedback = "在 ____ 处填值，Enter 检查；Esc 取消。".into();
+				self.report = Report::Notice(Notice::DraftOpen);
 			}
-			Err(feedback) => {
-				self.feedback = feedback.message;
-			}
+			Err(feedback) => self.report = feedback.into(),
 		}
 		false
 	}
@@ -229,8 +221,7 @@ impl Practice {
 		};
 		let feedback: Feedback = self.session.submit(node_id, &self.input);
 		let accepted: bool = feedback.accepted();
-		self.feedback = feedback.message;
-		self.feedback_good = accepted;
+		self.report = feedback.into();
 		if accepted {
 			self.cancel();
 			self.open_final_pair();
@@ -247,15 +238,20 @@ impl Practice {
 		}
 	}
 
+	/// Name the next step to consider, or report that none is left to name.
 	pub fn hint(&mut self) {
-		self.feedback = self.session.hint();
-		self.feedback_good = false;
+		self.report = match self.session.hint() {
+			Some(message) => Report::Taught {
+				message,
+				accepted: false,
+			},
+			None => Report::Notice(Notice::NoNextStep),
+		};
 	}
 
-	/// Show a message the front end owns, such as its own key help.
+	/// Show a sentence the front end owns, such as its own key help.
 	pub fn note(&mut self, message: impl Into<String>) {
-		self.feedback = message.into();
-		self.feedback_good = false;
+		self.report = Report::Note(message.into());
 	}
 
 	/// Take back the last student step, including a whole batch of substituted occurrences.
@@ -266,8 +262,7 @@ impl Practice {
 		self.selected = self.session.root().id;
 		self.cancel();
 		self.open_final_pair();
-		self.feedback = "已撤销上一步。".into();
-		self.feedback_good = false;
+		self.report = Report::Notice(Notice::Undone);
 		true
 	}
 
@@ -279,8 +274,7 @@ impl Practice {
 		self.selected = self.session.root().id;
 		self.cancel();
 		self.open_final_pair();
-		self.feedback = "已重新开始本题。".into();
-		self.feedback_good = false;
+		self.report = Report::Notice(Notice::Restarted);
 		Ok(true)
 	}
 
@@ -291,7 +285,7 @@ impl Practice {
 		let mode: EvaluationMode = self.session.mode().toggled();
 		let course: Course = self.course.clone();
 		self.restart(course, mode)?;
-		self.feedback = format!("已切换：{}。进度分别保存。", mode.label());
+		self.report = Report::Notice(Notice::ModeSwitched(mode));
 		Ok(true)
 	}
 
@@ -300,7 +294,7 @@ impl Practice {
 		self.record();
 		let mut course: Course = self.course.clone();
 		if !course.forward()? {
-			self.note("已经是本题集的最后一题。");
+			self.report = Report::Notice(Notice::CourseEnded);
 			return Ok(false);
 		}
 		self.restart(course, self.session.mode())?;

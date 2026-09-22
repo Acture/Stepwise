@@ -150,14 +150,18 @@ fn the_inline_adapter_teaches_and_saves_through_a_real_terminal() {
 		"left mouse capture enabled"
 	);
 
+	// The app layer reports reasons; these are the words this front end puts to them,
+	// alongside the sentences the teaching rules word themselves.
 	let shown: String = squashed(&expression.visible);
 	for expected in [
-		"2 + (3 * 4)",              // the source stays visible above the draft
-		"下一步选择",               // h hints without answering
-		"____",                     // the blank opens in place
-		"选对了位置，但结果不正确", // 99 is rejected
-		"2 + (12)",                 // 12 contracts the multiplication
-		"已去掉这一层括号",         // the finished bracket needs no answer
+		"2 + (3 * 4)",                            // the source stays visible above the draft
+		"点击一处 → ____ → 填值 → Enter。",       // the starting reason, worded here
+		"下一步选择",                             // h hints without answering
+		"在 ____ 处填值，Enter 检查；Esc 取消。", // the open draft, worded here
+		"____",                                   // the blank opens in place
+		"选对了位置，但结果不正确",               // 99 is rejected
+		"2 + (12)",                               // 12 contracts the multiplication
+		"已去掉这一层括号",                       // the finished bracket needs no answer
 		"完成",
 	] {
 		assert!(
@@ -172,10 +176,12 @@ fn the_inline_adapter_teaches_and_saves_through_a_real_terminal() {
 		"自然演绎 · 目标：Q",
 		"1 (P → Q) [premise ]",
 		"2 P [premise ]",
-		"不符合", // and-intro does not apply here
+		"下一行：公式 ; 规则 ; 引用行。Enter 检查，F1 查看规则。", // the starting reason
+		"不符合",                                                  // and-intro does not apply here
 		"3 Q [mp 1,2]",
 		"目标已在所有假设之外成立，证明完成。",
-		"撤销第 3 行及其假设作用域变更。",
+		"已撤销上一行，并恢复对应的假设作用域。", // the undo reason, worded here
+		"撤销第 3 行及其假设作用域变更。",        // the archived marker, worded by the app layer
 	] {
 		assert!(
 			proved.contains(&squashed(expected)),
