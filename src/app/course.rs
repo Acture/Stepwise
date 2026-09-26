@@ -1,6 +1,6 @@
 use crate::{
 	core::{Language, ParseError},
-	exercises::Exercise,
+	exercises::Question,
 	generate,
 };
 
@@ -15,16 +15,17 @@ pub enum Supply {
 }
 
 /// The questions this run has drawn and the one in hand. Which question comes next is a
-/// question-source decision, so every front end walks the same course the same way.
+/// question-source decision, so every front end walks the same course the same way, and a
+/// proof question is a stop on it like any other.
 #[derive(Clone, Debug)]
 pub struct Course {
-	questions: Vec<Exercise>,
+	questions: Vec<Question>,
 	index: usize,
 	supply: Supply,
 }
 
 impl Course {
-	pub fn new(questions: Vec<Exercise>, index: usize, supply: Supply) -> Result<Self, ParseError> {
+	pub fn new(questions: Vec<Question>, index: usize, supply: Supply) -> Result<Self, ParseError> {
 		if index >= questions.len() {
 			return Err(ParseError("没有这道题。".into()));
 		}
@@ -36,19 +37,19 @@ impl Course {
 	}
 
 	/// The default practice: walk the questions already chosen, then keep generating.
-	pub fn random(questions: Vec<Exercise>, index: usize) -> Result<Self, ParseError> {
+	pub fn random(questions: Vec<Question>, index: usize) -> Result<Self, ParseError> {
 		Self::new(questions, index, Supply::Random)
 	}
 
 	/// A fixed set practised in order, for a question file the student works through.
-	pub fn ordered(questions: Vec<Exercise>, index: usize) -> Result<Self, ParseError> {
+	pub fn ordered(questions: Vec<Question>, index: usize) -> Result<Self, ParseError> {
 		Self::new(questions, index, Supply::Ordered)
 	}
 
-	pub fn current(&self) -> &Exercise {
+	pub fn current(&self) -> &Question {
 		&self.questions[self.index]
 	}
-	pub fn questions(&self) -> &[Exercise] {
+	pub fn questions(&self) -> &[Question] {
 		&self.questions
 	}
 	pub fn index(&self) -> usize {
@@ -59,17 +60,19 @@ impl Course {
 	}
 	/// Each question names its own language; a course may mix them.
 	pub fn language(&self) -> Language {
-		self.current().language
+		self.current().language()
 	}
 
 	/// Move to the next question, drawing one when the supply allows it. False means an
-	/// ordered set has ended, and the course is left untouched.
+	/// ordered set has ended, and the course is left untouched. A drawn question is always an
+	/// evaluation one: the generator writes expressions, not proofs.
 	pub fn forward(&mut self) -> Result<bool, ParseError> {
 		if self.index + 1 == self.questions.len() {
 			if self.supply == Supply::Ordered {
 				return Ok(false);
 			}
-			let next: Exercise = generate::generate(self.language(), generate::fresh_seed())?;
+			let next: Question =
+				Question::Evaluation(generate::generate(self.language(), generate::fresh_seed())?);
 			self.questions.push(next);
 		}
 		self.index += 1;

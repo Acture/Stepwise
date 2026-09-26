@@ -9,9 +9,9 @@ use std::{
 };
 
 use stepwise::{
-	app::ProofPractice,
+	app::{self, ProofPractice},
 	core::{EvaluationMode, ExprKind, Feedback, Language, Session, Value},
-	exercises::{self, Exercise, Invalid, Question, QuestionSet, SetError},
+	exercises::{self, Exercise, Invalid, ProofQuestion, Question, QuestionSet, SetError},
 	logic::proof::Proof,
 	progress::Progress,
 };
@@ -24,6 +24,12 @@ const EXAMPLE_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/questions/examp
 const PYTHON_FIELDS: &str = "name = \"q1\"\ntitle = \"一道题\"\nlanguage = \"python\"\nexpression = \"1 + 2\"\nnote = \"题面\"";
 /// A well-formed proof question, for the same purpose.
 const PROOF_FIELDS: &str = "name = \"p1\"\ntitle = \"一道证明题\"\npremises = [\"P -> Q\", \"P\"]\nconclusion = \"Q\"\nnote = \"题面\"";
+
+/// Without a terminal each practice refuses before drawing, and each says so in its own
+/// words — which is how a test tells which kind of question a launch opened. Neither sentence
+/// contains the other, so seeing one rules the other out.
+const PROOF_OPENED: &str = "自然演绎练习需要交互终端";
+const EVALUATION_OPENED: &str = "交互练习需要终端";
 
 fn header(id: &str, title: &str) -> String {
 	format!("version = 1\nname = \"{id}\"\ntitle = \"{title}\"\n")
@@ -141,37 +147,53 @@ fn the_embedded_set_parses_as_version_one_and_stamps_every_question_with_its_own
 	assert_eq!(walked.len(), 20);
 	assert_eq!(proofs, ["mp", "raa", "identity"]);
 	assert_eq!(listed, [walked.as_slice(), proofs.as_slice()].concat());
-	for exercise in set.exercises() {
+	// A proof's pointer names its set exactly as an evaluation question's does, so the
+	// loader stamps both kinds.
+	for question in set.questions() {
 		assert_eq!(
-			exercise.set, "builtin",
+			question.set(),
+			"builtin",
 			"{} lost its set name",
-			exercise.name
+			question.name()
 		);
 	}
 
-	let python: Vec<Exercise> = set.evaluations(Language::Python);
-	let logic: Vec<Exercise> = set.evaluations(Language::Logic);
+	// Each language's course holds every question of that language, both kinds, and the two
+	// courses together are the whole set.
+	let python: Vec<Question> = set.of_language(Language::Python);
+	let logic: Vec<Question> = set.of_language(Language::Logic);
 	assert!(!python.is_empty() && !logic.is_empty());
-	assert_eq!(python.len() + logic.len(), 20);
+	assert_eq!(python.len() + logic.len(), 23);
 	let split: Vec<&str> = python
 		.iter()
 		.chain(logic.iter())
-		.map(|exercise| exercise.name.as_str())
+		.map(Question::name)
 		.collect();
 	let mut sorted: Vec<&str> = split.clone();
 	sorted.sort_unstable();
-	let mut expected: Vec<&str> = walked.clone();
+	let mut expected: Vec<&str> = listed.clone();
 	expected.sort_unstable();
 	assert_eq!(sorted, expected);
 	assert!(
 		python
 			.iter()
-			.all(|exercise| exercise.language == Language::Python)
+			.all(|question| question.language() == Language::Python
+				&& question.evaluation().is_some())
 	);
 	assert!(
 		logic
 			.iter()
-			.all(|exercise| exercise.language == Language::Logic)
+			.all(|question| question.language() == Language::Logic)
+	);
+	// The logic course walks the file: its evaluation questions, then the proofs after them.
+	let logic_evaluations: Vec<&str> = set
+		.exercises()
+		.filter(|exercise| exercise.language == Language::Logic)
+		.map(|exercise| exercise.name.as_str())
+		.collect();
+	assert_eq!(
+		logic.iter().map(Question::name).collect::<Vec<&str>>(),
+		[logic_evaluations.as_slice(), proofs.as_slice()].concat()
 	);
 
 	assert!(set.find("precedence").is_some());
@@ -582,15 +604,27 @@ fn the_shipped_example_parses_and_its_proof_is_checked_by_the_same_rules() {
 	assert_eq!(set.name, "example-set");
 	assert_eq!(set.version(), 1);
 	assert_eq!(set.questions().len(), 4);
-	assert_eq!(set.evaluations(Language::Python).len(), 2);
-	assert_eq!(set.evaluations(Language::Logic).len(), 1);
+	assert_eq!(set.exercises().count(), 3);
+	// Each language's course is its questions in file order; the proof is a stop on logic's.
+	let course = |language: Language| -> Vec<String> {
+		set.of_language(language)
+			.iter()
+			.map(|question| question.name().to_owned())
+			.collect()
+	};
+	assert_eq!(
+		course(Language::Python),
+		["literal-types", "eager-division"]
+	);
+	assert_eq!(course(Language::Logic), ["modus-ponens-truth", "chain"]);
 
 	let Some(Question::Proof(question)) = set.find("chain") else {
 		panic!("the example ships a proof question named chain");
 	};
+	assert_eq!(question.set, "example-set");
 	assert_eq!(question.sequent(), "P -> Q，Q -> R，P ⊢ R");
 	let mut practice: ProofPractice =
-		ProofPractice::new(question.proof().unwrap(), Progress::default()).unwrap();
+		ProofPractice::new(question.clone(), Progress::default()).unwrap();
 	assert_eq!(practice.proof().lines().len(), 3);
 	assert!(!practice.is_finished());
 
@@ -899,10 +933,12 @@ fn the_same_set_bytes_are_the_same_set_at_any_path() {
 fn a_set_opens_its_own_first_question_when_no_question_is_named() {
 	let traced: Output = cli(&["--python", "--set", EXAMPLE_PATH, "--trace"]);
 	assert!(traced.status.success(), "{}", err(&traced));
-	let mut python: Vec<Exercise> = QuestionSet::import(EXAMPLE_TEXT)
+	let python: Vec<Question> = QuestionSet::import(EXAMPLE_TEXT)
 		.unwrap()
-		.evaluations(Language::Python);
-	let first: Exercise = python.remove(0);
+		.of_language(Language::Python);
+	let first: &Exercise = python[0]
+		.evaluation()
+		.expect("the example's first Python question is an evaluation one");
 	// --trace prints the assignments, the language and then the source; a generated question
 	// would put its own expression on that line.
 	let printed: String = out(&traced);
@@ -910,56 +946,230 @@ fn a_set_opens_its_own_first_question_when_no_question_is_named() {
 	contains(printed.lines().next().unwrap(), "flag=True");
 }
 
-/// A proof question takes no evaluation strategy and no assignment; the flags are refused
-/// rather than accepted and dropped.
+/// A proof question binds no variable, so an assignment is refused rather than accepted and
+/// dropped. `--evaluation` is the course's strategy rather than the question's: a course that
+/// opens on a proof accepts it for the evaluation questions after it, and opens the proof.
 #[test]
-fn a_proof_question_refuses_the_flags_that_mean_nothing_to_it() {
-	for extra in [vec!["--assign", "P=True"], vec!["--evaluation", "eager"]] {
-		let mut args: Vec<&str> = vec![
-			"--logic",
-			"--set",
-			EXAMPLE_PATH,
-			"--exercise",
-			"chain",
-			"--no-save",
-		];
-		args.extend(extra.iter().copied());
-		let refused: Output = cli(&args);
-		assert!(!refused.status.success(), "{args:?}");
-		contains(&err(&refused), "是证明题");
-		contains(&err(&refused), extra[0]);
-	}
+fn a_proof_question_refuses_an_assignment_and_leaves_the_strategy_to_the_course() {
+	let named: [&str; 6] = [
+		"--logic",
+		"--set",
+		EXAMPLE_PATH,
+		"--exercise",
+		"chain",
+		"--no-save",
+	];
+	let assigned: Output = cli(&[named.as_slice(), &["--assign", "P=True"]].concat());
+	assert_eq!(assigned.status.code(), Some(1), "{}", err(&assigned));
+	contains(&err(&assigned), "是证明题");
+	contains(&err(&assigned), "--assign");
+
+	let strategy: Output = cli(&[named.as_slice(), &["--evaluation", "eager"]].concat());
+	assert_eq!(strategy.status.code(), Some(1), "{}", err(&strategy));
+	contains(&err(&strategy), PROOF_OPENED);
+	assert!(!err(&strategy).contains("是证明题"), "{}", err(&strategy));
 }
 
-/// A language whose only questions are proofs is not an empty language; saying "no questions"
-/// there would send a teacher looking for a file problem that is not there.
+/// A language whose only questions are proofs is a course of proofs, not an empty language:
+/// the set opens its first proof as it would open any first question. What does not apply to a
+/// proof is refused with the reason, and the other language really has nothing.
 #[test]
-fn a_language_whose_only_questions_are_proofs_says_so_instead_of_reporting_none() {
+fn a_language_whose_only_questions_are_proofs_is_practised_as_a_course_of_proofs() {
 	let directory: tempfile::TempDir = tempfile::tempdir().unwrap();
 	let path: PathBuf = write(
 		&directory,
 		"proofs-only.toml",
 		&set(&proof_question(PROOF_FIELDS)),
 	);
-	let listed: Output = cli(&["--logic", "--set", path.to_str().unwrap(), "--list"]);
+	let file: &str = path.to_str().unwrap();
+	let listed: Output = cli(&["--logic", "--set", file, "--list"]);
 	assert!(listed.status.success());
 	contains(&out(&listed), "p1");
 
-	let practice: Output = cli(&[
-		"--logic",
-		"--set",
-		path.to_str().unwrap(),
-		"--no-save",
-		"--trace",
-	]);
-	assert!(!practice.status.success());
-	contains(&err(&practice), "只有证明题");
+	// Without a terminal the practice refuses before drawing, which is how the test can tell
+	// it reached the proof and not a report that the language has nothing.
+	let practice: Output = cli(&["--logic", "--set", file, "--no-save"]);
+	assert_eq!(practice.status.code(), Some(1), "{}", err(&practice));
+	contains(&err(&practice), PROOF_OPENED);
+	assert!(!err(&practice).contains("没有 --logic 的题目"));
+
+	let traced: Output = cli(&["--logic", "--set", file, "--no-save", "--trace"]);
+	assert_eq!(traced.status.code(), Some(1), "{}", err(&traced));
+	contains(&err(&traced), "证明题没有逐步演示");
+	assert!(out(&traced).is_empty());
 
 	// The other language really has nothing, and says that instead.
-	let python: Output = cli(&["--python", "--set", path.to_str().unwrap(), "--list"]);
+	let python: Output = cli(&["--python", "--set", file, "--list"]);
 	assert!(python.status.success());
 	assert!(out(&python).is_empty());
 	contains(&err(&python), "没有 --python 的题目");
+}
+
+// ---------------------------------------------------------------------------
+// One course walks evaluation and proof questions alike.
+// ---------------------------------------------------------------------------
+
+/// A logic evaluation question for the mixed-course tests below. `P` is bound to False so an
+/// `--assign P=True` that reaches it shows in the assignments line.
+const LOGIC_FIELDS: &str = "name = \"lg\"\ntitle = \"真值\"\nlanguage = \"logic\"\nexpression = \"P & Q\"\n[questions.bindings]\nP = \"False\"\nQ = \"True\"";
+/// A proof one line leaves unfinished and a second finishes, so saved work can stop halfway.
+const CHAIN_FIELDS: &str = "name = \"chain\"\ntitle = \"两次肯定前件\"\npremises = [\"P -> Q\", \"Q -> R\", \"P\"]\nconclusion = \"R\"";
+
+/// `--set` walks the file in order whatever kind each question is, so the first question
+/// opens even when it is a proof, and an evaluation question first still opens first.
+#[test]
+fn an_ordered_set_opens_on_its_first_question_whichever_kind_it_is() {
+	let directory: tempfile::TempDir = tempfile::tempdir().unwrap();
+	for (name, body, opened, not_opened) in [
+		(
+			"proof-first.toml",
+			format!(
+				"{}{}",
+				proof_question(CHAIN_FIELDS),
+				evaluation(LOGIC_FIELDS)
+			),
+			PROOF_OPENED,
+			EVALUATION_OPENED,
+		),
+		(
+			"evaluation-first.toml",
+			format!(
+				"{}{}",
+				evaluation(LOGIC_FIELDS),
+				proof_question(CHAIN_FIELDS)
+			),
+			EVALUATION_OPENED,
+			PROOF_OPENED,
+		),
+	] {
+		let path: PathBuf = write(&directory, name, &set(&body));
+		let launched: Output = cli(&["--logic", "--set", path.to_str().unwrap(), "--no-save"]);
+		assert_eq!(
+			launched.status.code(),
+			Some(1),
+			"{name}: {}",
+			err(&launched)
+		);
+		contains(&err(&launched), opened);
+		assert!(
+			!err(&launched).contains(not_opened),
+			"{name}: {}",
+			err(&launched)
+		);
+	}
+}
+
+/// A proof saves the pointer like any question, so an ordered set picks up at an unfinished
+/// proof the student left — not at the set's first question — and once that proof is
+/// finished it moves on to the question after it.
+#[test]
+fn an_ordered_set_resumes_at_an_unfinished_proof_and_moves_on_once_it_is_finished() {
+	let directory: tempfile::TempDir = tempfile::tempdir().unwrap();
+	let text: String = set(&format!(
+		"{}{}{}",
+		evaluation(LOGIC_FIELDS),
+		proof_question(CHAIN_FIELDS),
+		evaluation(&LOGIC_FIELDS.replace("name = \"lg\"", "name = \"after\""))
+	));
+	let file: PathBuf = write(&directory, "mixed.toml", &text);
+	let progress_path: PathBuf = directory.path().join("progress.json");
+	let launch = || -> Output {
+		cli(&[
+			"--logic",
+			"--set",
+			file.to_str().unwrap(),
+			"--progress-file",
+			progress_path.to_str().unwrap(),
+		])
+	};
+
+	let loaded: QuestionSet = QuestionSet::import(&text).unwrap();
+	let questions: Vec<Question> = loaded.of_language(Language::Logic);
+	let Some(Question::Proof(chain)) = loaded.find("chain") else {
+		panic!("the mixed set holds the proof named chain");
+	};
+	let mut proof: Proof = chain.proof().unwrap();
+	proof.submit("Q ; mp ; 1,3").unwrap();
+	assert!(!proof.is_finished());
+
+	// One line in, with the untouched evaluation question still ahead of it in the file.
+	let mut progress: Progress = Progress::default();
+	progress.record_proof(&chain.set, &chain.name, &proof);
+	assert!(progress.points_at("probe", "chain"));
+	assert_eq!(progress.commands(&chain.proof().unwrap()).len(), 1);
+	progress.save(&progress_path).unwrap();
+	assert_eq!(app::resume_in_set(&progress, &questions, None).unwrap(), 1);
+	let resumed: Output = launch();
+	assert_eq!(resumed.status.code(), Some(1), "{}", err(&resumed));
+	contains(&err(&resumed), PROOF_OPENED);
+
+	// Finished, the proof gives way to the question after it.
+	proof.submit("R ; mp ; 2,4").unwrap();
+	assert!(proof.is_finished());
+	progress.record_proof(&chain.set, &chain.name, &proof);
+	progress.save(&progress_path).unwrap();
+	assert_eq!(app::resume_in_set(&progress, &questions, None).unwrap(), 2);
+	let moved_on: Output = launch();
+	assert_eq!(moved_on.status.code(), Some(1), "{}", err(&moved_on));
+	contains(&err(&moved_on), EVALUATION_OPENED);
+}
+
+/// Assignments with no question named belong to an evaluation question: a proof binds no
+/// variable. A set whose course opens on a proof still binds them to its evaluation question
+/// instead of refusing them, as it did before proofs were stops on the course.
+#[test]
+fn assignments_with_no_question_named_bind_the_sets_evaluation_question_not_its_proof() {
+	let directory: tempfile::TempDir = tempfile::tempdir().unwrap();
+	let path: PathBuf = write(
+		&directory,
+		"proof-first.toml",
+		&set(&format!(
+			"{}{}",
+			proof_question(CHAIN_FIELDS),
+			evaluation(LOGIC_FIELDS)
+		)),
+	);
+	let traced: Output = cli(&[
+		"--logic",
+		"--set",
+		path.to_str().unwrap(),
+		"--assign",
+		"P=True",
+		"--trace",
+	]);
+	assert!(traced.status.success(), "{}", err(&traced));
+	// --trace prints the assignments first: the file's P=False, overridden.
+	assert_eq!(out(&traced).lines().next(), Some("P=True Q=True"));
+	contains(&out(&traced), "P & Q");
+}
+
+/// The embedded set keeps assignments with no question named on its current evaluation
+/// question, or its first one; a pointer left on an unfinished built-in proof does not pull
+/// them onto the proof.
+#[test]
+fn assignments_with_no_question_named_skip_the_proof_the_embedded_pointer_names() {
+	let directory: tempfile::TempDir = tempfile::tempdir().unwrap();
+	let raa: ProofQuestion = match exercises::builtin().unwrap().find("raa") {
+		Some(Question::Proof(question)) => question.clone(),
+		other => panic!("raa must be a proof question of the embedded set, got {other:?}"),
+	};
+	let mut proof: Proof = raa.proof().unwrap();
+	proof.submit("~P ; assume").unwrap();
+	assert!(!proof.is_finished());
+	let mut progress: Progress = Progress::default();
+	progress.record_proof(&raa.set, &raa.name, &proof);
+	let progress_path: PathBuf = directory.path().join("progress.json");
+	progress.save(&progress_path).unwrap();
+	let launched: Output = cli(&[
+		"--logic",
+		"--assign",
+		"P=True",
+		"--progress-file",
+		progress_path.to_str().unwrap(),
+	]);
+	assert_eq!(launched.status.code(), Some(1), "{}", err(&launched));
+	contains(&err(&launched), EVALUATION_OPENED);
+	assert!(!err(&launched).contains("是证明题"), "{}", err(&launched));
 }
 
 /// README documents the format with a whole TOML file. A documented example that no longer

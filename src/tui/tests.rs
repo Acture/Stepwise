@@ -10,20 +10,32 @@ use unicode_width::UnicodeWidthStr;
 
 use super::{inline, keys::Screen, render, say};
 use crate::{
-	app::{Course, Notice, Practice, Report, Transcript},
+	app::{Course, Lesson, Notice, Report, Task, Transcript},
 	core::{EvaluationMode, Language, NodeId},
-	exercises::{self, Exercise},
+	exercises::{self, Exercise, Question, QuestionSet},
 	progress::Progress,
 };
 
-/// The terminal under test always drives a real practice; nothing here fakes app state.
+/// The terminal under test always drives a real lesson; nothing here fakes app state.
+fn lesson(course: Course, progress: Progress, mode: EvaluationMode) -> Screen {
+	Screen::new(Lesson::new(course, progress, mode).unwrap())
+}
+/// A random course over evaluation questions, as the default practice opens one.
 fn screen(
 	questions: Vec<Exercise>,
 	progress: Progress,
 	index: usize,
 	mode: EvaluationMode,
 ) -> Screen {
-	Screen::new(Practice::new(Course::random(questions, index).unwrap(), progress, mode).unwrap())
+	lesson(
+		Course::random(
+			questions.into_iter().map(Question::Evaluation).collect(),
+			index,
+		)
+		.unwrap(),
+		progress,
+		mode,
+	)
 }
 fn app() -> Screen {
 	screen(
@@ -55,7 +67,7 @@ fn key(code: KeyCode) -> Event {
 }
 /// The sentence this front end actually draws for whatever the app layer reports.
 fn feedback(app: &Screen) -> String {
-	say::feedback(app.practice.report()).0
+	say::feedback(app.lesson.report()).0
 }
 fn screen_text(terminal: &Terminal<TestBackend>) -> String {
 	let buffer: &ratatui::buffer::Buffer = terminal.backend().buffer();
@@ -113,7 +125,7 @@ fn click_text(app: &mut Screen, terminal: &Terminal<TestBackend>, token: &str) -
 	click(app, position.x, position.y)
 }
 fn node(app: &Screen, source: &str) -> NodeId {
-	app.practice
+	app.practice()
 		.session()
 		.root()
 		.rows()
@@ -122,6 +134,74 @@ fn node(app: &Screen, source: &str) -> NodeId {
 		.unwrap()
 		.1
 		.id
+}
+
+/// A logic set as a teacher may write one, mixing both kinds of question: an expression, a
+/// proof, another expression, and a proof to end on. Imported rather than built by hand, so
+/// the lesson walks exactly what `--set` would give it.
+const MIXED: &str = r#"
+version = 1
+name = "mixed"
+title = "求值与证明"
+
+[[questions]]
+kind = "evaluation"
+name = "truth"
+title = "一行真值"
+language = "logic"
+expression = "P & Q"
+
+[questions.bindings]
+P = "True"
+Q = "False"
+
+[[questions]]
+kind = "proof"
+name = "identity"
+title = "蕴涵引入"
+conclusion = "P -> P"
+
+[[questions]]
+kind = "evaluation"
+name = "after"
+title = "证明之后"
+language = "logic"
+expression = "~R"
+
+[questions.bindings]
+R = "False"
+
+[[questions]]
+kind = "proof"
+name = "mp"
+title = "肯定前件"
+premises = ["P -> Q", "P"]
+conclusion = "Q"
+"#;
+/// The mixed set walked in file order from `index`, as `--set` walks it.
+fn mixed(index: usize) -> Screen {
+	let set: QuestionSet = QuestionSet::import(MIXED).unwrap();
+	lesson(
+		Course::ordered(set.of_language(Language::Logic), index).unwrap(),
+		Progress::default(),
+		EvaluationMode::Eager,
+	)
+}
+fn control(character: char) -> Event {
+	Event::Key(KeyEvent::new(
+		KeyCode::Char(character),
+		KeyModifiers::CONTROL,
+	))
+}
+fn on_proof(app: &Screen) -> bool {
+	matches!(app.lesson.task(), Task::Proof(_))
+}
+/// Answer the first step of the mixed set's opening expression: `P` becomes `True`.
+fn substitute_p(app: &mut Screen) {
+	let variable: NodeId = node(app, "P");
+	app.practice_mut().select(variable);
+	app.handle(Event::Paste("True".into())).unwrap();
+	assert!(app.handle(key(KeyCode::Enter)).unwrap());
 }
 
 #[test]
@@ -134,42 +214,45 @@ fn click_creates_inline_blank_and_only_correct_answer_appends_history() {
 	assert!(screen_text(&terminal).contains("2 + (____)"));
 	assert!(!screen_text(&terminal).contains("12"));
 	assert!(screen_text(&terminal).contains("2 + (3 * 4)"));
-	assert_eq!(app.practice.session().root().render(), "2 + (3 * 4)");
-	assert!(app.practice.session().history().is_empty());
-	assert!(app.practice.session().attempts().is_empty());
+	assert_eq!(app.practice().session().root().render(), "2 + (3 * 4)");
+	assert!(app.practice().session().history().is_empty());
+	assert!(app.practice().session().attempts().is_empty());
 	app.handle(Event::Paste("13".into())).unwrap();
 	assert!(!app.handle(key(KeyCode::Enter)).unwrap());
-	assert!(app.practice.session().history().is_empty());
-	assert_eq!(app.practice.input(), "13");
-	assert!(app.practice.draft().is_some());
+	assert!(app.practice().session().history().is_empty());
+	assert_eq!(app.practice().input(), "13");
+	assert!(app.practice().draft().is_some());
 	app.handle(key(KeyCode::Backspace)).unwrap();
 	app.handle(key(KeyCode::Char('2'))).unwrap();
 	assert!(app.handle(key(KeyCode::Enter)).unwrap());
-	assert_eq!(app.practice.session().root().render(), "2 + (12)");
-	assert_eq!(app.practice.session().history().len(), 1);
-	assert!(app.practice.draft().is_none());
+	assert_eq!(app.practice().session().root().render(), "2 + (12)");
+	assert_eq!(app.practice().session().history().len(), 1);
+	assert!(app.practice().draft().is_none());
 	let terminal: Terminal<TestBackend> = draw(&mut app, 40, 8);
 	assert!(screen_text(&terminal).contains("2 + (12)"));
-	assert_eq!(app.practice.session().render(), "2 + (12)");
+	assert_eq!(app.practice().session().render(), "2 + (12)");
 	click_text(&mut app, &terminal, "+");
-	assert!(app.practice.draft().is_none());
+	assert!(app.practice().draft().is_none());
 	assert!(feedback(&app).contains("不能跳过"));
 	let terminal: Terminal<TestBackend> = draw(&mut app, 40, 8);
 	assert!(click_text(&mut app, &terminal, "("));
 	assert_eq!(
-		app.practice.session().attempts().last().unwrap().input,
+		app.practice().session().attempts().last().unwrap().input,
 		None
 	);
-	assert_eq!(app.practice.session().render(), "2 + 12");
-	assert_eq!(app.practice.draft(), Some(app.practice.session().root().id));
-	assert!(app.practice.input().is_empty());
+	assert_eq!(app.practice().session().render(), "2 + 12");
+	assert_eq!(
+		app.practice().draft(),
+		Some(app.practice().session().root().id)
+	);
+	assert!(app.practice().input().is_empty());
 	let text: String = screen_text(&draw(&mut app, 40, 8));
 	assert!(text.contains("2 + 12"));
 	assert!(text.contains("____"));
 	app.handle(Event::Paste("14".into())).unwrap();
 	assert!(app.handle(key(KeyCode::Enter)).unwrap());
-	assert!(app.practice.session().is_finished());
-	assert_eq!(app.practice.session().history().len(), 3);
+	assert!(app.practice().session().is_finished());
+	assert_eq!(app.practice().session().history().len(), 3);
 	let text: String = screen_text(&draw(&mut app, 40, 8));
 	assert!(text.contains("完成"));
 }
@@ -202,10 +285,10 @@ fn clicking_a_repeated_variable_blanks_and_substitutes_every_occurrence() {
 	assert!(text.contains("____ + y * ____"));
 	app.handle(Event::Paste("2".into())).unwrap();
 	assert!(app.handle(key(KeyCode::Enter)).unwrap());
-	assert_eq!(app.practice.session().render(), "2 + y * 2");
-	assert_eq!(app.practice.session().attempts().len(), 1);
+	assert_eq!(app.practice().session().render(), "2 + y * 2");
+	assert_eq!(app.practice().session().attempts().len(), 1);
 	assert!(app.handle(key(KeyCode::Char('u'))).unwrap());
-	assert_eq!(app.practice.session().render(), "x + y * x");
+	assert_eq!(app.practice().session().render(), "x + y * x");
 }
 
 #[test]
@@ -226,9 +309,9 @@ fn final_pair_auto_blank_survives_resume_undo_and_reset_without_auto_solving() {
 		0,
 		EvaluationMode::ShortCircuit,
 	);
-	assert!(app.practice.draft().is_none());
+	assert!(app.practice().draft().is_none());
 	let mut transcript: Transcript = Transcript::default();
-	assert!(transcript.sync(&app.practice).join("\n").contains("x=2"));
+	assert!(transcript.sync(&app.lesson).join("\n").contains("x=2"));
 	let terminal: Terminal<TestBackend> = draw(&mut app, 30, 8);
 	click_text(&mut app, &terminal, "x");
 	let text: String = screen_text(&draw(&mut app, 30, 8));
@@ -236,38 +319,50 @@ fn final_pair_auto_blank_survives_resume_undo_and_reset_without_auto_solving() {
 	assert!(text.contains("____ + 3"));
 	app.handle(Event::Paste("2".into())).unwrap();
 	assert!(app.handle(key(KeyCode::Enter)).unwrap());
-	assert_eq!(app.practice.draft(), Some(app.practice.session().root().id));
-	assert_eq!(app.practice.session().render(), "2 + 3");
-	assert_eq!(app.practice.session().history().len(), 1);
-	app.practice.record();
+	assert_eq!(
+		app.practice().draft(),
+		Some(app.practice().session().root().id)
+	);
+	assert_eq!(app.practice().session().render(), "2 + 3");
+	assert_eq!(app.practice().session().history().len(), 1);
+	app.lesson.record();
 	let mut app: Screen = screen(
 		vec![exercise],
-		app.practice.progress().clone(),
+		app.lesson.progress().clone(),
 		0,
 		EvaluationMode::ShortCircuit,
 	);
-	assert_eq!(app.practice.draft(), Some(app.practice.session().root().id));
-	assert!(app.practice.input().is_empty());
+	assert_eq!(
+		app.practice().draft(),
+		Some(app.practice().session().root().id)
+	);
+	assert!(app.practice().input().is_empty());
 	app.handle(Event::Paste("6".into())).unwrap();
 	assert!(!app.handle(key(KeyCode::Enter)).unwrap());
-	assert_eq!(app.practice.session().history().len(), 1);
+	assert_eq!(app.practice().session().history().len(), 1);
 	app.handle(key(KeyCode::Backspace)).unwrap();
 	app.handle(Event::Paste("5".into())).unwrap();
 	assert!(app.handle(key(KeyCode::Enter)).unwrap());
-	assert!(app.practice.session().is_finished());
+	assert!(app.practice().session().is_finished());
 	assert!(app.handle(key(KeyCode::Char('u'))).unwrap());
-	assert_eq!(app.practice.draft(), Some(app.practice.session().root().id));
+	assert_eq!(
+		app.practice().draft(),
+		Some(app.practice().session().root().id)
+	);
 	let text: String = screen_text(&draw(&mut app, 30, 8));
 	assert!(text.contains("2 + 3"));
 	assert!(text.contains("____"));
 	app.handle(key(KeyCode::Esc)).unwrap();
-	assert!(app.practice.draft().is_none());
+	assert!(app.practice().draft().is_none());
 	assert!(app.handle(key(KeyCode::Char('r'))).unwrap());
-	assert_eq!(app.practice.session().render(), "x + 3");
-	assert!(app.practice.draft().is_none());
+	assert_eq!(app.practice().session().render(), "x + 3");
+	assert!(app.practice().draft().is_none());
 	let app: Screen = custom("2 + 3", Language::Python, EvaluationMode::ShortCircuit);
-	assert_eq!(app.practice.draft(), Some(app.practice.session().root().id));
-	assert!(app.practice.session().history().is_empty());
+	assert_eq!(
+		app.practice().draft(),
+		Some(app.practice().session().root().id)
+	);
+	assert!(app.practice().session().history().is_empty());
 }
 
 #[test]
@@ -279,15 +374,15 @@ fn incorrect_selection_does_not_blank_or_advance_and_short_circuit_is_selectable
 	);
 	let terminal: Terminal<TestBackend> = draw(&mut app, 40, 8);
 	click_text(&mut app, &terminal, "*");
-	assert!(app.practice.draft().is_none());
+	assert!(app.practice().draft().is_none());
 	assert!(feedback(&app).contains("不能跳过"));
 	let terminal: Terminal<TestBackend> = draw(&mut app, 40, 8);
 	click_text(&mut app, &terminal, "4 + 5");
-	assert_eq!(app.practice.draft(), Some(node(&app, "4 + 5")));
-	assert!(app.practice.session().history().is_empty());
+	assert_eq!(app.practice().draft(), Some(node(&app, "4 + 5")));
+	assert!(app.practice().session().history().is_empty());
 	app.handle(Event::Paste("9".into())).unwrap();
 	assert!(app.handle(key(KeyCode::Enter)).unwrap());
-	assert_eq!(app.practice.session().render(), "(2 + 3) * (9)");
+	assert_eq!(app.practice().session().render(), "(2 + 3) * (9)");
 
 	let mut app: Screen = custom(
 		"False and (3 / 0 > 1)",
@@ -296,27 +391,30 @@ fn incorrect_selection_does_not_blank_or_advance_and_short_circuit_is_selectable
 	);
 	let terminal: Terminal<TestBackend> = draw(&mut app, 40, 8);
 	click_text(&mut app, &terminal, "/");
-	assert!(app.practice.draft().is_none());
+	assert!(app.practice().draft().is_none());
 	assert!(feedback(&app).contains("跳过"));
 	let terminal: Terminal<TestBackend> = draw(&mut app, 40, 8);
 	click_text(&mut app, &terminal, "and");
-	assert_eq!(app.practice.draft(), Some(app.practice.session().root().id));
 	assert_eq!(
-		app.practice.session().root().render(),
+		app.practice().draft(),
+		Some(app.practice().session().root().id)
+	);
+	assert_eq!(
+		app.practice().session().root().render(),
 		"False and ((3 / 0) > 1)"
 	);
 	app.handle(Event::Paste("0".into())).unwrap();
 	assert!(!app.handle(key(KeyCode::Enter)).unwrap());
-	assert!(app.practice.session().history().is_empty());
+	assert!(app.practice().session().history().is_empty());
 	app.handle(key(KeyCode::Esc)).unwrap();
 	app.handle(key(KeyCode::Char('s'))).unwrap();
 	let terminal: Terminal<TestBackend> = draw(&mut app, 40, 8);
 	click_text(&mut app, &terminal, "/");
-	assert_eq!(app.practice.draft(), Some(node(&app, "3 / 0")));
+	assert_eq!(app.practice().draft(), Some(node(&app, "3 / 0")));
 	app.handle(Event::Paste("ZeroDivisionError".into()))
 		.unwrap();
 	assert!(app.handle(key(KeyCode::Enter)).unwrap());
-	assert!(app.practice.session().terminal_error().is_some());
+	assert!(app.practice().session().terminal_error().is_some());
 }
 
 #[test]
@@ -325,18 +423,18 @@ fn keyboard_submission_undo_and_strategy_toggle_preserve_progress() {
 	app.handle(key(KeyCode::Down)).unwrap();
 	app.handle(key(KeyCode::Down)).unwrap();
 	app.handle(key(KeyCode::Enter)).unwrap();
-	assert_eq!(app.practice.draft(), Some(node(&app, "3 * 4")));
+	assert_eq!(app.practice().draft(), Some(node(&app, "3 * 4")));
 	app.handle(Event::Paste("12".into())).unwrap();
 	assert!(app.handle(key(KeyCode::Enter)).unwrap());
-	assert_eq!(app.practice.session().root().render(), "2 + (12)");
+	assert_eq!(app.practice().session().root().render(), "2 + (12)");
 	assert!(app.handle(key(KeyCode::Char('s'))).unwrap());
-	assert_eq!(app.practice.session().mode(), EvaluationMode::Eager);
-	assert!(app.practice.session().history().is_empty());
+	assert_eq!(app.practice().session().mode(), EvaluationMode::Eager);
+	assert!(app.practice().session().history().is_empty());
 	assert!(app.handle(key(KeyCode::Char('s'))).unwrap());
-	assert_eq!(app.practice.session().root().render(), "2 + (12)");
+	assert_eq!(app.practice().session().root().render(), "2 + (12)");
 	assert!(app.handle(key(KeyCode::Char('u'))).unwrap());
-	assert_eq!(app.practice.session().root().render(), "2 + (3 * 4)");
-	assert!(app.practice.session().history().is_empty());
+	assert_eq!(app.practice().session().root().render(), "2 + (3 * 4)");
+	assert!(app.practice().session().history().is_empty());
 }
 
 #[test]
@@ -345,9 +443,9 @@ fn inline_unicode_draft_survives_tiny_resizes_and_tab_does_nothing() {
 	app.handle(key(KeyCode::Down)).unwrap();
 	app.handle(key(KeyCode::Down)).unwrap();
 	app.handle(key(KeyCode::Enter)).unwrap();
-	let editing: Option<NodeId> = app.practice.draft();
+	let editing: Option<NodeId> = app.practice().draft();
 	app.handle(Event::Paste("中文\nFalse".into())).unwrap();
-	assert_eq!(app.practice.input(), "中文False");
+	assert_eq!(app.practice().input(), "中文False");
 	for (width, height) in [
 		(40, 10),
 		(20, 6),
@@ -366,16 +464,16 @@ fn inline_unicode_draft_survives_tiny_resizes_and_tab_does_nothing() {
 				let cursor: ratatui::layout::Position = terminal.get_cursor_position().unwrap();
 				assert!(cursor.x < width && cursor.y < height);
 			}
-			assert_eq!(app.practice.input(), "中文False");
-			assert_eq!(app.practice.draft(), editing);
+			assert_eq!(app.practice().input(), "中文False");
+			assert_eq!(app.practice().draft(), editing);
 			app.handle(key(KeyCode::Tab)).unwrap();
 		}
 	}
-	assert!(app.practice.session().history().is_empty());
+	assert!(app.practice().session().history().is_empty());
 	app.handle(key(KeyCode::Esc)).unwrap();
-	assert!(app.practice.draft().is_none());
-	assert!(app.practice.input().is_empty());
-	assert_eq!(app.practice.session().root().render(), "2 + (3 * 4)");
+	assert!(app.practice().draft().is_none());
+	assert!(app.practice().input().is_empty());
+	assert_eq!(app.practice().session().root().render(), "2 + (3 * 4)");
 }
 
 #[test]
@@ -385,20 +483,26 @@ fn wrapped_logic_expression_mouse_hits_use_display_cells() {
 		Language::Logic,
 		EvaluationMode::Eager,
 	);
-	let before: String = app.practice.session().root().render();
+	let before: String = app.practice().session().root().render();
 	let terminal: Terminal<TestBackend> = draw(&mut app, 10, 12);
 	click_text(&mut app, &terminal, "∧");
-	assert_eq!(app.practice.draft(), Some(node(&app, "True ∧ False")));
-	assert_eq!(app.practice.session().root().render(), before);
+	assert_eq!(app.practice().draft(), Some(node(&app, "True ∧ False")));
+	assert_eq!(app.practice().session().root().render(), before);
 	let terminal: Terminal<TestBackend> = draw(&mut app, 10, 12);
 	assert!(screen_text(&terminal).contains("____"));
 	app.handle(Event::Paste("假".into())).unwrap();
 	let terminal: Terminal<TestBackend> = draw(&mut app, 10, 12);
 	click_text(&mut app, &terminal, "假");
-	assert_eq!(app.practice.input(), "假"); // Clicking the draft again must not erase it.
+	assert_eq!(app.practice().input(), "假"); // Clicking the draft again must not erase it.
 	assert!(app.handle(key(KeyCode::Enter)).unwrap());
-	assert_eq!(app.practice.session().history().len(), 1);
-	assert!(app.practice.session().root().render().contains("¬(False)"));
+	assert_eq!(app.practice().session().history().len(), 1);
+	assert!(
+		app.practice()
+			.session()
+			.root()
+			.render()
+			.contains("¬(False)")
+	);
 }
 
 #[test]
@@ -409,11 +513,11 @@ fn screenshot_groups_are_independent_and_ready_groups_need_only_a_click() {
 		let terminal: Terminal<TestBackend> = draw(&mut app, 100, 5);
 		assert!(!click_text(&mut app, &terminal, token));
 		assert!(
-			app.practice.draft().is_some(),
+			app.practice().draft().is_some(),
 			"{token}: {}",
 			feedback(&app)
 		);
-		assert!(app.practice.session().history().is_empty());
+		assert!(app.practice().session().history().is_empty());
 	}
 	let mut app: Screen = custom(source, Language::Logic, EvaluationMode::Eager);
 	let terminal: Terminal<TestBackend> = draw(&mut app, 100, 5);
@@ -421,18 +525,18 @@ fn screenshot_groups_are_independent_and_ready_groups_need_only_a_click() {
 	app.handle(Event::Paste("False".into())).unwrap();
 	assert!(app.handle(key(KeyCode::Enter)).unwrap());
 	assert_eq!(
-		app.practice.session().render(),
+		app.practice().session().render(),
 		"(False) ∨ (True ∧ True ∧ (True ∧ True))"
 	);
 	let terminal: Terminal<TestBackend> = draw(&mut app, 100, 5);
 	assert!(click_text(&mut app, &terminal, "False)"));
 	assert_eq!(
-		app.practice.session().render(),
+		app.practice().session().render(),
 		"False ∨ (True ∧ True ∧ (True ∧ True))"
 	);
-	assert!(app.practice.draft().is_none());
+	assert!(app.practice().draft().is_none());
 	assert_eq!(
-		app.practice.session().attempts().last().unwrap().input,
+		app.practice().session().attempts().last().unwrap().input,
 		None
 	);
 }
@@ -442,34 +546,33 @@ fn group_clicks_remove_one_pair_and_persist_without_a_typed_answer() {
 	let mut app: Screen = custom("((3))", Language::Python, EvaluationMode::ShortCircuit);
 	draw(&mut app, 40, 8);
 	assert!(!click(&mut app, 0, 0));
-	assert!(app.practice.session().history().is_empty());
+	assert!(app.practice().session().history().is_empty());
 	assert!(click(&mut app, 1, 0));
-	assert_eq!(app.practice.session().render(), "(3)");
-	assert!(app.practice.draft().is_none());
-	assert!(app.practice.input().is_empty());
-	app.practice.record();
-	let mut restored: Screen = screen(
-		app.practice.course().questions().to_vec(),
-		app.practice.progress().clone(),
-		0,
+	assert_eq!(app.practice().session().render(), "(3)");
+	assert!(app.practice().draft().is_none());
+	assert!(app.practice().input().is_empty());
+	app.lesson.record();
+	let mut restored: Screen = lesson(
+		Course::random(app.lesson.course().questions().to_vec(), 0).unwrap(),
+		app.lesson.progress().clone(),
 		EvaluationMode::ShortCircuit,
 	);
-	assert_eq!(restored.practice.session().render(), "(3)");
+	assert_eq!(restored.practice().session().render(), "(3)");
 	draw(&mut restored, 40, 8);
 	assert!(click(&mut restored, 0, 0));
-	assert!(restored.practice.session().is_finished());
+	assert!(restored.practice().session().is_finished());
 	assert!(
 		restored
-			.practice
+			.practice()
 			.session()
 			.attempts()
 			.iter()
 			.all(|attempt| attempt.input.is_none())
 	);
 	assert!(restored.handle(key(KeyCode::Char('u'))).unwrap());
-	assert_eq!(restored.practice.session().render(), "(3)");
+	assert_eq!(restored.practice().session().render(), "(3)");
 	assert!(restored.handle(key(KeyCode::Enter)).unwrap());
-	assert!(restored.practice.session().is_finished());
+	assert!(restored.practice().session().is_finished());
 }
 
 #[test]
@@ -487,28 +590,28 @@ fn long_logic_conjunction_click_is_accepted_before_disjunction_and_implication()
 		EvaluationMode::Eager,
 	);
 	for answer in ["True", "False", "False"] {
-		let id: NodeId = app.practice.session().next_step().unwrap().node_id;
-		app.practice.select(id);
+		let id: NodeId = app.practice().session().next_step().unwrap().node_id;
+		app.practice_mut().select(id);
 		app.handle(Event::Paste(answer.into())).unwrap();
 		assert!(app.handle(key(KeyCode::Enter)).unwrap());
 	}
 	assert!(
-		app.practice
+		app.practice()
 			.session()
 			.render()
 			.starts_with("False ∧ False ∨ R → S ↔")
 	);
 	let terminal: Terminal<TestBackend> = draw(&mut app, 120, 5);
 	click_text(&mut app, &terminal, "∨ R");
-	assert!(app.practice.draft().is_none());
+	assert!(app.practice().draft().is_none());
 	assert!(feedback(&app).contains("False ∧ False"));
 	let terminal: Terminal<TestBackend> = draw(&mut app, 120, 5);
 	click_text(&mut app, &terminal, "∧ False");
-	assert_eq!(app.practice.draft(), Some(node(&app, "False ∧ False")));
+	assert_eq!(app.practice().draft(), Some(node(&app, "False ∧ False")));
 	app.handle(Event::Paste("False".into())).unwrap();
 	assert!(app.handle(key(KeyCode::Enter)).unwrap());
 	assert!(
-		app.practice
+		app.practice()
 			.session()
 			.render()
 			.starts_with("False ∨ R → S ↔")
@@ -529,33 +632,33 @@ fn next_generates_questions_and_previous_restores_the_prior_attempts() {
 		0,
 		EvaluationMode::ShortCircuit,
 	);
-	let first: String = app.practice.session().source().into();
-	let id: NodeId = app.practice.session().next_step().unwrap().node_id;
-	app.practice.select(id);
+	let first: String = app.practice().session().source().into();
+	let id: NodeId = app.practice().session().next_step().unwrap().node_id;
+	app.practice_mut().select(id);
 	app.handle(Event::Paste("12".into())).unwrap();
 	assert!(app.handle(key(KeyCode::Enter)).unwrap());
 	assert!(app.handle(key(KeyCode::Char('n'))).unwrap());
 	assert!(
-		app.practice
+		app.practice()
 			.question()
 			.name
 			.starts_with("random-v1-python-")
 	);
-	let generated: String = app.practice.session().source().into();
+	let generated: String = app.practice().session().source().into();
 	assert_ne!(first, generated);
-	assert!(!app.practice.question().bindings.is_empty());
-	assert!(app.practice.session().history().is_empty());
+	assert!(!app.practice().question().bindings.is_empty());
+	assert!(app.practice().session().history().is_empty());
 	assert!(app.handle(key(KeyCode::Char('p'))).unwrap());
-	assert_eq!(app.practice.session().source(), first);
-	assert_eq!(app.practice.session().render(), "2 + (12)");
-	assert_eq!(app.practice.session().history().len(), 1);
+	assert_eq!(app.practice().session().source(), first);
+	assert_eq!(app.practice().session().render(), "2 + (12)");
+	assert_eq!(app.practice().session().history().len(), 1);
 	assert!(app.handle(key(KeyCode::Char('n'))).unwrap());
-	assert_eq!(app.practice.session().source(), generated);
+	assert_eq!(app.practice().session().source(), generated);
 	assert!(app.handle(key(KeyCode::Char('r'))).unwrap());
-	assert_eq!(app.practice.session().source(), generated);
+	assert_eq!(app.practice().session().source(), generated);
 	assert!(app.handle(key(KeyCode::Char('s'))).unwrap());
-	assert_eq!(app.practice.session().source(), generated);
-	assert_eq!(app.practice.session().mode(), EvaluationMode::Eager);
+	assert_eq!(app.practice().session().source(), generated);
+	assert_eq!(app.practice().session().mode(), EvaluationMode::Eager);
 }
 
 #[test]
@@ -587,7 +690,7 @@ fn native_history_survives_redraw_and_app_starts_below_shell_output() {
 	.unwrap();
 	let mut app: Screen = app();
 	let mut transcript: Transcript = Transcript::default();
-	inline::append(&mut terminal, super::text(transcript.sync(&app.practice))).unwrap();
+	inline::append(&mut terminal, super::text(transcript.sync(&app.lesson))).unwrap();
 	terminal
 		.draw(|frame| {
 			render::draw(frame, &mut app);
@@ -605,16 +708,16 @@ fn native_history_survives_redraw_and_app_starts_below_shell_output() {
 	let text: String = screen_text(&terminal);
 	assert!(text.contains("2 + (3 * 4)"));
 	assert!(text.contains("2 + (____)"));
-	assert!(transcript.sync(&app.practice).is_empty());
+	assert!(transcript.sync(&app.lesson).is_empty());
 	app.handle(Event::Paste("12".into())).unwrap();
 	assert!(app.handle(key(KeyCode::Enter)).unwrap());
-	inline::append(&mut terminal, super::text(transcript.sync(&app.practice))).unwrap();
+	inline::append(&mut terminal, super::text(transcript.sync(&app.lesson))).unwrap();
 	terminal
 		.draw(|frame| {
 			render::draw(frame, &mut app);
 		})
 		.unwrap();
-	assert!(transcript.sync(&app.practice).is_empty());
+	assert!(transcript.sync(&app.lesson).is_empty());
 	let text: String = screen_text(&terminal);
 	assert_eq!(text.matches("2 + (3 * 4)").count(), 1);
 	assert_eq!(text.matches("2 + (12)").count(), 1);
@@ -624,11 +727,11 @@ fn native_history_survives_redraw_and_app_starts_below_shell_output() {
 		.position(|line| line.contains("2 + (3 * 4)"))
 		.unwrap();
 	click(&mut app, 7, row as u16);
-	assert!(app.practice.draft().is_none());
+	assert!(app.practice().draft().is_none());
 	app.handle(key(KeyCode::Char('u'))).unwrap();
-	let marker: Vec<String> = transcript.sync(&app.practice);
+	let marker: Vec<String> = transcript.sync(&app.lesson);
 	assert!(marker.join("\n").contains("撤销"));
-	assert!(transcript.sync(&app.practice).is_empty());
+	assert!(transcript.sync(&app.lesson).is_empty());
 }
 
 #[test]
@@ -642,11 +745,10 @@ fn final_negative_result_finishes_without_another_answer_in_live_and_restored_hi
 	)
 	.unwrap();
 	let mut transcript: Transcript = Transcript::default();
-	inline::append(&mut terminal, super::text(transcript.sync(&app.practice))).unwrap();
+	inline::append(&mut terminal, super::text(transcript.sync(&app.lesson))).unwrap();
 	for (answer, current) in [(Some("10"), "-(10)"), (None, "-10")] {
-		let changed: bool = app
-			.practice
-			.select(app.practice.session().next_step().unwrap().node_id);
+		let id: NodeId = app.practice().session().next_step().unwrap().node_id;
+		let changed: bool = app.practice_mut().select(id);
 		if let Some(answer) = answer {
 			assert!(!changed);
 			app.handle(Event::Paste(answer.into())).unwrap();
@@ -654,8 +756,8 @@ fn final_negative_result_finishes_without_another_answer_in_live_and_restored_hi
 		} else {
 			assert!(changed);
 		}
-		assert_eq!(app.practice.session().render(), current);
-		let added: Vec<String> = transcript.sync(&app.practice);
+		assert_eq!(app.practice().session().render(), current);
+		let added: Vec<String> = transcript.sync(&app.lesson);
 		inline::append(&mut terminal, super::text(added)).unwrap();
 		terminal
 			.draw(|frame| {
@@ -670,48 +772,43 @@ fn final_negative_result_finishes_without_another_answer_in_live_and_restored_hi
 			1
 		);
 	}
-	assert!(app.practice.session().is_finished());
-	assert!(app.practice.draft().is_none());
-	assert!(app.practice.session().next_step().is_none());
+	assert!(app.practice().session().is_finished());
+	assert!(app.practice().draft().is_none());
+	assert!(app.practice().session().next_step().is_none());
 	assert!(!screen_text(&terminal).contains("____"));
-	assert_eq!(app.practice.session().history().len(), 2);
-	assert_eq!(app.practice.session().attempts().len(), 2);
-	app.practice.record();
-	let mut restored: Screen = screen(
-		app.practice.course().questions().to_vec(),
-		app.practice.progress().clone(),
-		0,
+	assert_eq!(app.practice().session().history().len(), 2);
+	assert_eq!(app.practice().session().attempts().len(), 2);
+	app.lesson.record();
+	let mut restored: Screen = lesson(
+		Course::random(app.lesson.course().questions().to_vec(), 0).unwrap(),
+		app.lesson.progress().clone(),
 		EvaluationMode::ShortCircuit,
 	);
 	let mut transcript: Transcript = Transcript::default();
-	let history: Vec<String> = transcript.sync(&restored.practice);
+	let history: Vec<String> = transcript.sync(&restored.lesson);
 	assert_eq!(history.len(), 3); // Mode header, original source, explicit group.
 	assert_eq!(history[1], "-(2 * 5)");
 	assert_eq!(history[2], "-(10)");
-	assert_eq!(restored.practice.session().render(), "-10");
-	assert!(restored.practice.session().is_finished());
-	assert!(restored.practice.draft().is_none());
-	assert_eq!(restored.practice.session().history().len(), 2);
+	assert_eq!(restored.practice().session().render(), "-10");
+	assert!(restored.practice().session().is_finished());
+	assert!(restored.practice().draft().is_none());
+	assert_eq!(restored.practice().session().history().len(), 2);
 	assert!(restored.handle(key(KeyCode::Char('u'))).unwrap());
-	assert!(!restored.practice.session().is_finished());
+	assert!(!restored.practice().session().is_finished());
 	assert!(
 		transcript
-			.sync(&restored.practice)
+			.sync(&restored.lesson)
 			.join("\n")
 			.contains("撤销")
 	);
-	assert_eq!(restored.practice.session().render(), "-(10)");
-	assert!(
-		restored
-			.practice
-			.select(restored.practice.session().next_step().unwrap().node_id)
-	);
-	assert!(restored.practice.session().is_finished());
-	assert_eq!(transcript.sync(&restored.practice), ["-(10)"]);
-	restored
-		.practice
-		.select(restored.practice.session().root().id);
-	assert!(restored.practice.draft().is_none());
+	assert_eq!(restored.practice().session().render(), "-(10)");
+	let id: NodeId = restored.practice().session().next_step().unwrap().node_id;
+	assert!(restored.practice_mut().select(id));
+	assert!(restored.practice().session().is_finished());
+	assert_eq!(transcript.sync(&restored.lesson), ["-(10)"]);
+	let root: NodeId = restored.practice().session().root().id;
+	restored.practice_mut().select(root);
+	assert!(restored.practice().draft().is_none());
 	assert!(feedback(&restored).contains("已结束"));
 }
 
@@ -730,13 +827,13 @@ fn native_history_reaches_terminal_scrollback() {
 	)
 	.unwrap();
 	let mut transcript: Transcript = Transcript::default();
-	inline::append(&mut terminal, super::text(transcript.sync(&app.practice))).unwrap();
+	inline::append(&mut terminal, super::text(transcript.sync(&app.lesson))).unwrap();
 	for answer in ["3", "6", "10", "15", "21", "28", "36"] {
-		app.practice
-			.select(app.practice.session().next_step().unwrap().node_id);
+		let id: NodeId = app.practice().session().next_step().unwrap().node_id;
+		app.practice_mut().select(id);
 		app.handle(Event::Paste(answer.into())).unwrap();
 		assert!(app.handle(key(KeyCode::Enter)).unwrap());
-		inline::append(&mut terminal, super::text(transcript.sync(&app.practice))).unwrap();
+		inline::append(&mut terminal, super::text(transcript.sync(&app.lesson))).unwrap();
 		terminal
 			.draw(|frame| {
 				render::draw(frame, &mut app);
@@ -752,7 +849,7 @@ fn native_history_reaches_terminal_scrollback() {
 		.collect();
 	assert!(scrollback.contains("1 + 2 + 3"));
 	assert!(screen_text(&terminal).contains("36"));
-	assert!(app.practice.session().is_finished());
+	assert!(app.practice().session().is_finished());
 }
 
 /// The app layer reports reasons; these are the words this terminal has always shown for
@@ -819,4 +916,194 @@ fn feedback_scrolls_in_place_without_a_panel() {
 		app.handle(key(KeyCode::PageDown)).unwrap();
 	}
 	assert!(screen_text(&draw(&mut app, 20, 6)).contains("退出"));
+}
+
+/// A proof takes every character as part of its line, so the letters that move, undo or
+/// quit in the expression view have to land in the proof draft instead — and the view on
+/// screen has to switch with the question in hand, leaving no stale expression to click.
+#[test]
+fn n_from_an_expression_opens_the_proof_view_where_every_letter_is_proof_input() {
+	let mut app: Screen = mixed(0);
+	assert!(screen_text(&draw(&mut app, 60, 8)).contains("P & Q"));
+	assert!(!app.expression_hits.is_empty());
+	assert!(app.handle(key(KeyCode::Char('n'))).unwrap());
+	assert_eq!(app.lesson.question().name(), "identity");
+	assert!(on_proof(&app));
+	let text: String = screen_text(&draw(&mut app, 60, 8));
+	assert!(text.contains("目标：(P → P)"));
+	assert!(text.contains("Enter检查 F1规则 Ctrl+Z撤销 Ctrl+N/P换题 Ctrl+C退出"));
+	assert!(!text.contains("P & Q"));
+	assert!(app.expression_hits.is_empty());
+	for character in ['n', 'p', 'q', 'u', 's', 'r', 'j', 'k', 'h', '?'] {
+		assert!(!app.handle(key(KeyCode::Char(character))).unwrap());
+	}
+	assert_eq!(app.proof().input(), "npqusrjkh?");
+	assert!(!app.quit);
+	assert_eq!(app.lesson.question().name(), "identity");
+	assert!(app.proof().proof().commands().is_empty());
+	assert!(screen_text(&draw(&mut app, 60, 8)).contains("npqusrjkh?"));
+	assert!(!app.handle(control('u')).unwrap());
+	assert!(app.proof().input().is_empty());
+	app.handle(Event::Paste("P ; ass".into())).unwrap();
+	assert!(!app.handle(key(KeyCode::Esc)).unwrap());
+	assert!(app.proof().input().is_empty());
+	assert!(!app.quit);
+	app.handle(control('q')).unwrap();
+	assert!(app.quit);
+}
+
+/// Letters belong to the proof line, so a proof changes question with Ctrl+N / Ctrl+P —
+/// through the same lesson the expression view's `n` / `p` move. The strategy switched
+/// before the proof is the one the expression after it opens in, and an ordered set that
+/// ends on a proof says so and leaves that proof in hand.
+#[test]
+fn control_keys_change_question_from_a_proof_and_an_ordered_set_ends_on_one() {
+	let mut app: Screen = mixed(0);
+	assert!(app.handle(key(KeyCode::Char('s'))).unwrap());
+	assert_eq!(
+		app.practice().session().mode(),
+		EvaluationMode::ShortCircuit
+	);
+	assert!(app.handle(key(KeyCode::Char('n'))).unwrap());
+	assert!(on_proof(&app));
+	assert!(app.handle(control('n')).unwrap());
+	assert_eq!(app.lesson.question().name(), "after");
+	assert!(!on_proof(&app));
+	assert_eq!(
+		app.practice().session().mode(),
+		EvaluationMode::ShortCircuit
+	);
+	let text: String = screen_text(&draw(&mut app, 60, 8));
+	assert!(text.contains("~R"));
+	assert!(!text.contains("目标："));
+	assert!(app.handle(key(KeyCode::Char('p'))).unwrap());
+	assert_eq!(app.lesson.question().name(), "identity");
+	assert!(screen_text(&draw(&mut app, 60, 8)).contains("目标：(P → P)"));
+	assert!(app.handle(control('p')).unwrap());
+	assert_eq!(app.lesson.question().name(), "truth");
+	assert!(screen_text(&draw(&mut app, 60, 8)).contains("P & Q"));
+
+	let mut app: Screen = mixed(2);
+	assert!(app.handle(key(KeyCode::Char('n'))).unwrap());
+	assert_eq!(app.lesson.question().name(), "mp");
+	assert!(!app.handle(control('n')).unwrap());
+	assert_eq!(app.lesson.question().name(), "mp");
+	assert!(on_proof(&app));
+	assert_eq!(feedback(&app), "已经是本题集的最后一题。");
+	let text: String = screen_text(&draw(&mut app, 60, 8));
+	assert!(text.contains("目标：Q"));
+	assert!(text.contains("已经是本题集的最后一题。"));
+	assert!(app.handle(control('p')).unwrap());
+	assert_eq!(app.lesson.question().name(), "after");
+}
+
+/// Moving away records the proof into the progress snapshot, so a line accepted before
+/// Ctrl+N is there again when `p` comes back, and a new run opened from that snapshot
+/// replays it too. Ctrl+Z belongs to the proof in hand: with no line typed it does nothing,
+/// and it never reaches back into the question before it.
+#[test]
+fn an_accepted_proof_line_survives_moving_away_and_undo_never_leaves_the_proof() {
+	let mut app: Screen = mixed(0);
+	substitute_p(&mut app);
+	assert!(app.handle(key(KeyCode::Char('n'))).unwrap());
+	assert!(!app.handle(control('z')).unwrap());
+	assert!(app.proof().proof().commands().is_empty());
+	assert_eq!(app.lesson.report(), &Report::Notice(Notice::ProofStart));
+	assert!(app.handle(control('p')).unwrap());
+	assert_eq!(app.practice().session().history().len(), 1);
+	assert_eq!(app.practice().session().render(), "True & Q");
+
+	assert!(app.handle(key(KeyCode::Char('n'))).unwrap());
+	app.handle(Event::Paste("P ; assume".into())).unwrap();
+	assert!(app.handle(key(KeyCode::Enter)).unwrap());
+	assert!(app.handle(control('n')).unwrap());
+	assert_eq!(app.lesson.question().name(), "after");
+	assert!(app.handle(key(KeyCode::Char('p'))).unwrap());
+	assert_eq!(app.lesson.question().name(), "identity");
+	assert_eq!(app.proof().proof().commands(), ["P ; assume"]);
+	assert_eq!(app.proof().proof().open_assumptions(), [1]);
+
+	app.lesson.record();
+	let mut restored: Screen = lesson(
+		Course::ordered(app.lesson.course().questions().to_vec(), 1).unwrap(),
+		app.lesson.progress().clone(),
+		EvaluationMode::Eager,
+	);
+	assert_eq!(restored.proof().proof().commands(), ["P ; assume"]);
+	restored
+		.handle(Event::Paste("P -> P ; imp-intro ; 1,1".into()))
+		.unwrap();
+	assert!(restored.handle(key(KeyCode::Enter)).unwrap());
+	assert!(restored.proof().is_finished());
+	assert!(screen_text(&draw(&mut restored, 60, 8)).contains("目标：(P → P) · 完成"));
+	assert!(restored.handle(control('z')).unwrap());
+	assert!(restored.handle(control('z')).unwrap());
+	assert!(!restored.handle(control('z')).unwrap());
+	assert!(restored.proof().proof().commands().is_empty());
+	assert!(restored.handle(control('p')).unwrap());
+	assert_eq!(restored.lesson.question().name(), "truth");
+	assert_eq!(restored.practice().session().history().len(), 1);
+	assert_eq!(restored.practice().session().render(), "True & Q");
+}
+
+/// One transcript follows the whole lesson, whichever kind is in hand: an expression's block
+/// closes with the state it was left in, a blank line separates it from the proof's
+/// opening, each accepted proof line is archived once as it lands, a line taken back leaves
+/// the marker, and changing question opens a block of its own instead of continuing the
+/// last one.
+#[test]
+fn one_transcript_archives_expression_and_proof_blocks_across_the_lesson() {
+	let mut app: Screen = mixed(0);
+	let mut transcript: Transcript = Transcript::default();
+	assert_eq!(transcript.sync(&app.lesson), ["命题逻辑", "P=True Q=False"]);
+	substitute_p(&mut app);
+	assert_eq!(transcript.sync(&app.lesson), ["P & Q"]);
+	assert!(app.handle(key(KeyCode::Char('n'))).unwrap());
+	assert_eq!(
+		transcript.sync(&app.lesson),
+		["True & Q", "", "自然演绎 · 目标：(P → P)"]
+	);
+	app.handle(Event::Paste("P ; assume".into())).unwrap();
+	assert!(app.handle(key(KeyCode::Enter)).unwrap());
+	assert_eq!(transcript.sync(&app.lesson), ["1 │ P [assume ]"]);
+	assert!(transcript.sync(&app.lesson).is_empty());
+	app.handle(Event::Paste("P -> P ; imp-intro ; 1,1".into()))
+		.unwrap();
+	assert!(app.handle(key(KeyCode::Enter)).unwrap());
+	assert_eq!(transcript.sync(&app.lesson), ["2 (P → P) [imp-intro 1,1]"]);
+	assert!(transcript.sync(&app.lesson).is_empty());
+	assert!(app.handle(control('z')).unwrap());
+	assert_eq!(
+		transcript.sync(&app.lesson),
+		["↶ 撤销第 2 行及其假设作用域变更。"]
+	);
+	assert!(transcript.sync(&app.lesson).is_empty());
+	assert!(app.handle(control('p')).unwrap());
+	assert_eq!(
+		transcript.sync(&app.lesson),
+		["", "命题逻辑", "P=True Q=False", "P & Q"]
+	);
+	assert!(app.handle(key(KeyCode::Char('n'))).unwrap());
+	assert_eq!(
+		transcript.sync(&app.lesson),
+		[
+			"True & Q",
+			"",
+			"自然演绎 · 目标：(P → P)",
+			"1 │ P [assume ]"
+		]
+	);
+	assert!(app.handle(control('n')).unwrap());
+	assert_eq!(transcript.sync(&app.lesson), ["", "命题逻辑", "R=False"]);
+	assert!(app.handle(key(KeyCode::Char('n'))).unwrap());
+	assert_eq!(
+		transcript.sync(&app.lesson),
+		[
+			"~R",
+			"",
+			"自然演绎 · 目标：Q",
+			"1 (P → Q) [premise ]",
+			"2 P [premise ]"
+		]
+	);
 }

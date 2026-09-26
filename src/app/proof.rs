@@ -3,6 +3,7 @@ use std::cmp::Ordering;
 use super::{Notice, Report};
 use crate::{
 	core::ParseError,
+	exercises::ProofQuestion,
 	logic::proof::{Proof, ProofLine},
 	progress::Progress,
 };
@@ -14,7 +15,7 @@ const DRAFT_LIMIT: usize = 2048;
 /// snapshot its commands are saved in. Restoring, submitting, undoing and recording all
 /// work with no terminal and no window; only writing the snapshot out is the caller's.
 pub struct ProofPractice {
-	key: String,
+	question: ProofQuestion,
 	proof: Proof,
 	progress: Progress,
 	input: String,
@@ -22,13 +23,13 @@ pub struct ProofPractice {
 }
 
 impl ProofPractice {
-	/// Replays the commands already saved for exactly these premises and this goal.
-	pub fn new(proof: Proof, progress: Progress) -> Result<Self, ParseError> {
-		let key: String = proof.progress_key();
-		let commands: Vec<String> = progress.proofs.get(&key).cloned().unwrap_or_default();
-		let proof: Proof = proof.replay(&commands)?;
+	/// Opens this question, replaying the commands already saved for exactly these premises
+	/// and this conclusion.
+	pub fn new(question: ProofQuestion, progress: Progress) -> Result<Self, ParseError> {
+		let initial: Proof = question.proof()?;
+		let proof: Proof = initial.clone().replay(progress.commands(&initial))?;
 		Ok(Self {
-			key,
+			question,
 			proof,
 			progress,
 			input: String::new(),
@@ -36,6 +37,9 @@ impl ProofPractice {
 		})
 	}
 
+	pub fn question(&self) -> &ProofQuestion {
+		&self.question
+	}
 	pub fn proof(&self) -> &Proof {
 		&self.proof
 	}
@@ -56,6 +60,11 @@ impl ProofPractice {
 	/// Show a sentence the front end owns, such as the rule reference or its key help.
 	pub fn note(&mut self, message: impl Into<String>) {
 		self.report = Report::Note(message.into());
+	}
+
+	/// Report a reason the lesson around this proof raised, such as the end of a course.
+	pub(super) fn notify(&mut self, notice: Notice) {
+		self.report = Report::Notice(notice);
 	}
 
 	/// Add one character to the draft. False when it is a control character or would pass
@@ -156,10 +165,9 @@ impl ProofPractice {
 			.collect()
 	}
 
-	/// Copy this proof's commands into the progress snapshot.
+	/// Point the progress snapshot at this question and copy its commands in.
 	pub fn record(&mut self) {
 		self.progress
-			.proofs
-			.insert(self.key.clone(), self.proof.commands().to_vec());
+			.record_proof(&self.question.set, &self.question.name, &self.proof);
 	}
 }

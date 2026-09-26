@@ -10,12 +10,16 @@ use ratatui::{
 use unicode_width::UnicodeWidthChar;
 
 use super::{keys::Screen, say};
-use crate::core::NodeId;
+use crate::{app::Task, core::NodeId};
 
+/// Draw whichever view the question in hand needs.
 pub(super) fn draw(frame: &mut Frame<'_>, screen: &mut Screen) -> Option<Position> {
 	screen.expression_area = Rect::default();
 	screen.expression_hits.clear();
-	draw_expression(frame, screen, frame.area())
+	match screen.lesson.task() {
+		Task::Evaluation(_) => draw_expression(frame, screen, frame.area()),
+		Task::Proof(_) => screen.draw_proof(frame),
+	}
 }
 
 /// Each rendered character keeps the node the app layer puts under it. Inline drafts are
@@ -25,11 +29,11 @@ fn draw_expression(frame: &mut Frame<'_>, screen: &mut Screen, area: Rect) -> Op
 		return None;
 	}
 	screen.expression_area = area;
-	let editing: Option<NodeId> = screen.practice.draft();
-	let input: String = screen.practice.input().into();
-	let edited: Vec<(NodeId, Range<usize>)> = screen.practice.draft_spans();
+	let editing: Option<NodeId> = screen.practice().draft();
+	let input: String = screen.practice().input().into();
+	let edited: Vec<(NodeId, Range<usize>)> = screen.practice().draft_spans();
 	let (source, ranges): (&str, &BTreeMap<NodeId, Range<usize>>) =
-		screen.practice.session().render_with_ranges();
+		screen.practice().session().render_with_ranges();
 	let mut cells: Vec<(char, Style, Option<NodeId>)> = Vec::new();
 	if editing.is_some() {
 		cells.extend(
@@ -39,8 +43,8 @@ fn draw_expression(frame: &mut Frame<'_>, screen: &mut Screen, area: Rect) -> Op
 		);
 	}
 	let mut cursor_index: Option<usize> = None;
-	let owners: Vec<Option<NodeId>> = screen.practice.node_owners();
-	let selected: Option<&Range<usize>> = ranges.get(&screen.practice.selected());
+	let owners: Vec<Option<NodeId>> = screen.practice().node_owners();
+	let selected: Option<&Range<usize>> = ranges.get(&screen.practice().selected());
 	let mut index: usize = 0;
 	while index < source.len() {
 		if let Some((node_id, range)) = edited.iter().find(|(_, range)| index == range.start) {
@@ -68,20 +72,20 @@ fn draw_expression(frame: &mut Frame<'_>, screen: &mut Screen, area: Rect) -> Op
 		cells.push((character, style, node_id));
 		index += character.len_utf8();
 	}
-	if let Some(error) = screen.practice.session().terminal_error() {
+	if let Some(error) = screen.practice().session().terminal_error() {
 		cells.extend(
 			format!("\n完成：{}", error.name().unwrap_or("异常"))
 				.chars()
 				.map(|character| (character, Style::default().fg(Color::Green), None)),
 		);
-	} else if screen.practice.session().is_finished() {
+	} else if screen.practice().session().is_finished() {
 		cells.extend(
 			"\n完成 · n 下一题 / u 撤销"
 				.chars()
 				.map(|character| (character, Style::default().fg(Color::Green), None)),
 		);
 	}
-	let (feedback, good): (String, bool) = say::feedback(screen.practice.report());
+	let (feedback, good): (String, bool) = say::feedback(screen.practice().report());
 	let style: Style = Style::default().fg(if good { Color::Green } else { Color::Yellow });
 	cells.extend(
 		format!("\n{feedback}")

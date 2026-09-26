@@ -1,12 +1,14 @@
-use std::{collections::BTreeMap, fs};
+use std::{collections::BTreeMap, fs, path::Path};
 use stepwise::{
 	app,
 	core::{EvaluationMode, Language, RecordedAttempt, Session, Value},
-	exercises::{self, Exercise},
-	logic,
+	exercises::{self, Exercise, ProofQuestion, Question, QuestionSet},
+	logic::{self, proof::Proof},
 	progress::Progress,
 	python::{self, parse_value},
 };
+
+const FIXTURES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures");
 
 #[test]
 fn atomic_round_trip_and_mode_assignment_isolation() {
@@ -90,9 +92,10 @@ fn malformed_progress_is_never_silently_reset() {
 fn a_pointer_written_before_question_sets_draws_a_new_question_and_keeps_the_work() {
 	let directory: tempfile::TempDir = tempfile::tempdir().unwrap();
 	let path: std::path::PathBuf = directory.path().join("progress.json");
-	let embedded: Vec<Exercise> = exercises::builtin().unwrap().evaluations(Language::Python);
+	let embedded: Vec<Question> = exercises::builtin().unwrap().of_language(Language::Python);
 	let precedence: &Exercise = embedded
 		.iter()
+		.filter_map(Question::evaluation)
 		.find(|exercise| exercise.name == "precedence")
 		.expect("an embedded question");
 	let mut session: Session = precedence.session(EvaluationMode::ShortCircuit).unwrap();
@@ -125,7 +128,11 @@ fn a_pointer_written_before_question_sets_draws_a_new_question_and_keeps_the_wor
 
 	// The pointer names no set, so it names no question this build can reopen.
 	assert!(!loaded.points_at("builtin", "precedence"));
-	let drawn: Exercise = app::resume_or_generate(Language::Python, &loaded, &embedded).unwrap();
+	let Question::Evaluation(drawn) =
+		app::resume_or_generate(Language::Python, &loaded, &embedded).unwrap()
+	else {
+		panic!("a drawn question is an evaluation one");
+	};
 	assert!(
 		drawn.name.starts_with("random-v1-python-"),
 		"{}",
@@ -152,6 +159,85 @@ fn a_pointer_written_before_question_sets_draws_a_new_question_and_keeps_the_wor
 			.contains("不支持的进度版本")
 	);
 	assert_eq!(fs::read_to_string(&path).unwrap(), later);
+}
+
+/// Before proofs were stops on a course, saving one left the pointer alone, so
+/// `progress-17c6f55.json` — written by the base commit — holds three proofs' lines under an
+/// empty pointer. A bare launch reads that as "no question in hand" and draws a random one:
+/// old proof work never hijacks a launch that did not ask for it. Now that a proof records the
+/// pointer too, a pointer naming the unfinished reductio reopens it where it was left, a
+/// finished one gives way to a new question, and neither touches the evaluation strategy.
+#[test]
+fn a_bare_launch_reopens_a_proof_only_when_the_pointer_names_it_unfinished() {
+	let directory: tempfile::TempDir = tempfile::tempdir().unwrap();
+	let path: std::path::PathBuf = directory.path().join("progress.json");
+	let old: Progress =
+		Progress::load(Path::new(&format!("{FIXTURES}/progress-17c6f55.json"))).unwrap();
+	assert_eq!(old.current_set, "");
+	assert_eq!(old.current, "");
+	let logic: Vec<Question> = exercises::builtin().unwrap().of_language(Language::Logic);
+	let raa: ProofQuestion = match logic.iter().find(|question| question.name() == "raa") {
+		Some(Question::Proof(question)) => question.clone(),
+		other => panic!("raa must be a logic proof question of the embedded set, got {other:?}"),
+	};
+	let initial: Proof = raa.proof().unwrap();
+	assert_eq!(old.commands(&initial).len(), 2);
+
+	// The pointer names nothing, so the saved proofs stay saved and a new question is drawn.
+	let drawn: Question = app::resume_or_generate(Language::Logic, &old, &logic).unwrap();
+	let Question::Evaluation(drawn) = drawn else {
+		panic!("an empty pointer draws an evaluation question, got {drawn:?}");
+	};
+	assert!(drawn.name.starts_with("random-v1-logic-"), "{}", drawn.name);
+
+	// Recording the unfinished reductio points at it and keeps its lines and the strategy.
+	let mut pointed: Progress = old.clone();
+	pointed.mode = EvaluationMode::Eager;
+	let unfinished: Proof = initial.clone().replay(old.commands(&initial)).unwrap();
+	assert!(!unfinished.is_finished());
+	pointed.record_proof("builtin", "raa", &unfinished);
+	assert!(pointed.points_at("builtin", "raa"));
+	assert_eq!(pointed.mode, EvaluationMode::Eager);
+	assert_eq!(pointed.commands(&initial), old.commands(&initial));
+	pointed.save(&path).unwrap();
+	let loaded: Progress = Progress::load(&path).unwrap();
+	match app::resume_or_generate(Language::Logic, &loaded, &logic).unwrap() {
+		Question::Proof(reopened) => {
+			assert_eq!(reopened.set, "builtin");
+			assert_eq!(reopened.name, "raa");
+		}
+		other => panic!("the unfinished proof the pointer names reopens, got {other:?}"),
+	}
+	// Even offered every question of the set, a Python launch leaves the logic proof where
+	// it is: the pointer names nothing of that language.
+	let everything: QuestionSet = exercises::builtin().unwrap();
+	let Question::Evaluation(python) =
+		app::resume_or_generate(Language::Python, &loaded, everything.questions()).unwrap()
+	else {
+		panic!("--python never reopens a logic proof");
+	};
+	assert!(
+		python.name.starts_with("random-v1-python-"),
+		"{}",
+		python.name
+	);
+
+	// Finished, it gives way to a new question and its lines stay on record.
+	let mut finished: Proof = unfinished.clone();
+	finished.submit("P ; raa ; 2,3").unwrap();
+	assert!(finished.is_finished());
+	pointed.record_proof("builtin", "raa", &finished);
+	assert_eq!(pointed.commands(&initial).len(), 3);
+	let Question::Evaluation(moved_on) =
+		app::resume_or_generate(Language::Logic, &pointed, &logic).unwrap()
+	else {
+		panic!("a finished proof is not reopened");
+	};
+	assert!(
+		moved_on.name.starts_with("random-v1-logic-"),
+		"{}",
+		moved_on.name
+	);
 }
 
 #[test]

@@ -1,6 +1,6 @@
 use std::ops::Range;
 
-use super::{Course, Notice, Report};
+use super::{Notice, Report};
 use crate::{
 	core::{EvaluationMode, ExprKind, Feedback, NodeId, ParseError, RecordedAttempt, Session},
 	exercises::Exercise,
@@ -10,14 +10,15 @@ use crate::{
 /// The longest draft a student can type; a front end never needs its own limit.
 const DRAFT_LIMIT: usize = 2048;
 
-/// One expression question in progress: the course it belongs to, the teaching session, the
-/// node the student has selected, the answer being typed, and the progress snapshot.
+/// One expression question in progress: the question, the teaching session, the node the
+/// student has selected, the answer being typed, and the progress snapshot. Which question
+/// comes next is the [`super::Lesson`]'s business, not this one's.
 ///
 /// Every operation here is input-independent — a click, a keystroke and a window button all
 /// call the same method. Selecting only opens a draft and reports feedback; it never fills
 /// in, reveals or submits an answer.
 pub struct Practice {
-	course: Course,
+	question: Exercise,
 	session: Session,
 	progress: Progress,
 	selected: NodeId,
@@ -27,20 +28,20 @@ pub struct Practice {
 }
 
 impl Practice {
-	/// Starts the course's current question, replaying whatever this exact question, mode
-	/// and valuation already have saved.
+	/// Starts this question, replaying whatever this exact question, mode and valuation
+	/// already have saved.
 	pub fn new(
-		course: Course,
+		question: Exercise,
 		progress: Progress,
 		mode: EvaluationMode,
 	) -> Result<Self, ParseError> {
-		let initial: Session = course.current().session(mode)?;
+		let initial: Session = question.session(mode)?;
 		let attempts: &[RecordedAttempt] = progress.attempts(&initial);
 		let session: Session = initial.replay(attempts)?;
 		let selected: NodeId = session.root().id;
 		let editing: Option<NodeId> = session.final_binary_step();
 		Ok(Self {
-			course,
+			question,
 			session,
 			progress,
 			selected,
@@ -54,11 +55,8 @@ impl Practice {
 		})
 	}
 
-	pub fn course(&self) -> &Course {
-		&self.course
-	}
 	pub fn question(&self) -> &Exercise {
-		self.course.current()
+		&self.question
 	}
 	pub fn session(&self) -> &Session {
 		&self.session
@@ -254,6 +252,11 @@ impl Practice {
 		self.report = Report::Note(message.into());
 	}
 
+	/// Report a reason the lesson around this question raised, such as the end of a course.
+	pub(super) fn notify(&mut self, notice: Notice) {
+		self.report = Report::Notice(notice);
+	}
+
 	/// Take back the last student step, including a whole batch of substituted occurrences.
 	pub fn undo(&mut self) -> bool {
 		if !self.session.undo() {
@@ -269,7 +272,7 @@ impl Practice {
 	/// Start this question again from its source; saved progress is rewritten on the next
 	/// [`Practice::record`].
 	pub fn reset(&mut self) -> Result<bool, ParseError> {
-		let session: Session = self.course.current().session(self.session.mode())?;
+		let session: Session = self.question.session(self.session.mode())?;
 		self.session = session;
 		self.selected = self.session.root().id;
 		self.cancel();
@@ -279,49 +282,20 @@ impl Practice {
 	}
 
 	/// Switch evaluation strategy. The two strategies keep separate progress, so the current
-	/// attempts are recorded under the old key before the session is rebuilt.
+	/// attempts are recorded under the old key before the session is rebuilt; the question
+	/// is left untouched when the other strategy cannot build it.
 	pub fn toggle_mode(&mut self) -> Result<bool, ParseError> {
 		self.record();
 		let mode: EvaluationMode = self.session.mode().toggled();
-		let course: Course = self.course.clone();
-		self.restart(course, mode)?;
+		*self = Self::new(self.question.clone(), self.progress.clone(), mode)?;
 		self.report = Report::Notice(Notice::ModeSwitched(mode));
 		Ok(true)
-	}
-
-	/// Move to the next question the course supplies. False when an ordered set has ended.
-	pub fn next_question(&mut self) -> Result<bool, ParseError> {
-		self.record();
-		let mut course: Course = self.course.clone();
-		if !course.forward()? {
-			self.report = Report::Notice(Notice::CourseEnded);
-			return Ok(false);
-		}
-		self.restart(course, self.session.mode())?;
-		Ok(true)
-	}
-
-	/// Go back to a question drawn earlier in this run, restoring its recorded attempts.
-	pub fn previous_question(&mut self) -> Result<bool, ParseError> {
-		self.record();
-		let mut course: Course = self.course.clone();
-		course.backward();
-		self.restart(course, self.session.mode())?;
-		Ok(true)
-	}
-
-	/// Replace the whole practice, keeping the progress snapshot. Leaves it untouched when
-	/// the new question cannot be built.
-	fn restart(&mut self, course: Course, mode: EvaluationMode) -> Result<(), ParseError> {
-		*self = Self::new(course, self.progress.clone(), mode)?;
-		Ok(())
 	}
 
 	/// Copy this question's attempts into the progress snapshot. Writing that snapshot out
 	/// belongs to the caller, so the app layer never touches the file system.
 	pub fn record(&mut self) {
-		let question: &Exercise = self.course.current();
 		self.progress
-			.record(&question.set, &question.name, &self.session);
+			.record(&self.question.set, &self.question.name, &self.session);
 	}
 }
