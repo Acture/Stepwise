@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 
 use super::{EvalError, Expr, ExprKind, NodeId, Step, Value};
 
+/// How a question is evaluated. Both languages open with short circuit on; eager evaluation
+/// is the teaching variant a student switches to, or a question asks for.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum EvaluationMode {
