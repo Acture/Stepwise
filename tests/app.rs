@@ -703,14 +703,34 @@ fn changing_question_archives_a_new_header_and_the_first_question_has_no_earlier
 	assert_eq!(switched[3], evaluating(&walk).question().assignments());
 	assert!(transcript.sync(&walk).is_empty());
 
-	// Going back before the first question keeps it, and still reports a recordable change.
+	// Going back reaches the first question. Going back again goes nowhere, so it changes
+	// nothing — not even a half-typed answer — and reports nothing to record.
 	assert!(walk.previous_question().unwrap());
 	assert_eq!(walk.question().name(), "long-arithmetic");
 	assert_eq!(walk.course().index(), 0);
-	assert!(walk.previous_question().unwrap());
+	let variable: NodeId = at(evaluating(&walk), "a");
+	evaluating_mut(&mut walk).select(variable);
+	assert!(evaluating_mut(&mut walk).type_character('2'));
+	assert!(!walk.previous_question().unwrap());
 	assert_eq!(walk.question().name(), "long-arithmetic");
 	assert_eq!(walk.course().index(), 0);
+	assert_eq!(evaluating(&walk).draft(), Some(variable));
+	assert_eq!(evaluating(&walk).input(), "2");
 	assert_eq!(walk.course().questions().len(), 2);
+
+	// The same holds for a proof that opens the course: the line being typed and the rules
+	// the student is reading both stay.
+	let mut proving_first: Lesson = lesson(
+		vec![Question::Proof(builtin_proof("raa"))],
+		0,
+		Progress::default(),
+		EvaluationMode::Eager,
+	);
+	proving_mut(&mut proving_first).paste("~P ; assume");
+	proving_mut(&mut proving_first).note("rules");
+	assert!(!proving_first.previous_question().unwrap());
+	assert_eq!(proving(&proving_first).input(), "~P ; assume");
+	assert_eq!(proving_first.report(), &Report::Note("rules".into()));
 }
 
 // ---------------------------------------------------------------------------
