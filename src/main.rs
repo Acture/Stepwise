@@ -33,6 +33,19 @@ const PROOF_ONLY: [&str; 9] = [
 	"equivalent",
 ];
 
+/// What neither `--random` nor the `--seed` that requires it combines with. `--seed` carries
+/// the list too, for the same reason `PROOF_ONLY` exists: beside any of these, clap would
+/// waive its requirement and drop the seed.
+const NOT_RANDOM: [&str; 7] = [
+	"expression",
+	"exercise",
+	"list",
+	"assign",
+	"proof",
+	"goal",
+	"equivalent",
+];
+
 #[derive(Parser, Debug)]
 #[command(
 	version,
@@ -53,10 +66,10 @@ struct Args {
 	#[arg(long, value_parser = assignment, conflicts_with_all = ["proof", "goal", "list"])]
 	assign: Vec<(String, String)>,
 	/// 用 BDD 检查两个公式在所有赋值下是否等价，不进入练习
-	#[arg(long, requires_all = ["logic", "expression"], conflicts_with_all = ["trace", "exercise", "list", "evaluation", "assign"])]
+	#[arg(long, requires_all = ["logic", "expression"], conflicts_with_all = ["trace", "exercise", "proof", "list", "evaluation", "assign"])]
 	equivalent: Option<String>,
 	/// 按名称打开当前题集里的一道证明题，与 --exercise 查同一份题集；--list 列出可用名称
-	#[arg(long, value_name = "NAME", requires = "logic", conflicts_with_all = ["python", "expression", "exercise", "list", "trace", "evaluation", "goal", "premise"])]
+	#[arg(long, value_name = "NAME", requires = "logic", conflicts_with_all = ["python", "expression", "exercise", "list", "goal", "premise"])]
 	proof: Option<String>,
 	/// 自定义证明的结论，不属于任何题集；前提用 --premise 给出
 	#[arg(long, requires = "logic", conflicts_with_all = PROOF_ONLY)]
@@ -85,10 +98,10 @@ struct Args {
 	)]
 	set: Option<PathBuf>,
 	/// 开始新的随机题，跳过上次进度；不指定题目时默认随机出题
-	#[arg(long, conflicts_with_all = ["expression", "exercise", "list", "assign", "proof", "goal", "equivalent"])]
+	#[arg(long, conflicts_with_all = NOT_RANDOM)]
 	random: bool,
 	/// 固定随机种子，复现同一道题
-	#[arg(long, requires = "random")]
+	#[arg(long, requires = "random", conflicts_with_all = NOT_RANDOM)]
 	seed: Option<u64>,
 	#[arg(long)]
 	list: bool,
@@ -413,8 +426,14 @@ fn execute(args: Args) -> Result<(), Box<dyn Error>> {
 	let mode: EvaluationMode = app::starting_mode(requested, &progress, &questions[index]);
 	if args.trace {
 		let Question::Evaluation(exercise) = &questions[index] else {
+			// Name the set too: --proof looks the name up in whichever set is loaded.
+			let from: String = args
+				.set
+				.as_ref()
+				.map(|path| format!("--set {} ", path.display()))
+				.unwrap_or_default();
 			return Err(format!(
-				"证明题没有逐步演示；写好的证明用 --proof {} --check-proof FILE 检查。",
+				"证明题没有逐步演示；写好的证明用 --logic {from}--proof {} --check-proof FILE 检查。",
 				questions[index].name()
 			)
 			.into());

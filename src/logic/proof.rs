@@ -1,7 +1,7 @@
 use super::{Formula, LogicOp, parse_formula};
 use crate::core::ParseError;
 
-pub const RULES: &str = "格式：公式 ; 规则 ; 引用行（逗号分隔的行号）\n前提是第 1 至 n 行，之后每接受一行编号加一\n例：第 3 行 A→B、第 5 行 A，写 B ; mp ; 3,5\nassume 假设，无引用；其后的行缩进，属于这个子证明\nmp 肯定前件 / →消去，引用 A→B 和 A\nand-intro ∧引入，引用 A 和 B\nand-left / and-right ∧消去，引用 A∧B\nor-left / or-right ∨引入，引用对应一侧\nnot-elim 矛盾，引用 A 和 ¬A，填写 ⊥\nimp-intro →引入，引用假设行,末行，关闭子证明\nnot-intro ¬引入，引用假设行,矛盾末行\nraa 反证法，引用否定假设行,矛盾末行\niff-intro ↔引入，引用 A→B 和 B→A\niff-left / iff-right ↔消去，得对应蕴涵\nbottom-elim ⊥消去；copy 重申，引用一行\n子证明必须关闭最内层假设；不允许引用已关闭子证明内部的行。";
+pub const RULES: &str = "格式：公式 ; 规则 ; 引用行（逗号分隔的行号）\n前提是第 1 至 n 行，之后每接受一行编号加一\n例：第 3 行 A→B、第 5 行 A，写 B ; mp ; 3,5\nassume 假设，无引用；其后的行缩进，属于这个子证明\nmp 肯定前件 / →消去，引用 A→B 和 A\nand-intro ∧引入，引用 A 和 B\nand-left / and-right ∧消去，引用 A∧B\nor-left / or-right ∨引入，引用对应一侧\nnot-elim 矛盾，引用 A 和 ¬A，填写 ⊥\nimp-intro →引入，引用假设行,末行，关闭子证明\nnot-intro ¬引入，引用假设行,矛盾末行\nraa 反证法，引用否定假设行,矛盾末行\niff-intro ↔引入，引用 A→B 和 B→A\niff-left / iff-right ↔消去，得对应蕴涵\nbottom-elim ⊥消去，引用 ⊥，得任意公式\ncopy 重申，引用一行\n子证明必须关闭最内层假设；不允许引用已关闭子证明内部的行。";
 
 #[derive(Clone, Debug)]
 pub struct ProofLine {

@@ -3,10 +3,12 @@
 //! name lookup and the same checker as a proof in an imported set, and the progress saved for
 //! them before they moved still replays.
 //!
-//! A complete proof exists in this repository only as a checker fixture under
-//! `tests/fixtures`, never as a sample.
+//! A complete proof lives only in tests — the checker fixtures under `tests/fixtures` and
+//! test code such as this file — never as a sample, in documentation or in anything the
+//! program shows.
 
 use std::{
+	collections::BTreeSet,
 	path::Path,
 	process::{Command, Output},
 };
@@ -160,37 +162,47 @@ fn naming_a_built_in_proof_opens_the_proof_practice_either_way() {
 	}
 }
 
-/// A built-in proof opens a course like any other question, so `--evaluation` names the
-/// strategy the evaluation questions after it open in and is accepted, while an assignment
-/// would bind nothing in a proof and is refused rather than dropped.
+/// `--proof NAME` and `--exercise NAME` are one lookup, and `--proof` only insists the
+/// question is a proof, so a proof named either way takes the course strategy, refuses a
+/// trace with the same words and refuses an assignment.
 #[test]
-fn a_named_built_in_proof_takes_the_course_strategy_but_refuses_an_assignment() {
-	let strategy: Output = cli(&[
-		"--logic",
-		"--exercise",
-		"raa",
-		"--evaluation",
-		"eager",
-		"--no-save",
-	]);
-	assert_eq!(strategy.status.code(), Some(1), "{}", err(&strategy));
-	contains(&err(&strategy), "自然演绎练习需要交互终端");
-	assert!(!err(&strategy).contains("是证明题"), "{}", err(&strategy));
+fn a_proof_named_either_way_takes_the_course_strategy_and_refuses_a_trace_or_an_assignment() {
+	for flag in ["--exercise", "--proof"] {
+		let strategy: Output = cli(&["--logic", flag, "raa", "--evaluation", "eager", "--no-save"]);
+		assert_eq!(
+			strategy.status.code(),
+			Some(1),
+			"{flag}: {}",
+			err(&strategy)
+		);
+		contains(&err(&strategy), "自然演绎练习需要交互终端");
+		assert!(!err(&strategy).contains("是证明题"), "{}", err(&strategy));
 
-	let assigned: Output = cli(&[
-		"--logic",
-		"--exercise",
-		"raa",
-		"--assign",
-		"P=True",
-		"--no-save",
-	]);
-	assert_eq!(assigned.status.code(), Some(1), "{}", err(&assigned));
+		let traced: Output = cli(&["--logic", flag, "raa", "--trace"]);
+		assert_eq!(traced.status.code(), Some(1), "{flag}: {}", err(&traced));
+		assert_eq!(
+			err(&traced),
+			"Stepwise: 证明题没有逐步演示；写好的证明用 --logic --proof raa --check-proof FILE 检查。\n"
+		);
+		assert!(out(&traced).is_empty());
+
+		let assigned: Output = cli(&["--logic", flag, "raa", "--assign", "P=True", "--no-save"]);
+		assert!(!assigned.status.success(), "{flag}");
+		contains(&err(&assigned), "--assign");
+		assert!(out(&assigned).is_empty());
+	}
+	// Reached through --exercise, the refusal is the program's own sentence.
 	contains(
-		&err(&assigned),
+		&err(&cli(&[
+			"--logic",
+			"--exercise",
+			"raa",
+			"--assign",
+			"P=True",
+			"--no-save",
+		])),
 		"题目 raa 是证明题，--assign 对它没有意义。",
 	);
-	assert!(out(&assigned).is_empty());
 }
 
 #[test]
@@ -314,6 +326,15 @@ fn the_argument_parser_keeps_each_proof_source_to_itself() {
 		vec!["--python", "--goal", "P"],
 		// Premises belong to a written-out sequent.
 		vec!["--logic", "--proof", "mp", "--premise", "P"],
+		// A seed only means something to --random; clap would otherwise waive that
+		// requirement beside any question source and drop the seed.
+		vec!["--logic", "--goal", "P", "--seed", "3"],
+		vec!["--logic", "--proof", "raa", "--seed", "3"],
+		vec!["--logic", "--exercise", "raa", "--seed", "3"],
+		vec!["--logic", "--list", "--seed", "3"],
+		vec!["--logic", "P", "--seed", "3"],
+		// An equivalence check needs the expression a named proof would replace.
+		vec!["--logic", "--equivalent", "Q", "--proof", "raa"],
 	] {
 		let refused: Output = cli(&args);
 		assert_eq!(
@@ -326,9 +347,12 @@ fn the_argument_parser_keeps_each_proof_source_to_itself() {
 }
 
 /// How to write a proof line is documented, not demonstrated by a worked solution: the README
-/// and the in-app rule text both name every rule the checker accepts, and the line format.
-/// Each rule is applied here once so that a rule the checker stops accepting — or a new one
-/// nobody documented — fails this test instead of drifting.
+/// and the in-app rule text both give the line format and name the same rules. Each rule is
+/// applied here once, and the rules named at the head of an in-app rule line and in the first
+/// column of the README table must be exactly these — so a rule the checker stops accepting,
+/// one documented that it never accepted, or a documented rule whose line or row goes
+/// missing fails this test. The checker's own match is not visible from here: a rule added
+/// there has to be added to `applied`, which then holds both documents to it.
 #[test]
 fn every_rule_the_checker_accepts_is_documented_in_the_readme_and_the_in_app_rules() {
 	const README: &str = include_str!("../README.md");
@@ -403,9 +427,28 @@ fn every_rule_the_checker_accepts_is_documented_in_the_readme_and_the_in_app_rul
 				.unwrap_or_else(|error| panic!("{rule}: {line}: {error}"));
 		}
 		assert_eq!(proof.lines().last().unwrap().rule, rule);
-		contains(manual, &format!("`{rule}`"));
-		contains(rules, rule);
 	}
+
+	let accepted: BTreeSet<&str> = applied.iter().map(|(rule, _, _)| *rule).collect();
+	// An in-app line starts with its rule, or with two rules joined by " / ".
+	let in_app: BTreeSet<&str> = rules
+		.lines()
+		.flat_map(|line| line.split(" / "))
+		.filter_map(|part| part.split_whitespace().next())
+		.filter(|head| {
+			head.chars()
+				.all(|character| character.is_ascii_lowercase() || character == '-')
+		})
+		.collect();
+	assert_eq!(in_app, accepted, "the in-app rule lines");
+	// A README table row names its rules in backticks in the first column.
+	let in_manual: BTreeSet<&str> = manual
+		.lines()
+		.filter_map(|row| row.strip_prefix('|'))
+		.filter_map(|row| row.split('|').next())
+		.flat_map(|cell| cell.split('`').skip(1).step_by(2))
+		.collect();
+	assert_eq!(in_manual, accepted, "the README rule table");
 }
 
 /// The checker explains the line format with an example of its own, in the refusal of a

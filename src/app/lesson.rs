@@ -122,12 +122,16 @@ impl Lesson {
 		Ok(true)
 	}
 
-	/// Go back to a question drawn earlier in this run, restoring its recorded work. The
-	/// first question stays where it is.
+	/// Go back to a question drawn earlier in this run, restoring its recorded work. False at
+	/// the first question, which stays exactly as it is: reopening it would throw away a
+	/// half-typed answer or proof line for a move that goes nowhere.
 	pub fn previous_question(&mut self) -> Result<bool, ParseError> {
-		self.record();
 		let mut course: Course = self.course.clone();
 		course.backward();
+		if course.index() == self.course.index() {
+			return Ok(false);
+		}
+		self.record();
 		self.enter(course)?;
 		Ok(true)
 	}

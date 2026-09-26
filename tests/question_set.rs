@@ -993,9 +993,15 @@ fn a_language_whose_only_questions_are_proofs_is_practised_as_a_course_of_proofs
 	contains(&err(&practice), PROOF_OPENED);
 	assert!(!err(&practice).contains("没有 --logic 的题目"));
 
+	// The refusal names the checker command that finds this proof: --proof looks the name up
+	// in whichever set is loaded, so the command carries the set.
 	let traced: Output = cli(&["--logic", "--set", file, "--no-save", "--trace"]);
 	assert_eq!(traced.status.code(), Some(1), "{}", err(&traced));
 	contains(&err(&traced), "证明题没有逐步演示");
+	contains(
+		&err(&traced),
+		&format!("--logic --set {file} --proof p1 --check-proof FILE"),
+	);
 	assert!(out(&traced).is_empty());
 
 	// The other language really has nothing, and says that instead.
