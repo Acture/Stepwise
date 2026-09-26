@@ -122,16 +122,25 @@ fn the_embedded_set_parses_as_version_one_and_stamps_every_question_with_its_own
 	assert_eq!(set.name, "builtin");
 	assert_eq!(set.version(), exercises::FORMAT_VERSION);
 	assert_eq!(set.version(), 1);
-	assert_eq!(set.questions().len(), 20);
+	assert_eq!(set.questions().len(), 23);
 	assert!(set.description.is_some());
 
-	// Every embedded question is an evaluation question, so the three views agree.
+	// Twenty evaluation questions, then the three built-in proofs: every question is one or
+	// the other, and the file order holds in both views.
 	let listed: Vec<&str> = set.questions().iter().map(Question::name).collect();
 	let walked: Vec<&str> = set
 		.exercises()
 		.map(|exercise| exercise.name.as_str())
 		.collect();
-	assert_eq!(listed, walked);
+	let proofs: Vec<&str> = set
+		.questions()
+		.iter()
+		.filter(|question| matches!(question, Question::Proof(_)))
+		.map(Question::name)
+		.collect();
+	assert_eq!(walked.len(), 20);
+	assert_eq!(proofs, ["mp", "raa", "identity"]);
+	assert_eq!(listed, [walked.as_slice(), proofs.as_slice()].concat());
 	for exercise in set.exercises() {
 		assert_eq!(
 			exercise.set, "builtin",
@@ -151,7 +160,7 @@ fn the_embedded_set_parses_as_version_one_and_stamps_every_question_with_its_own
 		.collect();
 	let mut sorted: Vec<&str> = split.clone();
 	sorted.sort_unstable();
-	let mut expected: Vec<&str> = listed.clone();
+	let mut expected: Vec<&str> = walked.clone();
 	expected.sort_unstable();
 	assert_eq!(sorted, expected);
 	assert!(
@@ -746,22 +755,16 @@ fn trace_on_a_question_from_a_file_prints_the_steps_the_rules_derived() {
 	assert!(printed.contains("4. "), "{printed}");
 }
 
+/// Every one of these names a question the set does not hold. `--proof NAME` is not among
+/// them: like `--exercise`, it names a question of whichever set is loaded.
 #[test]
 fn a_set_cannot_be_combined_with_a_question_from_anywhere_else() {
 	for conflicting in [
 		vec!["--python", "--set", EXAMPLE_PATH, "1 + 1"],
 		vec!["--python", "--set", EXAMPLE_PATH, "--random"],
 		vec!["--python", "--set", EXAMPLE_PATH, "--seed", "1"],
-		vec!["--logic", "--set", EXAMPLE_PATH, "--proof", "mp"],
 		vec!["--logic", "--set", EXAMPLE_PATH, "--goal", "P"],
 		vec!["--logic", "--set", EXAMPLE_PATH, "--premise", "P"],
-		vec![
-			"--logic",
-			"--set",
-			EXAMPLE_PATH,
-			"--check-proof",
-			EXAMPLE_PATH,
-		],
 		vec!["--logic", "--set", EXAMPLE_PATH, "--equivalent", "P"],
 	] {
 		let refused: Output = cli(&conflicting);

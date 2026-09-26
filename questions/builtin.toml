@@ -4,7 +4,7 @@
 version = 1
 name = "builtin"
 title = "内置题库"
-description = "随程序一起发行的默认题集：Python 求值与命题逻辑求值。"
+description = "随程序一起发行的默认题集：Python 求值、命题逻辑求值与自然演绎。"
 
 [[questions]]
 kind = "evaluation"
@@ -231,3 +231,26 @@ R = "True"
 S = "False"
 U = "False"
 V = "True"
+
+# 证明题只给前提和结论，每一行推导都由规则检查。已存的证明进度按解析后的前提与结论
+# 保存：改动公式就是另一道题，旧记录仍留在进度文件里，只是不再属于这一道。
+
+[[questions]]
+kind = "proof"
+name = "mp"
+title = "肯定前件"
+premises = ["P -> Q", "P"]
+conclusion = "Q"
+
+[[questions]]
+kind = "proof"
+name = "raa"
+title = "反证法"
+premises = ["~~P"]
+conclusion = "P"
+
+[[questions]]
+kind = "proof"
+name = "identity"
+title = "蕴涵引入"
+conclusion = "P -> P"

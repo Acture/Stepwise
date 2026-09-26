@@ -426,7 +426,8 @@ impl Exercise {
 }
 
 impl ProofQuestion {
-	/// The proof this question opens, checked by the same rules a built-in one is.
+	/// The proof this question opens. The built-in proofs are questions of the embedded set,
+	/// so every proof reaches the checker this way.
 	pub fn proof(&self) -> Result<Proof, ParseError> {
 		Ok(Proof::new(
 			self.premises
@@ -437,8 +438,12 @@ impl ProofQuestion {
 		))
 	}
 
-	/// Premises and conclusion on one line, for a listing.
+	/// Premises and conclusion on one line, for a listing. A proof from no premises starts
+	/// at the turnstile.
 	pub fn sequent(&self) -> String {
+		if self.premises.is_empty() {
+			return format!("⊢ {}", self.conclusion);
+		}
 		format!("{} ⊢ {}", self.premises.join("，"), self.conclusion)
 	}
 

@@ -34,7 +34,7 @@ jobs:
       - name: Drive the terminal through a pty
         if: runner.os != 'Windows'
         run: cargo +stable test --locked --test terminal -- --ignored --nocapture
-      - run: cargo +stable run --locked -- --logic --proof raa --check-proof examples/raa.json
+      - run: cargo +stable run --locked -- --logic --proof raa --check-proof tests/fixtures/raa.json
 
   binary:
     if: github.event_name == 'workflow_dispatch'

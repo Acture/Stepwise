@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "current_set": "",
+  "current": "",
+  "mode": "short-circuit",
+  "sessions": {},
+  "proofs": {
+    "proof\n[Binary(Implies, Atom(\"P\"), Atom(\"Q\")), Atom(\"P\")]\nQ": [
+      "Q ; mp ; 1,2"
+    ],
+    "proof\n[Not(Not(Atom(\"P\")))]\nP": [
+      "~P ; assume",
+      "False ; not-elim ; 1,2"
+    ],
+    "proof\n[]\n(P → P)": [
+      "P ; assume",
+      "P ; copy ; 1",
+      "(P -> P) ; imp-intro ; 1,2"
+    ]
+  }
+}
