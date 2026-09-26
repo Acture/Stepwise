@@ -4,8 +4,9 @@
 //! terminal library, no window toolkit, no event library and no file system. CLAUDE.md
 //! spells the grep that keeps it that way.
 //!
-//! A front end is an adapter over [`Practice`] and [`ProofPractice`]: it maps its own input
-//! to their operations and draws their readable state. It never keeps a second copy of the
+//! A front end is an adapter over a [`Lesson`]: it moves through the course with the
+//! lesson's operations, maps its own input to the operations of the [`Task`] in hand — a
+//! [`Practice`] or a [`ProofPractice`] — and draws their readable state. It never keeps a second copy of the
 //! session or the progress, and it never re-derives a teaching rule — which source range a
 //! draft stands for, which node a character belongs to and which display states to archive
 //! all come from here.
@@ -21,6 +22,7 @@
 //! to touch the disk belongs to the process that owns the terminal or the window.
 
 mod course;
+mod lesson;
 mod notice;
 mod practice;
 mod proof;
@@ -28,6 +30,7 @@ mod start;
 mod transcript;
 
 pub use course::{Course, Supply};
+pub use lesson::{Lesson, Task};
 pub use notice::{Notice, Report};
 pub use practice::Practice;
 pub use proof::ProofPractice;

@@ -107,15 +107,13 @@ fn progress_saved_before_the_proofs_became_data_still_replays() {
 	let saved: Progress = Progress::load(Path::new(&fixture("progress-17c6f55.json"))).unwrap();
 	assert_eq!(saved.proofs.len(), 3);
 	for (name, finished, lines) in [("mp", true, 3), ("raa", false, 3), ("identity", true, 3)] {
-		let practice: ProofPractice =
-			ProofPractice::new(built_in(name).proof().unwrap(), saved.clone()).unwrap();
+		let practice: ProofPractice = ProofPractice::new(built_in(name), saved.clone()).unwrap();
 		assert_eq!(practice.is_finished(), finished, "{name}");
 		assert_eq!(practice.proof().lines().len(), lines, "{name}");
 	}
 
 	// The unfinished one continues from its third line.
-	let mut raa: ProofPractice =
-		ProofPractice::new(built_in("raa").proof().unwrap(), saved.clone()).unwrap();
+	let mut raa: ProofPractice = ProofPractice::new(built_in("raa"), saved.clone()).unwrap();
 	raa.paste("P ; raa ; 2,3");
 	assert!(raa.submit());
 	assert!(raa.is_finished());
@@ -160,6 +158,39 @@ fn naming_a_built_in_proof_opens_the_proof_practice_either_way() {
 		assert!(!opened.status.success());
 		contains(&err(&opened), "自然演绎练习需要交互终端");
 	}
+}
+
+/// A built-in proof opens a course like any other question, so `--evaluation` names the
+/// strategy the evaluation questions after it open in and is accepted, while an assignment
+/// would bind nothing in a proof and is refused rather than dropped.
+#[test]
+fn a_named_built_in_proof_takes_the_course_strategy_but_refuses_an_assignment() {
+	let strategy: Output = cli(&[
+		"--logic",
+		"--exercise",
+		"raa",
+		"--evaluation",
+		"eager",
+		"--no-save",
+	]);
+	assert_eq!(strategy.status.code(), Some(1), "{}", err(&strategy));
+	contains(&err(&strategy), "自然演绎练习需要交互终端");
+	assert!(!err(&strategy).contains("是证明题"), "{}", err(&strategy));
+
+	let assigned: Output = cli(&[
+		"--logic",
+		"--exercise",
+		"raa",
+		"--assign",
+		"P=True",
+		"--no-save",
+	]);
+	assert_eq!(assigned.status.code(), Some(1), "{}", err(&assigned));
+	contains(
+		&err(&assigned),
+		"题目 raa 是证明题，--assign 对它没有意义。",
+	);
+	assert!(out(&assigned).is_empty());
 }
 
 #[test]
@@ -357,6 +388,7 @@ fn every_rule_the_checker_accepts_is_documented_in_the_readme_and_the_in_app_rul
 	];
 	for (rule, premises, lines) in applied {
 		let mut proof: stepwise::logic::proof::Proof = ProofQuestion {
+			set: String::new(),
 			name: rule.into(),
 			title: rule.into(),
 			premises: premises.iter().map(|premise| (*premise).into()).collect(),

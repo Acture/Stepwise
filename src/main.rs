@@ -8,7 +8,7 @@ use std::{
 
 use clap::{ArgGroup, Parser};
 use stepwise::{
-	app::{self, Course, Practice},
+	app::{self, Course, Lesson},
 	core::{EvaluationMode, ExprKind, Language, Session},
 	exercises::{self, Exercise, ProofQuestion, Question, QuestionSet},
 	generate,
@@ -124,23 +124,11 @@ fn load_set(path: &Path) -> Result<QuestionSet, Box<dyn Error>> {
 
 /// The required language selects inside the loaded set; saying so beats an empty screen.
 fn no_questions(set: &QuestionSet, language: Language) -> String {
-	let proofs: bool = set
-		.questions()
-		.iter()
-		.any(|question| question.language() == language && question.evaluation().is_none());
-	if proofs {
-		format!(
-			"题集 {} 里 --{} 只有证明题；用 --exercise ID 选一道，或用 --list 查看。",
-			set.name,
-			language.key()
-		)
-	} else {
-		format!(
-			"题集 {} 里没有 --{} 的题目；用 --list 查看题集内容。",
-			set.name,
-			language.key()
-		)
-	}
+	format!(
+		"题集 {} 里没有 --{} 的题目；用 --list 查看题集内容。",
+		set.name,
+		language.key()
+	)
 }
 
 /// The question a name means in the loaded set, for the language this launch practises:
@@ -181,6 +169,7 @@ fn proof_question(
 ) -> Result<Option<ProofQuestion>, Box<dyn Error>> {
 	if let Some(goal) = &args.goal {
 		return Ok(Some(ProofQuestion {
+			set: String::new(),
 			name: "custom-proof".into(),
 			title: "自定义证明".into(),
 			premises: args.premise.clone(),
@@ -333,40 +322,18 @@ fn execute(args: Args) -> Result<(), Box<dyn Error>> {
 		Some("short-circuit") => Some(EvaluationMode::ShortCircuit),
 		_ => None,
 	};
-	// A proof question opens the natural-deduction practice, checked by the same rules
-	// whichever set it came from. The argument parser already keeps --trace, --assign and
-	// --evaluation away from --proof and --goal; a name given to --exercise reaches here.
-	if let Some(question) = proof {
-		if args.trace {
-			return Err(format!(
-				"证明题没有逐步演示；写好的证明用 --proof {} --check-proof FILE 检查。",
-				question.name
-			)
-			.into());
-		}
-		if let Some(flag) = [
-			(!args.assign.is_empty()).then_some("--assign"),
-			args.evaluation.is_some().then_some("--evaluation"),
-		]
-		.into_iter()
-		.flatten()
-		.next()
-		{
-			return Err(format!("题目 {} 是证明题，{flag} 对它没有意义。", question.name).into());
-		}
-		return tui::run_proof(question.proof()?, progress, path);
-	}
-	// --set makes the file the course: its questions, in its order, ending at the last one.
+	// --set makes the file the course: its questions of this language, evaluation and proof
+	// alike, in its order, ending at the last one.
 	let ordered: bool = args.set.is_some();
-	let mut questions: Vec<Exercise> = set.evaluations(language);
+	let mut questions: Vec<Question> = set.of_language(language);
 	let index: usize = if args.random {
-		questions = vec![generate::generate(
+		questions = vec![Question::Evaluation(generate::generate(
 			language,
 			args.seed.unwrap_or_else(generate::fresh_seed),
-		)?];
+		)?)];
 		0
 	} else if let Some(expression) = args.expression {
-		questions = vec![Exercise {
+		questions = vec![Question::Evaluation(Exercise {
 			set: String::new(),
 			name: if args.logic {
 				"custom-logic"
@@ -380,28 +347,49 @@ fn execute(args: Args) -> Result<(), Box<dyn Error>> {
 			bindings: BTreeMap::new(),
 			evaluation: None,
 			note: None,
-		}];
+		})];
 		0
-	} else if let Some(id) = &args.exercise {
-		// `named` already found it in this language, and it is not a proof.
+	} else if args.goal.is_some() {
+		questions = vec![Question::Proof(proof.expect("--goal writes out a proof"))];
+		0
+	} else if let Some(question) = chosen {
+		// `named` already found it among this language's questions.
 		questions
 			.iter()
-			.position(|exercise| exercise.name == *id)
-			.expect("a named evaluation question of this language is in its list")
+			.position(|candidate| candidate.name() == question.name())
+			.expect("a named question of this language is in its list")
+	} else if !args.assign.is_empty() {
+		// Assignments with no question named bind an evaluation question — a proof has
+		// nothing to assign — so the set is searched among those alone: in order from where
+		// progress left off with --set, else its current one or its first.
+		let evaluations: Vec<usize> = (0..questions.len())
+			.filter(|index| questions[*index].evaluation().is_some())
+			.collect();
+		if evaluations.is_empty() {
+			return Err(format!(
+				"题集 {} 里 --{} 没有求值题，--assign 没有可赋值的题目。",
+				set.name,
+				language.key()
+			)
+			.into());
+		}
+		let candidates: Vec<Question> = evaluations
+			.iter()
+			.map(|index| questions[*index].clone())
+			.collect();
+		evaluations[if ordered {
+			app::resume_in_set(&progress, &candidates, requested)?
+		} else {
+			candidates
+				.iter()
+				.position(|question| progress.points_at(question.set(), question.name()))
+				.unwrap_or(0)
+		}]
 	} else if ordered {
 		if questions.is_empty() {
 			return Err(no_questions(&set, language).into());
 		}
 		app::resume_in_set(&progress, &questions, requested)?
-	} else if !args.assign.is_empty() {
-		// Assignments with no question named stay on the set's current question, as before.
-		if questions.is_empty() {
-			return Err(no_questions(&set, language).into());
-		}
-		questions
-			.iter()
-			.position(|exercise| progress.points_at(&exercise.set, &exercise.name))
-			.unwrap_or(0)
 	} else {
 		questions = vec![app::resume_or_generate(language, &progress, &questions)?];
 		0
@@ -412,13 +400,29 @@ fn execute(args: Args) -> Result<(), Box<dyn Error>> {
 			return Err(format!("变量 {name} 被重复赋值。").into());
 		}
 	}
-	questions[index].bindings.extend(assigned);
+	match &mut questions[index] {
+		Question::Evaluation(exercise) => exercise.bindings.extend(assigned),
+		// Accepting assignments here would drop them: a proof binds no variable.
+		Question::Proof(question) if !assigned.is_empty() => {
+			return Err(format!("题目 {} 是证明题，--assign 对它没有意义。", question.name).into());
+		}
+		Question::Proof(_) => {}
+	}
+	// --evaluation is the course's strategy, so it stands even when the course opens on a
+	// proof: the evaluation questions after it open in it.
 	let mode: EvaluationMode = app::starting_mode(requested, &progress, &questions[index]);
 	if args.trace {
-		if !questions[index].bindings.is_empty() {
-			println!("{}", questions[index].assignments());
+		let Question::Evaluation(exercise) = &questions[index] else {
+			return Err(format!(
+				"证明题没有逐步演示；写好的证明用 --proof {} --check-proof FILE 检查。",
+				questions[index].name()
+			)
+			.into());
+		};
+		if !exercise.bindings.is_empty() {
+			println!("{}", exercise.assignments());
 		}
-		return trace(questions[index].session(mode)?);
+		return trace(exercise.session(mode)?);
 	}
 	// The chosen question starts a practice sequence; the course supplies the rest.
 	let course: Course = if ordered {
@@ -426,7 +430,7 @@ fn execute(args: Args) -> Result<(), Box<dyn Error>> {
 	} else {
 		Course::random(vec![questions.remove(index)], 0)?
 	};
-	tui::run(Practice::new(course, progress, mode)?, path)
+	tui::run(Lesson::new(course, progress, mode)?, path)
 }
 
 fn main() -> ExitCode {

@@ -9,7 +9,10 @@ use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use tempfile::NamedTempFile;
 
-use crate::core::{EvaluationMode, RecordedAttempt, Session};
+use crate::{
+	core::{EvaluationMode, RecordedAttempt, Session},
+	logic::proof::Proof,
+};
 
 /// The progress format this build reads. Question sets did not change it: they added a name
 /// beside the pointer, and a file written before them simply has no name there, which is
@@ -91,6 +94,17 @@ impl Progress {
 			.insert(session.progress_key(), session.attempts().to_vec());
 	}
 
+	/// Point at this proof question and save its lines. The saved strategy belongs to the
+	/// evaluation question it was recorded with and is left alone: a proof has none, so a
+	/// launch that resumes at a proof opens the questions after it in the requested strategy
+	/// or their language's default.
+	pub fn record_proof(&mut self, set: &str, question: &str, proof: &Proof) {
+		self.current_set = set.into();
+		self.current = question.into();
+		self.proofs
+			.insert(proof.progress_key(), proof.commands().to_vec());
+	}
+
 	/// True when the saved pointer names exactly this question of exactly this set.
 	pub fn points_at(&self, set: &str, question: &str) -> bool {
 		self.current_set == set && self.current == question
@@ -99,6 +113,14 @@ impl Progress {
 	pub fn attempts(&self, session: &Session) -> &[RecordedAttempt] {
 		self.sessions
 			.get(&session.progress_key())
+			.map(Vec::as_slice)
+			.unwrap_or_default()
+	}
+
+	/// The lines saved for exactly these premises and this conclusion.
+	pub fn commands(&self, proof: &Proof) -> &[String] {
+		self.proofs
+			.get(&proof.progress_key())
 			.map(Vec::as_slice)
 			.unwrap_or_default()
 	}
