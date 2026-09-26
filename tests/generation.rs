@@ -139,7 +139,7 @@ fn cli_requires_exactly_one_language_before_starting() {
 			"--proof",
 			"raa",
 			"--check-proof",
-			concat!(env!("CARGO_MANIFEST_DIR"), "/examples/raa.json"),
+			concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/raa.json"),
 		],
 	] {
 		let output: Output = cli(&args);

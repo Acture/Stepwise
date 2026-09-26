@@ -92,6 +92,17 @@ fn the_inline_adapter_teaches_and_saves_through_a_real_terminal() {
 	let directory: tempfile::TempDir = tempfile::tempdir().expect("temporary directory");
 	let progress: std::path::PathBuf = directory.path().join("progress.json");
 	let file: String = progress.to_string_lossy().into();
+	// Written by the base commit of P-693, while the built-in proofs still lived in main.rs.
+	let saved_before: std::path::PathBuf = directory.path().join("progress-17c6f55.json");
+	std::fs::copy(
+		concat!(
+			env!("CARGO_MANIFEST_DIR"),
+			"/tests/fixtures/progress-17c6f55.json"
+		),
+		&saved_before,
+	)
+	.expect("fixture copies");
+	let saved_before_file: String = saved_before.to_string_lossy().into();
 	let captures: Vec<Capture> = drive(vec![
 		// Hint, navigate, answer wrong, answer right, click the finished bracket, finish.
 		run(
@@ -144,9 +155,21 @@ fn the_inline_adapter_teaches_and_saves_through_a_real_terminal() {
 			],
 			&["n", "n", "q"],
 		),
+		// The built-in reductio is a question of the embedded set now, opened by name like
+		// any other, and the progress saved before it moved reopens it two lines in.
+		run(
+			&[
+				"--logic",
+				"--exercise",
+				"raa",
+				"--progress-file",
+				&saved_before_file,
+			],
+			&["P ; raa ; 2,3", "\r", "\u{3}"],
+		),
 	]);
-	let [expression, proof, imported] =
-		<[Capture; 3]>::try_from(captures).ok().expect("three runs");
+	let [expression, proof, imported, resumed] =
+		<[Capture; 4]>::try_from(captures).ok().expect("four runs");
 
 	// The inline viewport must never take over or wipe the screen, and must hand the
 	// terminal back the way it found it.
@@ -215,6 +238,31 @@ fn the_inline_adapter_teaches_and_saves_through_a_real_terminal() {
 			"imported-set run missing {expected}"
 		);
 	}
+
+	let reopened: String = squashed(&resumed.visible);
+	for expected in [
+		"自然演绎 · 目标：P",
+		"2 │ ¬P [assume ]",     // replayed from the old file, not typed in this run
+		"3 │ ⊥ [not-elim 1,2]", // likewise
+		"4 P [raa 2,3]",
+		"目标已在所有假设之外成立，证明完成。",
+	] {
+		assert!(
+			reopened.contains(&squashed(expected)),
+			"resumed proof run missing {expected}"
+		);
+	}
+	let continued: serde_json::Value = serde_json::from_str(
+		&std::fs::read_to_string(&saved_before).expect("old progress file rewritten"),
+	)
+	.expect("progress parses");
+	assert_eq!(
+		continued["proofs"]["proof\n[Not(Not(Atom(\"P\")))]\nP"]
+			.as_array()
+			.map(Vec::len),
+		Some(3),
+		"the finished reductio is saved under its old key"
+	);
 
 	// Both runs wrote through the same progress file, atomically, in the saved format.
 	let saved: BTreeMap<String, serde_json::Value> =
