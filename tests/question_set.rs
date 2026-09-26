@@ -232,9 +232,9 @@ fn one_set_carries_python_logic_and_proof_questions_with_their_fields_intact() {
 
 	let logic: &Exercise = set.find("lg").unwrap().evaluation().unwrap();
 	assert_eq!(logic.language, Language::Logic);
-	// No `evaluation` field, so the language's own default decides.
+	// No `evaluation` field, so the default decides: short circuit, in logic as in Python.
 	assert_eq!(logic.evaluation, None);
-	assert_eq!(logic.mode(), Language::Logic.default_mode());
+	assert_eq!(logic.mode(), EvaluationMode::ShortCircuit);
 
 	let question: &Question = set.find("p1").unwrap();
 	assert_eq!(question.language(), Language::Logic);

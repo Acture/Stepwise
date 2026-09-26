@@ -462,7 +462,8 @@ fn a_default_launch_resumes_unfinished_work_and_replaces_a_finished_question() {
 		stepwise::app::starting_mode(None, &random, &restored),
 		EvaluationMode::Eager
 	);
-	// An explicit choice and another language's default both override the saved strategy.
+	// An explicit choice overrides the saved strategy, and a question with nothing saved opens
+	// in the default: short circuit, in logic as in Python.
 	assert_eq!(
 		stepwise::app::starting_mode(Some(EvaluationMode::ShortCircuit), &random, &restored),
 		EvaluationMode::ShortCircuit
@@ -473,7 +474,7 @@ fn a_default_launch_resumes_unfinished_work_and_replaces_a_finished_question() {
 			&Progress::default(),
 			&Question::Evaluation(builtin("logic-and"))
 		),
-		EvaluationMode::Eager
+		EvaluationMode::ShortCircuit
 	);
 }
 
@@ -1282,23 +1283,23 @@ fn a_question_opens_in_the_strategy_its_own_file_asked_for_unless_something_beat
 	);
 
 	// Nor does a saved strategy reach the question beside it in its own set: the logic
-	// question keeps what the pointer left on it, and the Python question next to it opens
-	// in its own strategy rather than in logic's.
+	// question keeps what the pointer left on it, and the Python question with no field of
+	// its own opens in the default rather than in what was saved for logic.
 	let mut on_logic: Progress = Progress::default();
 	on_logic.current_set = "mode-set".into();
 	on_logic.current = "logic-q".into();
-	on_logic.mode = EvaluationMode::ShortCircuit;
+	on_logic.mode = EvaluationMode::Eager;
 	assert_eq!(
 		logic.evaluation().expect("an evaluation question").mode(),
-		EvaluationMode::Eager
-	);
-	assert_eq!(
-		stepwise::app::starting_mode(None, &on_logic, logic),
 		EvaluationMode::ShortCircuit
 	);
 	assert_eq!(
-		stepwise::app::starting_mode(None, &on_logic, eager),
+		stepwise::app::starting_mode(None, &on_logic, logic),
 		EvaluationMode::Eager
+	);
+	assert_eq!(
+		stepwise::app::starting_mode(None, &on_logic, plain),
+		EvaluationMode::ShortCircuit
 	);
 }
 
@@ -1558,9 +1559,9 @@ fn an_ordered_set_skips_a_finished_proof_and_stops_at_an_unfinished_one() {
 	let before: Exercise = evaluation_question(&set, "before");
 	let after: Exercise = evaluation_question(&set, "after");
 	let chain: ProofQuestion = proof_question(&set, "chain");
-	// Logic evaluation questions are worked in the language's own strategy, the one the set
-	// judges a question the pointer does not name in.
-	let eager: EvaluationMode = Language::Logic.default_mode();
+	// Evaluation questions are worked in the default strategy, the one the set judges a
+	// question the pointer does not name in.
+	let default: EvaluationMode = EvaluationMode::default();
 	let resume = |progress: &Progress| -> usize {
 		stepwise::app::resume_in_set(progress, &questions, None).unwrap()
 	};
@@ -1574,15 +1575,15 @@ fn an_ordered_set_skips_a_finished_proof_and_stops_at_an_unfinished_one() {
 
 	// The pointer on the finished question before it: an unfinished proof is where the set
 	// stops, whether it has a line, an empty record or no record at all.
-	let first_done: Progress = stepped(&before, eager, true, Progress::default());
+	let first_done: Progress = stepped(&before, default, true, Progress::default());
 	assert!(first_done.points_at("walk-set", "before"));
 	assert!(first_done.proofs.is_empty());
 	assert_eq!(resume(&first_done), 1);
-	assert_eq!(resume(&stepped(&before, eager, true, opened.clone())), 1);
+	assert_eq!(resume(&stepped(&before, default, true, opened.clone())), 1);
 	assert_eq!(
 		resume(&stepped(
 			&before,
-			eager,
+			default,
 			true,
 			proved(&chain, &CHAIN[..1], Progress::default())
 		)),
@@ -1591,24 +1592,24 @@ fn an_ordered_set_skips_a_finished_proof_and_stops_at_an_unfinished_one() {
 	// A finished proof is passed over, to the evaluation question after it.
 	let proof_done: Progress = proved(&chain, &CHAIN, Progress::default());
 	assert_eq!(
-		resume(&stepped(&before, eager, true, proof_done.clone())),
+		resume(&stepped(&before, default, true, proof_done.clone())),
 		2
 	);
 
 	// Everything finished: the last question stays in hand, from wherever the pointer is.
 	let all_done: Progress = stepped(
 		&after,
-		eager,
+		default,
 		true,
-		stepped(&before, eager, true, proof_done.clone()),
+		stepped(&before, default, true, proof_done.clone()),
 	);
 	assert!(all_done.points_at("walk-set", "after"));
 	assert_eq!(resume(&all_done), 2);
 	let pointer_first: Progress = stepped(
 		&before,
-		eager,
+		default,
 		true,
-		stepped(&after, eager, true, proof_done.clone()),
+		stepped(&after, default, true, proof_done.clone()),
 	);
 	assert!(pointer_first.points_at("walk-set", "before"));
 	assert_eq!(resume(&pointer_first), 2);
@@ -1621,7 +1622,7 @@ fn an_ordered_set_skips_a_finished_proof_and_stops_at_an_unfinished_one() {
 	let finished: Progress = proved(
 		&mixed_chain,
 		&CHAIN,
-		stepped(&logic_one, eager, true, Progress::default()),
+		stepped(&logic_one, default, true, Progress::default()),
 	);
 	assert!(finished.points_at("mixed-set", "chain"));
 	assert_eq!(
@@ -1701,31 +1702,27 @@ fn a_bare_launch_reopens_an_unfinished_built_in_proof_and_replaces_a_finished_on
 	);
 }
 
-/// A proof has no strategy of its own: the one asked for, else its language's default. A
-/// saved strategy never reaches it, even when the pointer names the proof.
+/// A proof has no strategy of its own: the one asked for, else the default. A saved strategy
+/// never reaches it, even when the pointer names the proof.
 #[test]
-fn a_proof_question_starts_in_the_requested_strategy_or_its_languages_default() {
+fn a_proof_question_starts_in_the_requested_strategy_or_the_default() {
 	let mp: ProofQuestion = builtin_proof("mp");
 	let question: Question = Question::Proof(mp.clone());
 	assert_eq!(
 		stepwise::app::starting_mode(None, &Progress::default(), &question),
-		EvaluationMode::Eager
+		EvaluationMode::ShortCircuit
 	);
 	assert_eq!(
-		stepwise::app::starting_mode(
-			Some(EvaluationMode::ShortCircuit),
-			&Progress::default(),
-			&question
-		),
-		EvaluationMode::ShortCircuit
+		stepwise::app::starting_mode(Some(EvaluationMode::Eager), &Progress::default(), &question),
+		EvaluationMode::Eager
 	);
 
 	let mut pointed: Progress = proved(&mp, &[], Progress::default());
-	pointed.mode = EvaluationMode::ShortCircuit;
+	pointed.mode = EvaluationMode::Eager;
 	assert!(pointed.points_at("builtin", "mp"));
 	assert_eq!(
 		stepwise::app::starting_mode(None, &pointed, &question),
-		EvaluationMode::Eager
+		EvaluationMode::ShortCircuit
 	);
 }
 

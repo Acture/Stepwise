@@ -97,7 +97,7 @@ fn finished(
 
 /// The strategy a launch starts in: what the caller asked for, else the saved strategy when
 /// it belongs to this very question of this very set, else the question's own. A proof has no
-/// strategy of its own, so a course that opens on one carries the caller's or its language's
+/// strategy of its own, so a course that opens on one carries the caller's, or the default,
 /// into the evaluation questions after it.
 pub fn starting_mode(
 	requested: Option<EvaluationMode>,
@@ -106,7 +106,7 @@ pub fn starting_mode(
 ) -> EvaluationMode {
 	requested.unwrap_or_else(|| match question {
 		Question::Evaluation(exercise) => evaluation_mode(progress, exercise),
-		Question::Proof(_) => question.language().default_mode(),
+		Question::Proof(_) => EvaluationMode::default(),
 	})
 }
 

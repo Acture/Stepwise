@@ -97,7 +97,7 @@ impl Progress {
 	/// Point at this proof question and save its lines. The saved strategy belongs to the
 	/// evaluation question it was recorded with and is left alone: a proof has none, so a
 	/// launch that resumes at a proof opens the questions after it in the requested strategy
-	/// or their language's default.
+	/// or the default.
 	pub fn record_proof(&mut self, set: &str, question: &str, proof: &Proof) {
 		self.current_set = set.into();
 		self.current = question.into();

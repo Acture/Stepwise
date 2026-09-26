@@ -396,10 +396,9 @@ impl Exercise {
 	}
 
 	/// The strategy this question opens in when nothing else decides: its own field, else
-	/// the language's own default.
+	/// short circuit, which both languages open with.
 	pub fn mode(&self) -> EvaluationMode {
-		self.evaluation
-			.unwrap_or_else(|| self.language.default_mode())
+		self.evaluation.unwrap_or_default()
 	}
 
 	pub fn assignments(&self) -> String {
