@@ -39,7 +39,6 @@ fn taken_back(report: &Report) -> &'static str {
 			| Notice::DraftOpen
 			| Notice::FinalPair
 			| Notice::NoNextStep
-			| Notice::ModeSwitched(_)
 			| Notice::CourseEnded
 			| Notice::ProofStart
 			| Notice::ProofUndone,

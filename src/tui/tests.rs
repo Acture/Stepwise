@@ -11,22 +11,17 @@ use unicode_width::UnicodeWidthStr;
 use super::{inline, keys::Screen, render, say};
 use crate::{
 	app::{Course, Lesson, Notice, Report, Task, Transcript},
-	core::{EvaluationMode, Language, NodeId},
+	core::{Language, NodeId, RecordedAttempt},
 	exercises::{self, Exercise, Question, QuestionSet},
 	progress::Progress,
 };
 
 /// The terminal under test always drives a real lesson; nothing here fakes app state.
-fn lesson(course: Course, progress: Progress, mode: EvaluationMode) -> Screen {
-	Screen::new(Lesson::new(course, progress, mode).unwrap())
+fn lesson(course: Course, progress: Progress) -> Screen {
+	Screen::new(Lesson::new(course, progress).unwrap())
 }
 /// A random course over evaluation questions, as the default practice opens one.
-fn screen(
-	questions: Vec<Exercise>,
-	progress: Progress,
-	index: usize,
-	mode: EvaluationMode,
-) -> Screen {
+fn screen(questions: Vec<Exercise>, progress: Progress, index: usize) -> Screen {
 	lesson(
 		Course::random(
 			questions.into_iter().map(Question::Evaluation).collect(),
@@ -34,7 +29,6 @@ fn screen(
 		)
 		.unwrap(),
 		progress,
-		mode,
 	)
 }
 fn app() -> Screen {
@@ -42,10 +36,9 @@ fn app() -> Screen {
 		exercises::builtin().unwrap().exercises().cloned().collect(),
 		Progress::default(),
 		0,
-		EvaluationMode::ShortCircuit,
 	)
 }
-fn custom(source: &str, language: Language, mode: EvaluationMode) -> Screen {
+fn custom(source: &str, language: Language) -> Screen {
 	screen(
 		vec![Exercise {
 			set: String::new(),
@@ -54,12 +47,10 @@ fn custom(source: &str, language: Language, mode: EvaluationMode) -> Screen {
 			expression: source.into(),
 			language,
 			bindings: Default::default(),
-			evaluation: None,
 			note: None,
 		}],
 		Progress::default(),
 		0,
-		mode,
 	)
 }
 fn key(code: KeyCode) -> Event {
@@ -135,12 +126,21 @@ fn node(app: &Screen, source: &str) -> NodeId {
 		.1
 		.id
 }
+/// The nodes the student may submit now, as the app layer's session reports them.
+fn allowed_ids(app: &Screen) -> Vec<NodeId> {
+	app.practice()
+		.session()
+		.allowed_steps()
+		.into_iter()
+		.map(|step| step.node_id)
+		.collect()
+}
 
 /// A logic set as a teacher may write one, mixing both kinds of question: an expression, a
 /// proof, another expression, and a proof to end on. Imported rather than built by hand, so
 /// the lesson walks exactly what `--set` would give it.
 const MIXED: &str = r#"
-version = 1
+version = 2
 name = "mixed"
 title = "求值与证明"
 
@@ -184,7 +184,6 @@ fn mixed(index: usize) -> Screen {
 	lesson(
 		Course::ordered(set.of_language(Language::Logic), index).unwrap(),
 		Progress::default(),
-		EvaluationMode::Eager,
 	)
 }
 fn control(character: char) -> Event {
@@ -269,15 +268,9 @@ fn clicking_a_repeated_variable_blanks_and_substitutes_every_occurrence() {
 			("x".into(), "2".into()),
 			("y".into(), "3".into()),
 		]),
-		evaluation: None,
 		note: None,
 	};
-	let mut app: Screen = screen(
-		vec![exercise],
-		Progress::default(),
-		0,
-		EvaluationMode::ShortCircuit,
-	);
+	let mut app: Screen = screen(vec![exercise], Progress::default(), 0);
 	let terminal: Terminal<TestBackend> = draw(&mut app, 40, 8);
 	click_text(&mut app, &terminal, "x"); // Click the rightmost occurrence before y.
 	let text: String = screen_text(&draw(&mut app, 40, 8));
@@ -300,15 +293,9 @@ fn final_pair_auto_blank_survives_resume_undo_and_reset_without_auto_solving() {
 		expression: "x + 3".into(),
 		language: Language::Python,
 		bindings: std::collections::BTreeMap::from([("x".into(), "2".into())]),
-		evaluation: None,
 		note: None,
 	};
-	let mut app: Screen = screen(
-		vec![exercise.clone()],
-		Progress::default(),
-		0,
-		EvaluationMode::ShortCircuit,
-	);
+	let mut app: Screen = screen(vec![exercise.clone()], Progress::default(), 0);
 	assert!(app.practice().draft().is_none());
 	let mut transcript: Transcript = Transcript::default();
 	assert!(transcript.sync(&app.lesson).join("\n").contains("x=2"));
@@ -326,12 +313,7 @@ fn final_pair_auto_blank_survives_resume_undo_and_reset_without_auto_solving() {
 	assert_eq!(app.practice().session().render(), "2 + 3");
 	assert_eq!(app.practice().session().history().len(), 1);
 	app.lesson.record();
-	let mut app: Screen = screen(
-		vec![exercise],
-		app.lesson.progress().clone(),
-		0,
-		EvaluationMode::ShortCircuit,
-	);
+	let mut app: Screen = screen(vec![exercise], app.lesson.progress().clone(), 0);
 	assert_eq!(
 		app.practice().draft(),
 		Some(app.practice().session().root().id)
@@ -357,7 +339,7 @@ fn final_pair_auto_blank_survives_resume_undo_and_reset_without_auto_solving() {
 	assert!(app.handle(key(KeyCode::Char('r'))).unwrap());
 	assert_eq!(app.practice().session().render(), "x + 3");
 	assert!(app.practice().draft().is_none());
-	let app: Screen = custom("2 + 3", Language::Python, EvaluationMode::ShortCircuit);
+	let app: Screen = custom("2 + 3", Language::Python);
 	assert_eq!(
 		app.practice().draft(),
 		Some(app.practice().session().root().id)
@@ -367,11 +349,7 @@ fn final_pair_auto_blank_survives_resume_undo_and_reset_without_auto_solving() {
 
 #[test]
 fn incorrect_selection_does_not_blank_or_advance_and_short_circuit_is_selectable() {
-	let mut app: Screen = custom(
-		"(2 + 3) * (4 + 5)",
-		Language::Python,
-		EvaluationMode::ShortCircuit,
-	);
+	let mut app: Screen = custom("(2 + 3) * (4 + 5)", Language::Python);
 	let terminal: Terminal<TestBackend> = draw(&mut app, 40, 8);
 	click_text(&mut app, &terminal, "*");
 	assert!(app.practice().draft().is_none());
@@ -384,15 +362,14 @@ fn incorrect_selection_does_not_blank_or_advance_and_short_circuit_is_selectable
 	assert!(app.handle(key(KeyCode::Enter)).unwrap());
 	assert_eq!(app.practice().session().render(), "(2 + 3) * (9)");
 
-	let mut app: Screen = custom(
-		"False and (3 / 0 > 1)",
-		Language::Python,
-		EvaluationMode::ShortCircuit,
-	);
+	// One session offers both paths: the operand a short circuit would skip opens a blank,
+	// and so does the short circuit itself, with no strategy to switch in between.
+	let mut app: Screen = custom("False and (3 / 0 > 1)", Language::Python);
 	let terminal: Terminal<TestBackend> = draw(&mut app, 40, 8);
 	click_text(&mut app, &terminal, "/");
-	assert!(app.practice().draft().is_none());
-	assert!(feedback(&app).contains("跳过"));
+	assert_eq!(app.practice().draft(), Some(node(&app, "3 / 0")));
+	assert!(app.practice().session().history().is_empty());
+	app.handle(key(KeyCode::Esc)).unwrap();
 	let terminal: Terminal<TestBackend> = draw(&mut app, 40, 8);
 	click_text(&mut app, &terminal, "and");
 	assert_eq!(
@@ -407,7 +384,6 @@ fn incorrect_selection_does_not_blank_or_advance_and_short_circuit_is_selectable
 	assert!(!app.handle(key(KeyCode::Enter)).unwrap());
 	assert!(app.practice().session().history().is_empty());
 	app.handle(key(KeyCode::Esc)).unwrap();
-	app.handle(key(KeyCode::Char('s'))).unwrap();
 	let terminal: Terminal<TestBackend> = draw(&mut app, 40, 8);
 	click_text(&mut app, &terminal, "/");
 	assert_eq!(app.practice().draft(), Some(node(&app, "3 / 0")));
@@ -415,10 +391,62 @@ fn incorrect_selection_does_not_blank_or_advance_and_short_circuit_is_selectable
 		.unwrap();
 	assert!(app.handle(key(KeyCode::Enter)).unwrap());
 	assert!(app.practice().session().terminal_error().is_some());
+	// Python itself short-circuits at `and`, so the exception is owned as the student's pick.
+	assert!(feedback(&app).contains("这个异常来自你选择计算的子式 3 / 0"));
+	assert!(feedback(&app).contains("不会在这里引发它"));
+	let terminal: Terminal<TestBackend> = draw(&mut app, 40, 8);
+	click_text(&mut app, &terminal, "and");
+	assert!(app.practice().draft().is_none());
+	assert!(feedback(&app).contains("已结束"));
+	// Undo reopens the question, and the short circuit still finishes it with a value.
+	assert!(app.handle(key(KeyCode::Char('u'))).unwrap());
+	assert!(app.practice().session().terminal_error().is_none());
+	let terminal: Terminal<TestBackend> = draw(&mut app, 40, 8);
+	click_text(&mut app, &terminal, "and");
+	assert_eq!(
+		app.practice().draft(),
+		Some(app.practice().session().root().id)
+	);
+	app.handle(Event::Paste("False".into())).unwrap();
+	assert!(app.handle(key(KeyCode::Enter)).unwrap());
+	assert!(app.practice().session().is_finished());
+	assert!(app.practice().session().terminal_error().is_none());
+	assert_eq!(app.practice().session().render(), "False");
 }
 
+/// An evaluation that ended in an exception is summed up by the sub-expression that raised it,
+/// on screen and in the line left in the terminal, so the source is never paired with a bare
+/// exception name it need not evaluate to — and that holds after reopening from the record.
 #[test]
-fn keyboard_submission_undo_and_strategy_toggle_preserve_progress() {
+fn an_exception_is_summed_up_by_the_sub_expression_that_raised_it() {
+	let mut app: Screen = custom("False and (3 / 0 > 1)", Language::Python);
+	let terminal: Terminal<TestBackend> = draw(&mut app, 60, 8);
+	click_text(&mut app, &terminal, "/");
+	app.handle(Event::Paste("ZeroDivisionError".into()))
+		.unwrap();
+	assert!(app.handle(key(KeyCode::Enter)).unwrap());
+	let summary: &str = "3 / 0 引发 ZeroDivisionError";
+	let text: String = screen_text(&draw(&mut app, 60, 8));
+	assert!(text.contains(&format!("完成：{summary}")), "{text}");
+	assert_eq!(
+		super::closing(&app.lesson),
+		format!("False and (3 / 0 > 1)\n{summary}")
+	);
+	app.lesson.record();
+	let mut reopened: Screen = lesson(app.lesson.course().clone(), app.lesson.progress().clone());
+	assert!(reopened.practice().session().terminal_error().is_some());
+	let text: String = screen_text(&draw(&mut reopened, 60, 8));
+	assert!(text.contains(&format!("完成：{summary}")), "{text}");
+	assert_eq!(
+		super::closing(&reopened.lesson),
+		format!("False and (3 / 0 > 1)\n{summary}")
+	);
+}
+
+/// A question keeps one record, under a key that names no strategy, so leaving and reopening
+/// it replays the step taken by keyboard, and undo still reaches behind it.
+#[test]
+fn keyboard_submission_survives_reopening_and_undo_restores_the_source() {
 	let mut app: Screen = app();
 	app.handle(key(KeyCode::Down)).unwrap();
 	app.handle(key(KeyCode::Down)).unwrap();
@@ -427,14 +455,50 @@ fn keyboard_submission_undo_and_strategy_toggle_preserve_progress() {
 	app.handle(Event::Paste("12".into())).unwrap();
 	assert!(app.handle(key(KeyCode::Enter)).unwrap());
 	assert_eq!(app.practice().session().root().render(), "2 + (12)");
-	assert!(app.handle(key(KeyCode::Char('s'))).unwrap());
-	assert_eq!(app.practice().session().mode(), EvaluationMode::Eager);
-	assert!(app.practice().session().history().is_empty());
-	assert!(app.handle(key(KeyCode::Char('s'))).unwrap());
+	app.lesson.record();
+	let mut app: Screen = lesson(
+		Course::random(app.lesson.course().questions().to_vec(), 0).unwrap(),
+		app.lesson.progress().clone(),
+	);
 	assert_eq!(app.practice().session().root().render(), "2 + (12)");
+	assert_eq!(app.practice().session().history().len(), 1);
 	assert!(app.handle(key(KeyCode::Char('u'))).unwrap());
 	assert_eq!(app.practice().session().root().render(), "2 + (3 * 4)");
 	assert!(app.practice().session().history().is_empty());
+}
+
+/// No strategy is left to switch, so `s` is an unbound key in the expression view: the
+/// session, what was last said and the key the work is saved under all stay as they were,
+/// and the key help no longer offers a short-circuit switch.
+#[test]
+fn s_changes_nothing_and_help_names_no_short_circuit_switch() {
+	let mut app: Screen = custom("False and (2 + 3 > 1)", Language::Python);
+	let terminal: Terminal<TestBackend> = draw(&mut app, 40, 8);
+	click_text(&mut app, &terminal, "+");
+	app.handle(Event::Paste("5".into())).unwrap();
+	assert!(app.handle(key(KeyCode::Enter)).unwrap());
+	assert_eq!(app.practice().session().render(), "False and (5 > 1)");
+	assert!(app.practice().draft().is_none());
+	let render: String = app.practice().session().render().into();
+	let attempts: Vec<RecordedAttempt> = app.practice().session().attempts().to_vec();
+	let report: Report = app.lesson.report().clone();
+	let key_before: String = app.practice().session().progress_key();
+	let allowed: Vec<NodeId> = allowed_ids(&app);
+	assert_eq!(allowed.len(), 2); // The short circuit, and `5 > 1` inside what it skips.
+	assert!(!app.handle(key(KeyCode::Char('s'))).unwrap());
+	assert_eq!(app.practice().session().render(), render);
+	assert_eq!(app.practice().session().attempts(), attempts);
+	assert_eq!(app.lesson.report(), &report);
+	assert_eq!(app.practice().session().progress_key(), key_before);
+	assert_eq!(allowed_ids(&app), allowed);
+	assert!(app.practice().draft().is_none());
+	// The key names the rules, the language, the bindings and the source — no strategy.
+	assert!(key_before.starts_with("flexible-substitution-v4\npython\n"));
+	assert_eq!(key_before.lines().count(), 4);
+	app.handle(key(KeyCode::Char('?'))).unwrap();
+	assert_eq!(feedback(&app), super::keys::HELP);
+	assert!(!feedback(&app).contains("短路开关"));
+	assert!(!feedback(&app).contains("s 短路"));
 }
 
 #[test]
@@ -478,11 +542,7 @@ fn inline_unicode_draft_survives_tiny_resizes_and_tab_does_nothing() {
 
 #[test]
 fn wrapped_logic_expression_mouse_hits_use_display_cells() {
-	let mut app: Screen = custom(
-		"¬(True ∧ False) ∨ True",
-		Language::Logic,
-		EvaluationMode::Eager,
-	);
+	let mut app: Screen = custom("¬(True ∧ False) ∨ True", Language::Logic);
 	let before: String = app.practice().session().root().render();
 	let terminal: Terminal<TestBackend> = draw(&mut app, 10, 12);
 	click_text(&mut app, &terminal, "∧");
@@ -507,9 +567,11 @@ fn wrapped_logic_expression_mouse_hits_use_display_cells() {
 
 #[test]
 fn screenshot_groups_are_independent_and_ready_groups_need_only_a_click() {
+	// The `∨` has not seen its left operand's value yet, so its right side is reached on the
+	// continue path, with nothing switched to get there.
 	let source: &str = "(¬True) ∨ (True ∧ True ∧ (True ∧ True))";
 	for token in ["¬", "True ∧ True"] {
-		let mut app: Screen = custom(source, Language::Logic, EvaluationMode::Eager);
+		let mut app: Screen = custom(source, Language::Logic);
 		let terminal: Terminal<TestBackend> = draw(&mut app, 100, 5);
 		assert!(!click_text(&mut app, &terminal, token));
 		assert!(
@@ -519,7 +581,7 @@ fn screenshot_groups_are_independent_and_ready_groups_need_only_a_click() {
 		);
 		assert!(app.practice().session().history().is_empty());
 	}
-	let mut app: Screen = custom(source, Language::Logic, EvaluationMode::Eager);
+	let mut app: Screen = custom(source, Language::Logic);
 	let terminal: Terminal<TestBackend> = draw(&mut app, 100, 5);
 	click_text(&mut app, &terminal, "¬");
 	app.handle(Event::Paste("False".into())).unwrap();
@@ -543,7 +605,7 @@ fn screenshot_groups_are_independent_and_ready_groups_need_only_a_click() {
 
 #[test]
 fn group_clicks_remove_one_pair_and_persist_without_a_typed_answer() {
-	let mut app: Screen = custom("((3))", Language::Python, EvaluationMode::ShortCircuit);
+	let mut app: Screen = custom("((3))", Language::Python);
 	draw(&mut app, 40, 8);
 	assert!(!click(&mut app, 0, 0));
 	assert!(app.practice().session().history().is_empty());
@@ -555,7 +617,6 @@ fn group_clicks_remove_one_pair_and_persist_without_a_typed_answer() {
 	let mut restored: Screen = lesson(
 		Course::random(app.lesson.course().questions().to_vec(), 0).unwrap(),
 		app.lesson.progress().clone(),
-		EvaluationMode::ShortCircuit,
 	);
 	assert_eq!(restored.practice().session().render(), "(3)");
 	draw(&mut restored, 40, 8);
@@ -583,15 +644,18 @@ fn long_logic_conjunction_click_is_accepted_before_disjunction_and_implication()
 		.find(|exercise| exercise.name == "long-logic")
 		.unwrap()
 		.clone();
-	let mut app: Screen = screen(
-		vec![exercise],
-		Progress::default(),
-		0,
-		EvaluationMode::Eager,
-	);
-	for answer in ["True", "False", "False"] {
-		let id: NodeId = app.practice().session().next_step().unwrap().node_id;
+	let mut app: Screen = screen(vec![exercise], Progress::default(), 0);
+	// Chosen by hand rather than by the hint: the hint follows the short-circuit order, which
+	// decides `False ∧ Q` before that Q is ever substituted.
+	for (source, answer) in [("P", "True"), ("Q", "False"), ("¬True", "False")] {
+		let id: NodeId = node(&app, source);
 		app.practice_mut().select(id);
+		assert_eq!(
+			app.practice().draft(),
+			Some(id),
+			"{source}: {}",
+			feedback(&app)
+		);
 		app.handle(Event::Paste(answer.into())).unwrap();
 		assert!(app.handle(key(KeyCode::Enter)).unwrap());
 	}
@@ -626,12 +690,7 @@ fn next_generates_questions_and_previous_restores_the_prior_attempts() {
 		.next()
 		.unwrap()
 		.clone();
-	let mut app: Screen = screen(
-		vec![exercise],
-		Progress::default(),
-		0,
-		EvaluationMode::ShortCircuit,
-	);
+	let mut app: Screen = screen(vec![exercise], Progress::default(), 0);
 	let first: String = app.practice().session().source().into();
 	let id: NodeId = app.practice().session().next_step().unwrap().node_id;
 	app.practice_mut().select(id);
@@ -656,9 +715,6 @@ fn next_generates_questions_and_previous_restores_the_prior_attempts() {
 	assert_eq!(app.practice().session().source(), generated);
 	assert!(app.handle(key(KeyCode::Char('r'))).unwrap());
 	assert_eq!(app.practice().session().source(), generated);
-	assert!(app.handle(key(KeyCode::Char('s'))).unwrap());
-	assert_eq!(app.practice().session().source(), generated);
-	assert_eq!(app.practice().session().mode(), EvaluationMode::Eager);
 }
 
 #[test]
@@ -736,7 +792,7 @@ fn native_history_survives_redraw_and_app_starts_below_shell_output() {
 
 #[test]
 fn final_negative_result_finishes_without_another_answer_in_live_and_restored_history() {
-	let mut app: Screen = custom("-(2 * 5)", Language::Python, EvaluationMode::ShortCircuit);
+	let mut app: Screen = custom("-(2 * 5)", Language::Python);
 	let mut terminal: Terminal<TestBackend> = Terminal::with_options(
 		TestBackend::new(60, 14),
 		TerminalOptions {
@@ -782,11 +838,10 @@ fn final_negative_result_finishes_without_another_answer_in_live_and_restored_hi
 	let mut restored: Screen = lesson(
 		Course::random(app.lesson.course().questions().to_vec(), 0).unwrap(),
 		app.lesson.progress().clone(),
-		EvaluationMode::ShortCircuit,
 	);
 	let mut transcript: Transcript = Transcript::default();
 	let history: Vec<String> = transcript.sync(&restored.lesson);
-	assert_eq!(history.len(), 3); // Mode header, original source, explicit group.
+	assert_eq!(history.len(), 3); // Language header, original source, explicit group.
 	assert_eq!(history[1], "-(2 * 5)");
 	assert_eq!(history[2], "-(10)");
 	assert_eq!(restored.practice().session().render(), "-10");
@@ -814,11 +869,7 @@ fn final_negative_result_finishes_without_another_answer_in_live_and_restored_hi
 
 #[test]
 fn native_history_reaches_terminal_scrollback() {
-	let mut app: Screen = custom(
-		"1 + 2 + 3 + 4 + 5 + 6 + 7 + 8",
-		Language::Python,
-		EvaluationMode::ShortCircuit,
-	);
+	let mut app: Screen = custom("1 + 2 + 3 + 4 + 5 + 6 + 7 + 8", Language::Python);
 	let mut terminal: Terminal<TestBackend> = Terminal::with_options(
 		TestBackend::new(60, 7),
 		TerminalOptions {
@@ -870,14 +921,6 @@ fn every_reported_reason_keeps_the_sentence_this_terminal_showed_before() {
 		),
 		(Notice::Undone, "已撤销上一步。"),
 		(Notice::Restarted, "已重新开始本题。"),
-		(
-			Notice::ModeSwitched(EvaluationMode::ShortCircuit),
-			"已切换：短路开启。进度分别保存。",
-		),
-		(
-			Notice::ModeSwitched(EvaluationMode::Eager),
-			"已切换：短路关闭 · 全部求值。进度分别保存。",
-		),
 		(Notice::CourseEnded, "已经是本题集的最后一题。"),
 		(
 			Notice::ProofStart,
@@ -953,26 +996,16 @@ fn n_from_an_expression_opens_the_proof_view_where_every_letter_is_proof_input()
 }
 
 /// Letters belong to the proof line, so a proof changes question with Ctrl+N / Ctrl+P —
-/// through the same lesson the expression view's `n` / `p` move. The strategy switched
-/// before the proof is the one the expression after it opens in, and an ordered set that
-/// ends on a proof says so and leaves that proof in hand.
+/// through the same lesson the expression view's `n` / `p` move. An ordered set that ends on
+/// a proof says so and leaves that proof in hand.
 #[test]
 fn control_keys_change_question_from_a_proof_and_an_ordered_set_ends_on_one() {
 	let mut app: Screen = mixed(0);
-	assert!(app.handle(key(KeyCode::Char('s'))).unwrap());
-	assert_eq!(
-		app.practice().session().mode(),
-		EvaluationMode::ShortCircuit
-	);
 	assert!(app.handle(key(KeyCode::Char('n'))).unwrap());
 	assert!(on_proof(&app));
 	assert!(app.handle(control('n')).unwrap());
 	assert_eq!(app.lesson.question().name(), "after");
 	assert!(!on_proof(&app));
-	assert_eq!(
-		app.practice().session().mode(),
-		EvaluationMode::ShortCircuit
-	);
 	let text: String = screen_text(&draw(&mut app, 60, 8));
 	assert!(text.contains("~R"));
 	assert!(!text.contains("目标："));
@@ -1027,7 +1060,6 @@ fn an_accepted_proof_line_survives_moving_away_and_undo_never_leaves_the_proof()
 	let mut restored: Screen = lesson(
 		Course::ordered(app.lesson.course().questions().to_vec(), 1).unwrap(),
 		app.lesson.progress().clone(),
-		EvaluationMode::Eager,
 	);
 	assert_eq!(restored.proof().proof().commands(), ["P ; assume"]);
 	restored

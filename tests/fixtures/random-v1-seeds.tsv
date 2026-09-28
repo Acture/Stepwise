@@ -1,0 +1,258 @@
+python	0	y=8 z=-1	-y + y + (2 - z % 4)
+python	1	x=2 z=-3	((z - -((x ** 2 // 2) % 2)) ** 3 % 2)
+python	2	x=-2 z=5	z - (x * (z // 2)) != 7 and (-((-x % 4) ** 3)) <= z
+python	3	x=6 z=-1	z * (1 ** 3 - z - (6 + x))
+python	4	z=-1	(z * (((-5) // 2) ** 3 // 4))
+python	5	z=3	((z / 2 / 2 // 2) ** 2 % 4) ** 2
+python	6	y=2	-(y - (1 ** 2)) * 7 / 2
+python	7	x=5 y=2 z=0	z > -(y * (z * 7)) or y < (x + x ** 3) // 2
+python	8	y=-2 z=2	z * z + -y >= y and not 3 % 4 <= z * 2 // 2
+python	9	y=4 z=0	y % 4 // 4 % 2 % 4 * (z ** 3 % 4)
+python	10	x=4 y=3 z=-2	y != 1 * (z + 7) / 2 and not y == (x ** 2 % 2) ** 2
+python	11	x=0	(((x ** 2) * 4 * 3 ** 3 - x) * 3)
+python	12	x=1	(-x) ** 2 * (-x) % 4
+python	13	y=-3 z=-3	z - 6 == 8 + y ** 3 or not y % 2 <= -y - 4
+python	14	x=5 y=-1 z=9	z != 9 - y - (1 - 5) ** 3 or not 4 % 4 >= (x // 4 * 1) ** 2
+python	15	x=-3 z=0	z <= (-(5 + z + z)) and not -(6 ** 2 - x - 6) != z
+python	16	x=3 z=5	x * (x / 2) > 2 + z and 3 >= x * x - (3 - x)
+python	17	x=1 y=4 z=4	(y / 4 - 3) / 4 > -2 or 6 * -z != -(x * 9)
+python	18	x=9 y=5 z=5	y > 4 * (z % 4) % 4 and --(y % 4) != x
+python	19	z=9	(--(z + 2 / 2 // 4))
+python	20	x=3 z=0	-((-(x ** 2 / 4 - z)) / 2) % 2 % 4
+python	21	y=3 z=8	z % 4 * (7 % 2) + (y - 9 ** 2)
+python	22	x=2 y=9	-(x * (-(2 + (y - y)) ** 2) ** 2) / 2
+python	23	x=-4 y=-2	(x % 4) >= 8 + 5 // 2 and not (8 ** 2) > 6 - 8 - -y
+python	24	y=5	((-y) % 4 % 2) >= 8 or -y + y % 2 <= y
+python	25	x=8 y=-1 z=4	x % 2 / 2 >= z * z or not 5 - 4 - y > 6 ** 2
+python	26	x=7 z=8	x * ((z ** 2 + -((9 + x) / 2)) % 2)
+python	27	x=3 y=-4	(y ** 2) < 3 // 4 and 8 - (x // 4) >= 9 / 4
+python	28	y=-2 z=9	(((z - y ** 2) / 4 / 2) / 2)
+python	29	y=-3 z=-2	(z ** 3 / 4 - -(y ** 3 / 4)) // 2
+python	30	x=3 z=6	x ** 2 <= z - 8 % 4 and (7 % 2 // 4 - 9) / 4 <= 8
+python	31	y=1 z=4	-(y * 2) + (7 - (2 + z) * y / 2 / 4)
+python	32	x=7	x == -(x // 2) // 2 or (1 // 2 % 2) >= 3 % 4
+python	33	x=-5 y=-1	y // 4 % 2 // 4 * x + 1 // 4
+python	34	x=9 y=-2	-(-(x - (8 - (x // 2 + y) // 2))) ** 3
+python	35	x=-1 y=2 z=-3	(-((z + (4 // 2)) % 2) + (y * x + y)) // 2
+python	36	x=9 y=-1 z=2	--((z // 2) ** 2 + (z - y)) + x
+python	37	y=8 z=8	y + ((4 + z) + (y + z) ** 2) % 4
+python	38	y=1	--(-(y * 8 % 2))
+python	39	x=5 y=-1	(((--x + y) * y) % 4) % 4
+python	40	z=-3	((-z) * 1 / 4 + 8 ** 3 / 2) / 4
+python	41	x=4	(-((x + 1) * ((x + x) // 4) // 2) // 2)
+python	42	x=7 y=-4 z=3	(z - 6 - y) % 2 >= 4 - x or not (-(z - x)) // 4 == 9 / 2
+python	43	x=8 z=4	((-z // 2) ** 3 + (x ** 2)) / 4
+python	44	y=3	((y - 4) / 2 * (((y % 2) - y - y) / 2 // 4))
+python	45	x=-2 z=3	(-(z / 4) + -(1 - x))
+python	46	x=-5 z=-5	(x / 2 // 4 + (z % 2)) / 4 % 4
+python	47	y=2	(y / 2 + 5) < (-8 // 2) or not 7 <= (-4 % 2 % 4) ** 3
+python	48	x=9 y=-5 z=-1	y ** 2 * (x * z) == x and not x == -(x - -2)
+python	49	x=6 y=0	-x / 2 + (-(y - 7) / 2) * 3
+python	50	x=-3 y=0 z=2	(-x) * y > 1 // 4 or z * z >= (y % 4 / 2)
+python	51	x=-5 y=9	(y - (-((y ** 3) - (x - 5)))) / 2 * -2
+python	52	z=3	(-(z // 2 / 4)) ** 3 % 4
+python	53	x=8 y=3 z=0	y - (y / 4 // 2) + (z * z - x / 4 / 2)
+python	54	y=5	(y / 4) // 4 - (-(y % 2 / 2 % 2)) / 2
+python	55	x=9 y=-4 z=2	z * (x / 4) // 2 >= x or (5 * y - (x * 7)) % 2 >= y
+python	56	x=4	-(((x * (x ** 2) + 2) // 2 % 4 % 2) // 4)
+python	57	z=7	-((--(z // 2)) / 4) / 2
+python	58	x=4	--(x % 4 - 8 + 1) * (x + 8)
+python	59	x=5 y=2 z=1	z % 4 != y - (6 + 5) or ((5 - z) ** 2) // 4 // 4 != x
+python	60	y=8	(((y - 1) // 4) / 2 - 2 * (1 + 8)) % 2 % 2
+python	61	z=-5	z / 4 / 4 * ((2 + z / 2) * 1)
+python	62	z=6	-((z + 2 - -z % 4) % 2)
+python	63	y=3 z=-2	((z * 4) ** 2 - y - z) % 2
+python	64	x=0 y=-1 z=-3	-(x - x) ** 3 + y < y and x - (y * y) % 2 // 2 <= z
+python	65	y=7	y * y < 2 / 4 or -(y * 2) < (-8)
+python	66	y=-5 z=3	-y * 2 + ((-1 / 2 + z / 2) % 4)
+python	67	x=2 y=9	x >= ((x - 6) // 2) ** 2 and x * 2 <= -y + 9
+python	68	y=1	(y - 3) // 4 + -((4 - 4) ** 2 / 2)
+python	69	y=0 z=0	((-(z // 2) ** 3) % 4 * (-(y // 2)))
+python	70	y=1 z=7	(y ** 3) ** 2 - ((z / 4) * (y // 4))
+python	71	x=5	(x + -x) == 1 or not x + x ** 2 <= (-8)
+python	72	x=2	(((x // 2) + 2 + -(6 * 2)) // 2)
+python	73	x=-3	x % 2 % 2 / 2 / 2 / 2
+python	74	x=3 z=8	z % 4 + (z // 2) - x ** 2
+python	75	x=3 y=1 z=-2	(z - x) != (1 % 4) and not x % 2 / 2 < (1 - y)
+python	76	y=-4 z=7	(--(z % 4) - 8 * y - y) / 4
+python	77	x=2 z=5	z / 4 != (7 + 5) / 2 or (z // 2) ** 2 == 9 * x
+python	78	x=-1	(--(--x)) ** 2
+python	79	x=8 y=-4	-x - ((y + x / 2) - (x - x))
+python	80	y=1	(y - 6 * 1) // 4 % 4 % 4
+python	81	y=-5 z=1	z < (-(4 % 2 * 8)) ** 2 or not -((y + 1) % 2) ** 3 == y
+python	82	y=6	y == y * -(y + 1) and not y * (6 // 2) // 2 == -9
+python	83	x=5 y=6 z=-2	y // 4 > (4 - z) % 2 and 9 * -x >= x * 6
+python	84	x=-3 y=2	(-((y + y) * x / 4)) ** 3
+python	85	z=-3	(--(-(z * z // 4 / 2) / 4))
+python	86	x=8 y=0 z=-5	(z / 4 + (x + z) - (z - (x - y))) // 4
+python	87	x=2	-(-((x % 4) % 4) // 4 % 2 + x)
+python	88	x=2 y=-5	-y // 2 <= x % 2 or not (x - 9 + x) // 4 > y
+python	89	y=1	y * -(y / 2 * (((7 + y + y) % 4) - y))
+python	90	x=6	((-x - -5 % 4) % 2 * 6) ** 3 % 2
+python	91	x=0 y=5 z=-2	(z * ((5 - z) * (-x * y) / 4) / 4) * 1
+python	92	x=6 y=7	(x / 4 + y - -9) % 2
+python	93	x=7 z=2	z <= -(z ** 3 % 4) and x < -((x // 4) % 2)
+python	94	y=0 z=4	z + z >= z // 4 or y != (-5 - z) / 2
+python	95	x=-4 y=0 z=-3	(x - y % 2 + (y - 3)) * z
+python	96	x=8 z=7	z < ((x - 9) / 2) ** 3 or x > (4 % 4) ** 2 / 2
+python	97	y=1 z=3	y - z % 2 * -(--3 // 4) % 4
+python	98	x=0 z=-3	(x ** 3 - x // 4) * z % 2 % 2 % 4
+python	99	x=0 z=2	x * z / 4 != (9 % 4 % 2) and not 5 // 4 / 4 // 2 != x * 7
+python	100	x=-5 y=-2 z=-4	y / 2 / 2 == x // 4 and not -(7 ** 2 // 4) <= z
+python	101	x=-1 y=-2 z=3	-(z % 2) >= y - x and z != y * y // 2 / 4
+python	102	x=9 y=-4	(-((x + y % 2 % 2) // 2)) ** 2 - (2 + 4)
+python	103	x=0 z=-5	(x * (x * (6 - 6)) // 2) + (z % 4) - z ** 2
+python	104	y=2	(-y % 4 * 3) == 3 or not 6 / 4 >= --y ** 3
+python	105	x=1 y=-3	((y * y + ((x * y // 4) / 2) ** 2) % 4)
+python	106	x=0 y=-4 z=0	z * x % 4 - (1 + y * x)
+python	107	y=9 z=5	(y // 2) ** 3 / 4 == z or 3 * -z != (3 - y) + z
+python	108	x=-4 y=-4 z=0	(y * z) ** 2 <= x and x - z % 4 < y ** 2
+python	109	y=7 z=4	y ** 3 == y / 2 % 4 and not (z + 9) <= z * (7 // 4 * y)
+python	110	x=5 z=-4	((z - 6) / 4 % 2 % 2 / 2 * x) // 2
+python	111	x=9 y=4 z=4	z != (z - -2) % 4 or not -2 == ((x ** 3) + (6 - y))
+python	112	x=7 y=-4	x / 2 - y != (6 - x) and 5 * -x > x * x
+python	113	x=3 y=0	(-x) + 3 > y or not -(x // 2) > x / 2
+python	114	y=0 z=1	(y * (6 / 2)) ** 3 - z / 4 / 4
+python	115	y=-2 z=2	(z + 8) > y - (y - (y / 2)) or not -(y / 4) // 2 >= 9 / 4
+python	116	x=8 z=4	(((-(x % 4 * z)) - 6) // 2) / 4
+python	117	x=-3 y=-1 z=0	(x - (y - y)) * -(-7 * z) * (9 // 2)
+python	118	x=1 z=8	-x ** 2 - -(z * z + 4)
+python	119	x=3	(-(x / 4 % 2)) % 2 // 4 % 2
+python	120	x=1 y=-3 z=7	y <= z * (z + z) and 1 - -x != y * 3
+python	121	x=6 y=4	-(y // 4) + 5 != 7 ** 2 and 1 * 4 >= (x + 7) / 2 // 4
+python	122	x=-4 z=1	x + z * (z - -(9 + -4) - -z)
+python	123	x=-2 y=4 z=-2	y >= (3 - x) / 4 * (x - x) and not x > (y % 4 * z % 2) // 2
+python	124	x=-5 y=2 z=-3	x - --z >= z and not x > --(-(y // 2))
+python	125	x=3 y=-2	-(-x ** 3 * ((y - (9 + y) + x) / 4))
+python	126	x=7 y=1 z=8	(-(((z * y * (y ** 3) ** 2) - x) // 2)) ** 3
+python	127	y=-1 z=4	-(--y % 4) >= y or (z % 4 + (y + y)) % 2 >= 9
+python	18446744073709551615	x=-1 y=3	(x - 8) % 4 < (8 ** 2) or not -y // 4 // 2 > x + 5
+logic	0	P=False Q=True R=True	R → (((R → R) ∧ ¬R → R ↔ Q) ∧ P)
+logic	1	P=False Q=True R=True S=True	(R ∧ (¬(P ↔ R) ∨ (S ∧ ¬Q) ↔ R))
+logic	2	P=False Q=True R=False S=False	¬(¬(Q → Q ∧ (P ↔ S)) ∧ P ∧ R)
+logic	3	P=False Q=True R=True S=False	(P ↔ S ∨ P ∧ Q) → (((S ↔ P) ↔ R) → S ↔ S)
+logic	4	P=False R=False	¬((R ↔ P) ∨ (R ∨ (P ∨ (P → R)) ↔ R ↔ R))
+logic	5	P=True Q=True R=True S=False	Q ↔ R ↔ S ∨ S → (R ↔ P ∧ Q)
+logic	6	P=True R=False S=True	(P → P ∨ (S ∨ S → R)) ∨ (R ↔ P)
+logic	7	Q=True R=False S=False	¬(¬(¬Q ∨ R ∧ (R ∧ S)))
+logic	8	Q=True R=False S=True	¬(R → S → Q → (Q → Q) ↔ S)
+logic	9	Q=True R=False S=False	(Q ∧ R ↔ S ↔ S) ∨ (S ∨ R) ∨ (S ∨ S)
+logic	10	P=True Q=False S=True	Q ↔ (¬¬(S ∧ ¬P) ↔ Q)
+logic	11	P=False Q=False R=False S=True	(R ∨ (Q ∨ S ↔ ¬(¬P) → Q))
+logic	12	P=False Q=True R=True S=False	(S ∨ (P ∨ P ∧ R)) ∧ (Q → S)
+logic	13	P=True Q=False R=True S=True	¬((¬¬(R ↔ Q → S)) → P)
+logic	14	Q=True R=False S=False	¬((Q ↔ S) ∨ R) → (S ∧ S ↔ R → S ∨ S)
+logic	15	P=True Q=True R=True S=True	¬(¬(R ∨ P) ↔ (R ↔ Q) ∧ (S ∧ S))
+logic	16	P=False Q=True S=True	¬(¬S ↔ P ∧ ¬(Q ∨ S))
+logic	17	P=False Q=False R=True S=False	(Q → S ↔ ¬¬R → Q) ∨ ¬(P ∧ S)
+logic	18	P=False Q=False R=True	¬¬(Q ∨ (P ↔ Q ↔ (R ↔ Q)))
+logic	19	Q=True R=False S=True	(Q ↔ Q) ∧ (Q → (R ↔ Q)) ↔ (R ↔ S)
+logic	20	Q=True R=False S=False	S ∧ (Q ∧ ¬(R → Q) ∧ Q) ∧ Q ↔ S → S
+logic	21	P=False Q=True S=False	¬¬(S ↔ Q) ∨ (Q ∧ P ∨ Q)
+logic	22	Q=False R=False S=False	(R → (R ↔ S)) → (Q ∧ R) ∨ (R ∨ (R → R))
+logic	23	P=False R=True S=True	¬((¬¬R) ∧ R) ↔ (R ↔ (P ↔ S))
+logic	24	P=False Q=False R=False	¬(R ∧ P ↔ P ↔ (¬R) → Q)
+logic	25	P=True Q=True R=True S=False	¬((¬P → Q) ∨ (S ∧ R ↔ R))
+logic	26	P=True R=False S=False	(S ∨ (P ∨ (R ∨ (P ∨ S)))) ∨ (P ∧ R ∨ P)
+logic	27	P=False Q=True R=False S=False	¬((Q ↔ P) ∧ (R ∧ (P → S)))
+logic	28	P=False Q=False S=True	(Q → (Q ↔ S) ↔ (S ↔ S) ↔ (P ∨ S ↔ P)) ↔ S
+logic	29	Q=False R=True S=True	R ↔ ¬(Q ∨ ((¬R) ↔ (S ↔ Q)) ↔ Q)
+logic	30	Q=True R=False S=True	(¬((R ↔ Q → R → Q ∧ S) → (R ↔ R)))
+logic	31	P=True Q=True R=False S=True	Q ↔ (S → S) ∧ S ∧ (P ∨ S ∨ (Q ∧ R ↔ P))
+logic	32	P=False Q=True S=True	S → ¬(¬(Q ∨ S ∨ (P ↔ S)))
+logic	33	P=True Q=True R=True S=False	S → Q ↔ (R ↔ P) ∨ P ↔ Q ∧ R
+logic	34	P=False Q=True S=True	Q → ¬(¬S ↔ Q ∨ P)
+logic	35	P=False Q=False R=True S=False	S ↔ ¬Q ↔ ((P ∨ P) ↔ (Q ↔ R ∨ (R ∨ Q)))
+logic	36	P=False Q=False R=True S=False	¬(P ↔ (¬¬R)) → (S → S ↔ Q)
+logic	37	P=True Q=False R=False S=False	(S ∧ P → S) ∨ R → (Q → S) → (P ↔ Q)
+logic	38	P=True Q=True R=True	Q → ¬(R ↔ ((R ↔ P) → P))
+logic	39	P=False Q=False S=False	(¬¬((Q → ¬(P ↔ S)) ∧ (S ∧ Q)))
+logic	40	P=True Q=False S=False	P ∧ ((¬(S ↔ Q)) → (P ∧ ((S ↔ Q) ∧ S)))
+logic	41	Q=True R=False S=True	(Q ∨ ¬(R → ¬R) ↔ ¬(Q ∧ S))
+logic	42	P=True Q=False R=True S=False	(S ∨ ((R → Q) ∨ P)) ∧ (Q ∧ S) ∨ Q ∧ (S → S)
+logic	43	P=False Q=False R=False S=False	((S ↔ R) ∨ R) ∧ P ∨ Q ∨ ¬R
+logic	44	P=False Q=True R=True S=True	(R ∨ R) ∧ ((S ↔ S) ∨ R) → ¬((P → S) ∧ Q)
+logic	45	P=True R=False	¬(P ∧ ¬R) ∧ ¬R
+logic	46	P=True R=False S=True	S → ((R ↔ R ↔ P) ↔ P → ¬P)
+logic	47	P=False R=False	¬¬¬(¬(P ∧ R) ∨ ¬(P → P))
+logic	48	P=True Q=True R=False S=True	¬((R ↔ R) ∧ ((P ∧ (Q ↔ S)) ∧ P))
+logic	49	P=True Q=False R=False S=False	¬(P ∨ Q ∧ (P → S) ∨ R) ∨ (P → R)
+logic	50	P=False R=True S=False	(P ∧ P ∨ (S ∨ P) → (S → R) ∧ R)
+logic	51	P=True Q=False R=True S=True	((P → P → R) → (¬(S ∧ S) ↔ (¬Q))) → P
+logic	52	R=False S=True	(S ↔ ¬R) → ¬(S ∧ R) → S
+logic	53	P=True R=False S=True	S ∧ (R ∨ (R ∧ R ∨ P)) → ¬S ∨ (S ∧ S)
+logic	54	P=True Q=False	(P → (Q ∧ Q)) → ¬(Q ↔ P)
+logic	55	P=False R=True S=False	¬((¬S) ↔ ¬(R ∨ P) ∨ ¬P)
+logic	56	P=True Q=False R=False S=False	(R → R ↔ P) ∧ ((S ↔ ¬P) ∧ (Q ∧ R ↔ Q))
+logic	57	P=False Q=False R=True	(Q → P ∧ (R ∨ (Q → R))) ∧ P ↔ R
+logic	58	P=False Q=False R=False	(P ↔ P) ∧ (((Q → ¬R) ∨ P) ∧ (Q ∨ Q))
+logic	59	P=False Q=True R=True S=False	¬(R ∧ R ∧ (R → P → S) ∨ (S ↔ Q))
+logic	60	P=False Q=True S=True	¬((¬(S ∧ P)) ↔ (Q ↔ S)) ∧ ((P ↔ P) ∧ P)
+logic	61	P=False Q=False S=False	(S ∨ P → S) ∧ ¬(S → Q ∨ P)
+logic	62	P=True Q=True S=False	((¬(Q → (¬S))) → P) ∨ (Q → S)
+logic	63	P=True Q=True R=False	P ∧ (R → P ↔ P ∧ (Q ∨ Q))
+logic	64	P=False Q=False S=False	((Q ↔ S) ∧ S ∨ Q → P) ↔ Q
+logic	65	P=True S=False	¬¬((P → P) → (S ↔ P))
+logic	66	P=False Q=False R=True S=True	((S ∨ P → P → (R ↔ P)) → S ∧ (Q ∨ R))
+logic	67	P=True Q=True S=False	¬(S → S ∨ P ↔ (P ∧ Q ↔ Q ↔ Q))
+logic	68	P=True Q=True R=True S=False	¬(P → S) ∨ (¬Q ↔ ¬(R ∨ R))
+logic	69	P=False Q=True S=False	(P ↔ S) ∨ S → S ∨ ¬((P ∨ P) ∧ Q)
+logic	70	P=False Q=True R=False S=True	(S ∨ S → ¬Q ∧ R) ∧ (S ∨ P)
+logic	71	P=False Q=False R=True	¬(Q ↔ Q) → R ∧ P → Q
+logic	72	P=True R=False S=True	¬(S ∨ (¬(S ∧ S)) ↔ ¬(R ∧ P) → R)
+logic	73	P=False Q=False R=False S=True	R ∨ (¬(R ∧ (S → P)) → Q)
+logic	74	P=True Q=False R=False S=True	¬((P ∨ (S ↔ R ∨ (P ↔ P)) ∧ (Q ↔ P)) ∧ P)
+logic	75	P=False Q=False S=False	¬(Q ∨ (S ↔ (P ↔ S ↔ P)))
+logic	76	P=False Q=False R=False S=False	(S ↔ Q → P ↔ Q) → R ↔ P → R
+logic	77	P=True R=True S=True	¬((((P ↔ S) → R) → S ∨ R) ∨ P)
+logic	78	P=False Q=True R=False S=True	(R ↔ (R ↔ Q ∧ (S → (R ↔ P))))
+logic	79	P=True Q=True R=False	Q ∧ ((R ∨ P) ∧ Q) → P → ¬P
+logic	80	P=False Q=True R=False	(R ↔ (Q ∨ R)) ↔ (R → P) → P ↔ P
+logic	81	P=True S=False	(¬((P ∨ S ↔ S) ∧ (¬S ∧ ¬(P → S))))
+logic	82	Q=True R=False S=True	¬(((¬S) ∨ (Q → Q ∨ R)) ∧ ¬R)
+logic	83	P=False Q=False R=False S=True	¬((Q ∨ P → Q) ∨ (¬(R ∧ S)))
+logic	84	Q=False S=False	(Q ∨ (S ∨ Q)) ∧ (¬Q ∧ Q)
+logic	85	P=False R=True S=False	S → S → (R ↔ P ∧ (P ∧ S)) ↔ (P ∧ S)
+logic	86	P=True Q=False R=False	R ∧ (Q ↔ P) ∨ (Q ∧ R ∨ R) ∨ R ∧ Q
+logic	87	P=False Q=True R=True S=True	¬((¬(S ∧ (R ∧ S))) ∨ P ∨ (Q ↔ Q))
+logic	88	P=True R=True	((P ↔ R) ∧ (P ∨ R)) ∧ P → (R ∨ P)
+logic	89	P=True Q=False R=True	((R → ¬(¬(P ↔ Q) ∧ Q)) → (¬(Q → Q)))
+logic	90	P=False Q=True R=False S=False	¬(S ∨ P ∨ P ∧ (R ↔ Q)) → (R → Q) ∧ R
+logic	91	P=True Q=True R=False S=False	((¬Q → S) ∧ (Q ↔ Q) ∨ P) ∧ (S ∧ (R → R))
+logic	92	P=False Q=False R=False S=True	S ↔ ¬(R ↔ (P ↔ Q) → Q)
+logic	93	P=True R=True S=True	¬(P ↔ (R ↔ P) → S ∧ R) → ¬(S → P)
+logic	94	Q=True S=False	¬¬(¬(Q ∧ S ∨ S))
+logic	95	P=True Q=False R=False S=False	(S → P) → (¬¬(Q ↔ R))
+logic	96	P=False Q=False R=True	¬(¬(R ∧ (R ∧ Q) ↔ P) → R)
+logic	97	P=True Q=True R=True S=True	R → (P ∨ S) → (P ↔ Q ∨ (S ↔ R ∧ S)) ∧ P
+logic	98	Q=False R=True S=False	(R → (¬Q) ∨ (S → Q)) → R ∨ (R ∨ R)
+logic	99	P=True Q=False R=False S=False	¬(¬((P ∧ R ∧ ¬S ↔ P) ↔ (S ↔ Q)))
+logic	100	P=False Q=True R=True S=False	((P ∨ Q ↔ S) ∧ Q → R ∨ S ↔ (P ↔ P))
+logic	101	P=False Q=True S=False	((P ↔ (¬(Q → Q) ↔ S)) → Q → P)
+logic	102	P=True Q=False R=True S=False	(¬((Q ↔ ¬(S ∧ Q → P)) ∧ Q)) ∨ (P ∨ R)
+logic	103	P=True R=True	(((P ∨ R) ↔ (P ∨ ¬P → R)) ∧ (¬¬R))
+logic	104	P=True Q=False	(Q ↔ P) ↔ P → (P → P → Q) → (P ↔ Q)
+logic	105	P=False Q=True R=True	(Q ∨ Q ∨ Q) ∧ ((Q ↔ P) → ¬Q ∨ R)
+logic	106	P=False Q=False R=False S=True	((R ∧ Q ↔ Q) → (S ↔ R) ∧ P)
+logic	107	P=False Q=False R=False S=True	¬((P → R) ∧ (S ∧ P) → P ↔ Q) ∧ R
+logic	108	P=False Q=False R=True S=False	R ↔ ¬¬(¬R ↔ ((S ↔ Q) ∨ P ∧ P))
+logic	109	P=True Q=True R=False	¬(((Q ↔ R) → Q) → Q ∧ P → Q ∨ P)
+logic	110	P=True Q=True R=True S=False	¬(((Q → ¬P) → Q) → S → S) → (R ∧ R)
+logic	111	P=False Q=False	¬((Q ↔ P ↔ P → P) ↔ (¬P) → P)
+logic	112	P=True Q=False R=True	(Q ↔ P → R ∨ R) → ¬¬Q
+logic	113	Q=False S=False	¬(¬(S ∨ ¬(S ↔ Q)))
+logic	114	Q=True R=True S=False	Q → R ∧ ¬¬Q → (R ∨ S)
+logic	115	P=True R=False S=False	¬(¬(P ↔ R) ∧ P ∨ (P → P)) ∨ (S ↔ R)
+logic	116	P=True Q=False R=True	¬(R → P) → R → Q → R
+logic	117	P=True Q=False R=False	(((P → Q ∨ (R ∨ P)) ∨ (Q ∨ R)) ∧ ¬(R ∧ R))
+logic	118	P=True Q=False R=True S=False	(¬(P ∧ R) → S ∧ (Q ∨ R → Q))
+logic	119	P=False Q=False R=False S=True	P ∨ ((Q → S) ∧ R → Q → P ∧ S)
+logic	120	P=False R=True S=True	(¬(S ∧ P ↔ ((R ∧ P) ↔ P)))
+logic	121	P=True Q=True R=True S=True	(¬(R ∧ (R → Q)) → Q → (Q ↔ S)) ∧ (P ∧ R)
+logic	122	P=True Q=False	¬¬¬(P ∧ Q) ∨ ¬(P ∧ (P ↔ P))
+logic	123	P=False Q=True R=True S=True	¬((P → S) ∨ ¬(Q ∨ P) ∨ (P ∧ R → S))
+logic	124	Q=False R=False S=False	(R ↔ (R ↔ Q) ∧ ((R ↔ ¬(R ↔ Q)) ∧ ¬S))
+logic	125	P=True Q=False R=False	(¬R ∨ (Q ↔ R ↔ P)) ∧ (¬¬(R ∨ P))
+logic	126	P=False Q=False R=False S=True	(¬S ∧ Q ↔ ((R ∨ P → ((Q → R) ↔ S)) ∧ R))
+logic	127	P=False Q=False R=False S=False	R ∨ Q ↔ P → (S ∨ Q ↔ Q)
+logic	18446744073709551615	P=True Q=True S=True	¬((P → S ↔ Q) → ¬(S ∧ (Q → S)))

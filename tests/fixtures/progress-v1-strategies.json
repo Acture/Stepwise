@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "current_set": "builtin",
+  "current": "short-circuit",
+  "mode": "eager",
+  "sessions": {
+    "flexible-substitution-v3\neager\npython\n{}\nFalse and (3 / 0 > 1)": [
+      {
+        "node_id": 3,
+        "input": "ZeroDivisionError"
+      }
+    ],
+    "flexible-substitution-v3\nshort-circuit\npython\n{}\nFalse and (3 / 0 > 1)": [
+      {
+        "node_id": 0,
+        "input": "False"
+      }
+    ]
+  },
+  "proofs": {
+    "proof\n[Not(Not(Atom(\"P\")))]\nP": [
+      "~P ; assume"
+    ]
+  }
+}

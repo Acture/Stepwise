@@ -1,5 +1,5 @@
 use super::truth;
-use crate::core::{EvaluationMode, Expr, Layout, Rules, Step, Value};
+use crate::core::{Expr, Layout, Outcome, Rules, Value};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum LogicOp {
@@ -83,56 +83,41 @@ impl Rules for Op {
 		}
 	}
 
-	fn step(&self, operands: &[Expr], mode: EvaluationMode) -> Step {
+	fn apply(&self, operands: &[Expr]) -> Option<(Outcome, String)> {
 		match self {
 			Self::Not => {
 				let [operand] = operands else {
 					unreachable!("a negation has one operand")
 				};
-				let Some(value) = operand.value() else {
-					return Step::Operand(0);
-				};
-				Step::Apply {
-					outcome: Ok(Value::Bool(!truth(value))),
-					explanation: "否定：原命题真则结果假，原命题假则结果真。".into(),
-					skipped_operands: Vec::new(),
-				}
+				Some((
+					Ok(Value::Bool(!truth(operand.value()?))),
+					"否定：原命题真则结果假，原命题假则结果真。".into(),
+				))
 			}
 			Self::Binary(op) => {
 				let [antecedent, consequent] = operands else {
 					unreachable!("a connective has two operands")
 				};
-				let Some(left) = antecedent.value() else {
-					return Step::Operand(0);
-				};
-				let left: bool = truth(left);
-				if mode == EvaluationMode::ShortCircuit
-					&& let Some(value) = op.short_circuit(left)
-				{
-					return Step::Apply {
-						outcome: Ok(Value::Bool(value)),
-						explanation: format!(
+				let left: bool = truth(antecedent.value()?);
+				if let Some(value) = op.short_circuit(left) {
+					return Some((
+						Ok(Value::Bool(value)),
+						format!(
 							"短路求值：左侧真值已足以确定结果，右侧无需计算。{}",
 							op.rule()
 						),
-						skipped_operands: vec![1],
-					};
+					));
 				}
-				let Some(right) = consequent.value() else {
-					return Step::Operand(1);
-				};
-				Step::Apply {
-					outcome: Ok(Value::Bool(op.apply(left, truth(right)))),
-					explanation: op.rule().into(),
-					skipped_operands: Vec::new(),
-				}
+				Some((
+					Ok(Value::Bool(op.apply(left, truth(consequent.value()?)))),
+					op.rule().into(),
+				))
 			}
 		}
 	}
 
-	fn skips_operands(&self, mode: EvaluationMode) -> bool {
+	fn short_circuits(&self) -> bool {
 		// Equivalence always needs both sides; the other connectives may skip the right one.
 		matches!(self, Self::Binary(op) if *op != LogicOp::Iff)
-			&& mode == EvaluationMode::ShortCircuit
 	}
 }

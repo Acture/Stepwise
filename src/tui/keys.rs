@@ -12,7 +12,7 @@ use crate::{
 /// The keys this front end binds. Only the terminal knows them, so the sentence lives here
 /// rather than in the app layer, next to the words [`super::say`] puts to every reason the
 /// app layer reports.
-pub(super) const HELP: &str = "点击当前式的子表达式 → 原位变成 ____ → 填值 → Enter 提交；填错不推进，Esc 取消。↑↓/j k 选择，PgUp/PgDn 滚动当前内容；历史使用终端自身滚动，s 短路开关，u 撤销，r 重做，n 下一题（随机练习出新题），p 上一题，q 或 Ctrl+C 退出。";
+pub(super) const HELP: &str = "点击当前式的子表达式 → 原位变成 ____ → 填值 → Enter 提交；填错不推进，Esc 取消。能短路的运算可以直接点整体，也可以继续计算会被跳过的操作数——那是本练习允许的额外求值，不是 Python 的执行顺序。↑↓/j k 选择，PgUp/PgDn 滚动当前内容；历史使用终端自身滚动，u 撤销，r 重做，n 下一题（随机练习出新题），p 上一题，q 或 Ctrl+C 退出。";
 
 /// The terminal's own state around one lesson: where each node was drawn, how the active
 /// area scrolls, and whether this run is ending. The [`Lesson`] is the single source of
@@ -166,10 +166,6 @@ impl Screen {
 			}
 			KeyCode::Char('h') => self.practice_mut().hint(),
 			KeyCode::Char('?') => self.practice_mut().note(HELP),
-			KeyCode::Char('s') => {
-				self.follow_tail = true;
-				return self.practice_mut().toggle_mode();
-			}
 			KeyCode::Char('u') => {
 				if self.practice_mut().undo() {
 					self.follow_tail = true;

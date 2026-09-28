@@ -16,19 +16,15 @@ pub const LITERAL_FORM: &str = "Python 源码字面量，例如 2、-0.0、True�
 
 use std::collections::BTreeMap;
 
-use crate::core::{EvaluationMode, Expr, Language, ParseError, Session, Value};
+use crate::core::{Expr, Language, ParseError, Session, Value};
 
 /// Start a Python practice session. The progress key embeds this module's own name and
 /// the Debug rendering of Python's typed bindings; both must stay byte-identical.
-pub fn session(
-	source: &str,
-	bindings: &BTreeMap<String, Value>,
-	mode: EvaluationMode,
-) -> Result<Session, ParseError> {
+pub fn session(source: &str, bindings: &BTreeMap<String, Value>) -> Result<Session, ParseError> {
 	let source: String = source.trim().into();
 	let root: Expr = parse::parse_bound_expression(&source, bindings)?;
 	let context: String = format!("python\n{bindings:?}\n{source}");
-	Ok(Session::new(Language::Python, source, root, context, mode))
+	Ok(Session::new(Language::Python, source, root, context))
 }
 
 pub(crate) fn binding_explanation(name: &str, value: &Value) -> String {

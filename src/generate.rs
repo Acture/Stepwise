@@ -5,7 +5,7 @@ use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 
 use crate::{
-	core::{EvaluationMode, Expr, Language, ParseError, Value, next_step},
+	core::{Expr, Language, ParseError, Path, Value, reference_step},
 	exercises::Exercise,
 };
 
@@ -37,7 +37,6 @@ pub fn generate(language: Language, seed: u64) -> Result<Exercise, ParseError> {
 			expression: formula.text,
 			language,
 			bindings: builder.bindings.clone(),
-			evaluation: None,
 			note: None,
 		};
 		if suitable(&exercise)? {
@@ -72,11 +71,15 @@ fn suitable(exercise: &Exercise) -> Result<bool, ParseError> {
 	if exercise.expression.len() > 180 || exercise.bindings.is_empty() {
 		return Ok(false);
 	}
-	for mode in [EvaluationMode::ShortCircuit, EvaluationMode::Eager] {
+	// A student may short-circuit or keep computing at every operation that allows it, so
+	// the two fixed routes bound every mix of them: every step outcome is the value of its
+	// own subtree, which the complete route reduces once each, and the short-circuit route is
+	// the fewest reductions any mix can take.
+	for path in [Path::ShortCircuit, Path::Complete] {
 		// Count semantic reductions so UI completion shortcuts do not change persisted seeds.
-		let mut root: Expr = exercise.session(mode)?.root().clone();
+		let mut root: Expr = exercise.session()?.root().clone();
 		let mut steps: usize = 0;
-		while let Some(step) = next_step(&root, mode) {
+		while let Some(step) = reference_step(&root, path) {
 			let Ok(value) = step.outcome else {
 				return Ok(false);
 			};
