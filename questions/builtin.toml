@@ -1,7 +1,7 @@
 # Stepwise 内置题集。格式与外部导入的题集完全相同：同一个协议，同一条加载路径。
 # 字段说明与编写方法见 README「题集文件」，可直接运行的示例见 questions/example.toml。
 
-version = 1
+version = 2
 name = "builtin"
 title = "内置题库"
 description = "随程序一起发行的默认题集：Python 求值、命题逻辑求值与自然演绎。"
@@ -151,7 +151,7 @@ name = "long-python-logic"
 title = "长公式：比较、真假值与短路"
 language = "python"
 expression = "not (a + b * c ** 2 <= limit) and (flag or d // e % f == target) or (not spare and g / h != ratio)"
-note = "比较算术、比较、not、and、or 的优先级，切换短路观察哪些子式会被跳过。"
+note = "比较算术、比较、not、and、or 的优先级；能短路的地方可以直接短路，也可以继续计算被跳过的子式，比较两种走法。"
 
 [questions.bindings]
 a = "2"
@@ -186,7 +186,7 @@ name = "logic-implies"
 title = "实质蕴涵"
 language = "logic"
 expression = "P -> (Q | ~P)"
-note = "用 s 切换短路策略，比较求值过程。"
+note = "前件已经决定结果时可以直接短路，也可以继续计算后件，比较两种求值过程。"
 
 [questions.bindings]
 P = "False"

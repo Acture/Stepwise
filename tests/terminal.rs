@@ -108,7 +108,7 @@ fn the_inline_adapter_teaches_and_saves_through_a_real_terminal() {
 	let mixed: std::path::PathBuf = directory.path().join("mixed.toml");
 	std::fs::write(
 		&mixed,
-		"version = 1\nname = \"mixed-pty\"\ntitle = \"混合\"\n\n\
+		"version = 2\nname = \"mixed-pty\"\ntitle = \"混合\"\n\n\
 		 [[questions]]\nkind = \"evaluation\"\nname = \"first\"\ntitle = \"一\"\nlanguage = \"logic\"\nexpression = \"P & Q\"\n\n\
 		 [questions.bindings]\nP = \"True\"\nQ = \"False\"\n\n\
 		 [[questions]]\nkind = \"proof\"\nname = \"middle\"\ntitle = \"二\"\npremises = [\"P\", \"Q\"]\nconclusion = \"P & Q\"\n\n\
@@ -342,9 +342,11 @@ fn the_inline_adapter_teaches_and_saves_through_a_real_terminal() {
 			.as_object()
 			.expect("sessions map")
 			.keys()
-			.any(|key| key.starts_with("flexible-substitution-v3")),
+			.any(|key| key.starts_with("flexible-substitution-v4\n")),
 		"expression progress missing"
 	);
+	assert_eq!(saved["version"], 3);
+	assert!(!saved.contains_key("mode"), "no strategy is saved");
 	assert!(
 		!saved["proofs"].as_object().expect("proofs map").is_empty(),
 		"proof progress missing"

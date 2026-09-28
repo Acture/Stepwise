@@ -102,7 +102,6 @@ mod tests {
 	use super::*;
 	use crate::{
 		app::{Course, Lesson},
-		core::EvaluationMode,
 		exercises::{ProofQuestion, Question},
 		progress::Progress,
 	};
@@ -120,7 +119,6 @@ mod tests {
 			Lesson::new(
 				Course::random(vec![Question::Proof(question)], 0).unwrap(),
 				Progress::default(),
-				EvaluationMode::Eager,
 			)
 			.unwrap(),
 		)

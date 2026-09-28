@@ -1,6 +1,6 @@
 use serde::Deserialize;
 
-use super::{EvaluationMode, Expr, Outcome, ParseError, Value};
+use super::{Expr, Outcome, ParseError, Value};
 
 /// The teaching languages. Core owns the shared flow; each language owns its own
 /// parsing, operator rules and explanations, reached only through this interface.
@@ -67,19 +67,6 @@ pub enum Layout {
 	Infix(&'static str),
 }
 
-/// What a language decides about one operation node whose operands are already in the tree.
-pub enum Step {
-	/// Reduce this operand first. A language only names an operand that is not yet a value.
-	Operand(usize),
-	/// The operation applies here. `skipped_operands` holds the POSITIONS in `operands`
-	/// whose subtrees must not be evaluated; core turns them into node identifiers.
-	Apply {
-		outcome: Outcome,
-		explanation: String,
-		skipped_operands: Vec<usize>,
-	},
-}
-
 /// The rules a language supplies for its own operations. Core never reads inside an operator.
 pub(crate) trait Rules {
 	fn layout(&self) -> Layout;
@@ -87,14 +74,18 @@ pub(crate) trait Rules {
 	/// Ranks competing operations inside one parenthesis scope; only compared within a language.
 	fn precedence(&self) -> u8;
 
-	/// Called with exactly the operands this operator's parser built for it, so an
-	/// implementation may destructure its own arity.
-	fn step(&self, operands: &[Expr], mode: EvaluationMode) -> Step;
+	/// This operation over its operands as they stand: the outcome and the sentence a student
+	/// reads, or `None` while an operand it needs is still unreduced. Called with exactly the
+	/// operands this operator's parser built for it, so an implementation may destructure its
+	/// own arity. Only an operation that [`Rules::short_circuits`] may answer before every
+	/// operand is a value; the operands it did not need are then skipped.
+	fn apply(&self, operands: &[Expr]) -> Option<(Outcome, String)>;
 
-	/// True when a later operand may still be skipped, so only the deciding operand is
-	/// selectable. Every operator answers this: a wrong `false` would let a student
-	/// evaluate a branch the rules say to skip.
-	fn skips_operands(&self, mode: EvaluationMode) -> bool;
+	/// True when earlier operands may decide the result before a later one is reduced. Every
+	/// operator answers this: it lets the student either short-circuit or keep computing, so a
+	/// wrong `true` would let an operand's work skip ahead of higher-precedence work beside it,
+	/// and a wrong `false` would hold the language's own order back behind that work.
+	fn short_circuits(&self) -> bool;
 
 	/// Set when a negative value shown at this operand needs brackets to keep its meaning,
 	/// carrying the note the student sees about the brackets that stay visible.

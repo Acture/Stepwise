@@ -16,19 +16,15 @@ pub use op::{LogicOp, Op};
 
 use std::collections::BTreeMap;
 
-use crate::core::{EvaluationMode, Expr, Language, ParseError, Session, Value};
+use crate::core::{Expr, Language, ParseError, Session, Value};
 
 /// Start a propositional practice session. The progress key embeds this module's own name
 /// and the Debug rendering of logic's truth-value bindings; both must stay byte-identical.
-pub fn session(
-	source: &str,
-	bindings: &BTreeMap<String, bool>,
-	mode: EvaluationMode,
-) -> Result<Session, ParseError> {
+pub fn session(source: &str, bindings: &BTreeMap<String, bool>) -> Result<Session, ParseError> {
 	let source: String = source.trim().into();
 	let root: Expr = formula::parse_teaching_formula(&source, bindings)?;
 	let context: String = format!("logic\n{bindings:?}\n{source}");
-	Ok(Session::new(Language::Logic, source, root, context, mode))
+	Ok(Session::new(Language::Logic, source, root, context))
 }
 
 pub(crate) fn binding_explanation(name: &str, value: &Value) -> String {

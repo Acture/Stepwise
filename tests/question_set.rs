@@ -10,7 +10,7 @@ use std::{
 
 use stepwise::{
 	app::{self, ProofPractice},
-	core::{EvaluationMode, ExprKind, Feedback, Language, Session, Value},
+	core::{ExprKind, Feedback, FeedbackKind, Language, NodeId, Session, Value},
 	exercises::{self, Exercise, Invalid, ProofQuestion, Question, QuestionSet, SetError},
 	logic::proof::Proof,
 	progress::Progress,
@@ -32,7 +32,7 @@ const PROOF_OPENED: &str = "自然演绎练习需要交互终端";
 const EVALUATION_OPENED: &str = "交互练习需要终端";
 
 fn header(id: &str, title: &str) -> String {
-	format!("version = 1\nname = \"{id}\"\ntitle = \"{title}\"\n")
+	format!("version = 2\nname = \"{id}\"\ntitle = \"{title}\"\n")
 }
 
 /// A set with the usual valid metadata and whatever body the test is about.
@@ -97,6 +97,16 @@ fn finish(mut session: Session) -> Session {
 	session
 }
 
+/// The node a student would click to select exactly this text of the expression as it stands.
+fn node(session: &Session, text: &str) -> NodeId {
+	let (rendered, ranges) = session.render_with_ranges();
+	ranges
+		.iter()
+		.find(|(_, range)| &rendered[(*range).clone()] == text)
+		.map(|(id, _)| *id)
+		.unwrap_or_else(|| panic!("no node spells {text:?} in {rendered}"))
+}
+
 fn cli(args: &[&str]) -> Output {
 	Command::new(env!("CARGO_BIN_EXE_stepwise"))
 		.args(args)
@@ -123,11 +133,11 @@ fn write(directory: &tempfile::TempDir, name: &str, text: &str) -> PathBuf {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn the_embedded_set_parses_as_version_one_and_stamps_every_question_with_its_own_name() {
+fn the_embedded_set_parses_as_version_two_and_stamps_every_question_with_its_own_name() {
 	let set: QuestionSet = exercises::builtin().unwrap();
 	assert_eq!(set.name, "builtin");
 	assert_eq!(set.version(), exercises::FORMAT_VERSION);
-	assert_eq!(set.version(), 1);
+	assert_eq!(set.version(), 2);
 	assert_eq!(set.questions().len(), 23);
 	assert!(set.description.is_some());
 
@@ -210,7 +220,7 @@ fn one_set_carries_python_logic_and_proof_questions_with_their_fields_intact() {
 		"{}{}{}{}",
 		header("mixed", "混合题集"),
 		evaluation(
-			"name = \"py\"\ntitle = \"除法\"\nlanguage = \"python\"\nexpression = \"guard and (count / step)\"\nnote = \"题面一\"\nevaluation = \"eager\"\n[questions.bindings]\nguard = \"False\"\ncount = \"6\"\nstep = \"3\""
+			"name = \"py\"\ntitle = \"除法\"\nlanguage = \"python\"\nexpression = \"guard and (count / step)\"\nnote = \"题面一\"\n[questions.bindings]\nguard = \"False\"\ncount = \"6\"\nstep = \"3\""
 		),
 		evaluation(
 			"name = \"lg\"\ntitle = \"真值\"\nlanguage = \"logic\"\nexpression = \"P ∧ Q\"\nnote = \"题面二\"\n[questions.bindings]\nP = \"True\"\nQ = \"False\""
@@ -226,15 +236,12 @@ fn one_set_carries_python_logic_and_proof_questions_with_their_fields_intact() {
 	assert_eq!(python.language, Language::Python);
 	assert_eq!(python.expression, "guard and (count / step)");
 	assert_eq!(python.note.as_deref(), Some("题面一"));
-	assert_eq!(python.evaluation, Some(EvaluationMode::Eager));
-	assert_eq!(python.mode(), EvaluationMode::Eager);
 	assert_eq!(python.assignments(), "count=6 guard=False step=3");
 
 	let logic: &Exercise = set.find("lg").unwrap().evaluation().unwrap();
 	assert_eq!(logic.language, Language::Logic);
-	// No `evaluation` field, so the default decides: short circuit, in logic as in Python.
-	assert_eq!(logic.evaluation, None);
-	assert_eq!(logic.mode(), EvaluationMode::ShortCircuit);
+	assert_eq!(logic.expression, "P ∧ Q");
+	assert_eq!(logic.assignments(), "P=True Q=False");
 
 	let question: &Question = set.find("p1").unwrap();
 	assert_eq!(question.language(), Language::Logic);
@@ -266,7 +273,7 @@ fn binding_literals_keep_their_python_type_and_their_sign() {
 			.evaluation()
 			.unwrap()
 			.clone();
-		let session: Session = exercise.session(exercise.mode()).unwrap();
+		let session: Session = exercise.session().unwrap();
 		session
 			.next_step()
 			.expect("substituting the name is the first step")
@@ -315,19 +322,84 @@ fn binding_literals_keep_their_python_type_and_their_sign() {
 fn only_this_format_version_loads_and_it_must_be_written_down() {
 	let wrong: Invalid = invalid(&format!(
 		"{}{}",
-		header("probe", "探针题集").replace("version = 1", "version = 2"),
+		header("probe", "探针题集").replace("version = 2", "version = 3"),
 		evaluation(PYTHON_FIELDS)
 	));
 	assert_eq!(wrong.field, "version");
 	assert_eq!(wrong.question, None);
 	contains(&wrong.to_string(), "题集的 version 字段");
-	contains(&wrong.to_string(), "version = 1");
+	contains(&wrong.to_string(), "version = 2");
+	// How to move on is known only for the one older protocol; another version gets no advice.
+	assert!(!wrong.to_string().contains("evaluation"), "{wrong}");
 
 	let missing: String = syntax(&format!(
 		"name = \"probe\"\ntitle = \"探针题集\"\n{}",
 		evaluation(PYTHON_FIELDS)
 	));
 	contains(&missing, "version");
+}
+
+/// A version-1 file is one this program's own earlier release wrote, and it differs from the
+/// current protocol by one field. It is refused on its version even though the `evaluation`
+/// lines in it are now unknown fields, and the refusal says how to upgrade: following it to
+/// the letter gives a file that loads.
+#[test]
+fn a_version_one_set_is_refused_with_the_change_that_upgrades_it() {
+	let current: String = set(&format!(
+		"{}{}",
+		evaluation(&format!(
+			"{}\n[questions.bindings]\nguard = \"False\"",
+			PYTHON_FIELDS.replace("expression = \"1 + 2\"", "expression = \"guard and 1 / 0\"")
+		)),
+		evaluation(&PYTHON_FIELDS.replace("name = \"q1\"", "name = \"q2\""))
+	));
+	// What the earlier release accepted: version 1, and a strategy on some questions.
+	let outdated: String = current
+		.replace("version = 2", "version = 1")
+		.replace(
+			"note = \"题面\"\n[questions.bindings]",
+			"note = \"题面\"\nevaluation = \"eager\"\n[questions.bindings]",
+		)
+		.replace(
+			"expression = \"1 + 2\"",
+			"expression = \"1 + 2\"\nevaluation = \"short-circuit\"",
+		);
+	assert_eq!(outdated.matches("evaluation = \"").count(), 2);
+
+	let refused: Invalid = invalid(&outdated);
+	assert_eq!(refused.question, None);
+	assert_eq!(refused.field, "version");
+	let message: String = refused.to_string();
+	contains(&message, "这个程序读 version = 2 的题集，文件写的是 1。");
+	contains(&message, "version 2 去掉了求值题的 evaluation 字段");
+	contains(&message, "删去所有 evaluation 行，再把 version 改成 2。");
+
+	// Doing exactly what it says: drop every evaluation line, then write version 2.
+	let upgraded: String = outdated
+		.lines()
+		.filter(|line| !line.starts_with("evaluation = "))
+		.map(|line| {
+			if line == "version = 1" {
+				"version = 2"
+			} else {
+				line
+			}
+		})
+		.collect::<Vec<&str>>()
+		.join("\n");
+	assert_eq!(upgraded.trim_end(), current.trim_end());
+	assert_eq!(QuestionSet::import(&upgraded).unwrap().questions().len(), 2);
+
+	// The CLI shows a teacher the same sentence.
+	let directory: tempfile::TempDir = tempfile::tempdir().unwrap();
+	let path: PathBuf = write(&directory, "outdated.toml", &outdated);
+	let listed: Output = cli(&["--python", "--set", path.to_str().unwrap(), "--list"]);
+	assert_eq!(listed.status.code(), Some(1), "{}", err(&listed));
+	assert!(out(&listed).is_empty());
+	contains(
+		&err(&listed),
+		"删去所有 evaluation 行，再把 version 改成 2。",
+	);
 }
 
 #[test]
@@ -358,7 +430,8 @@ fn a_proof_field_on_an_evaluation_question_is_refused() {
 }
 
 /// 证明题不接受短路字段：short circuit is an evaluation strategy and says nothing about a
-/// derivation, so the field is refused instead of quietly ignored.
+/// derivation, so the field is refused instead of quietly ignored. Since version 2 no question
+/// takes it, and the proof keeps refusing it for the reason it always did.
 #[test]
 fn a_proof_question_refuses_the_short_circuit_field() {
 	let message: String = syntax(&set(&proof_question(&format!(
@@ -367,6 +440,22 @@ fn a_proof_question_refuses_the_short_circuit_field() {
 	contains(&message, "evaluation");
 	// The same file without that one line is a set the program accepts.
 	QuestionSet::parse(&set(&proof_question(PROOF_FIELDS))).unwrap();
+}
+
+/// A student may short-circuit or keep computing in every question, so an evaluation
+/// question has no strategy to pick. A current file that still writes one is refused as an
+/// unknown field, like any other, rather than read as if it meant something.
+#[test]
+fn an_evaluation_question_refuses_the_retired_strategy_field() {
+	for strategy in ["eager", "short-circuit"] {
+		// Refused by TOML rather than on the version: the file is written for this protocol.
+		let message: String = syntax(&set(&evaluation(&format!(
+			"{PYTHON_FIELDS}\nevaluation = \"{strategy}\""
+		))));
+		contains(&message, "unknown field");
+		contains(&message, "evaluation");
+	}
+	QuestionSet::parse(&set(&evaluation(PYTHON_FIELDS))).unwrap();
 }
 
 #[test]
@@ -516,7 +605,7 @@ fn every_premise_and_the_conclusion_must_be_a_formula() {
 
 #[test]
 fn broken_toml_is_reported_with_the_line_and_column_to_fix() {
-	let message: String = syntax("version = 1\nid = =\"probe\"\ntitle = \"t\"\n");
+	let message: String = syntax("version = 2\nid = =\"probe\"\ntitle = \"t\"\n");
 	contains(&message, "line");
 	contains(&message, "column");
 	contains(&message, "2");
@@ -542,7 +631,7 @@ fn a_set_is_refused_when_it_holds_too_many_questions_or_too_many_bytes() {
 
 	// Valid TOML, refused on weight alone: the size rule is its own check.
 	let heavy: String = format!(
-		"version = 1\nname = \"heavy\"\ntitle = \"t\"\ndescription = \"{}\"\n{}",
+		"version = 2\nname = \"heavy\"\ntitle = \"t\"\ndescription = \"{}\"\n{}",
 		"x".repeat(1 << 20),
 		evaluation(PYTHON_FIELDS)
 	);
@@ -567,7 +656,7 @@ fn a_question_that_ends_in_an_exception_loads_and_is_practised_to_that_exception
 	));
 	let set: QuestionSet = QuestionSet::parse(&text).unwrap();
 	let exercise: &Exercise = set.find("boom").unwrap().evaluation().unwrap();
-	let session: Session = finish(exercise.session(exercise.mode()).unwrap());
+	let session: Session = finish(exercise.session().unwrap());
 	assert_eq!(
 		session.terminal_error().and_then(|error| error.name()),
 		Some("ZeroDivisionError")
@@ -575,23 +664,21 @@ fn a_question_that_ends_in_an_exception_loads_and_is_practised_to_that_exception
 	assert!(session.is_finished());
 	assert_eq!(session.history().len(), 1);
 
-	// The shipped one says the same thing, and its `evaluation = "eager"` is why the
-	// division on the skipped side runs at all.
-	let shipped: QuestionSet = QuestionSet::parse(EXAMPLE_TEXT).unwrap();
-	let eager: &Exercise = shipped
-		.find("eager-division")
-		.unwrap()
-		.evaluation()
-		.unwrap();
-	assert_eq!(eager.mode(), EvaluationMode::Eager);
-	let raised: Session = finish(eager.session(eager.mode()).unwrap());
-	assert_eq!(
-		raised.terminal_error().and_then(|error| error.name()),
-		Some("ZeroDivisionError")
+	// Python raises right here when it runs this source, so the answer says only that
+	// evaluation stops; the shipped `guarded-division` below is the case where it would not.
+	let mut answered: Session = exercise.session().unwrap();
+	let raised: Feedback = answered.submit(node(&answered, "6 / 0"), "ZeroDivisionError");
+	assert!(raised.accepted(), "{}", raised.message);
+	assert!(
+		raised.message.ends_with(" 求值在这里终止。"),
+		"{}",
+		raised.message
 	);
-	// Under short circuit the same source never reaches the division.
-	let skipped: Session = finish(eager.session(EvaluationMode::ShortCircuit).unwrap());
-	assert!(skipped.terminal_error().is_none());
+	assert!(
+		!raised.message.contains("这个异常来自你选择计算的子式"),
+		"{}",
+		raised.message
+	);
 }
 
 // ---------------------------------------------------------------------------
@@ -602,7 +689,7 @@ fn a_question_that_ends_in_an_exception_loads_and_is_practised_to_that_exception
 fn the_shipped_example_parses_and_its_proof_is_checked_by_the_same_rules() {
 	let set: QuestionSet = QuestionSet::parse(EXAMPLE_TEXT).unwrap();
 	assert_eq!(set.name, "example-set");
-	assert_eq!(set.version(), 1);
+	assert_eq!(set.version(), 2);
 	assert_eq!(set.questions().len(), 4);
 	assert_eq!(set.exercises().count(), 3);
 	// Each language's course is its questions in file order; the proof is a stop on logic's.
@@ -614,7 +701,7 @@ fn the_shipped_example_parses_and_its_proof_is_checked_by_the_same_rules() {
 	};
 	assert_eq!(
 		course(Language::Python),
-		["literal-types", "eager-division"]
+		["literal-types", "guarded-division"]
 	);
 	assert_eq!(course(Language::Logic), ["modus-ponens-truth", "chain"]);
 
@@ -652,6 +739,100 @@ fn the_shipped_example_parses_and_its_proof_is_checked_by_the_same_rules() {
 	assert!(practice.proof().open_assumptions().is_empty());
 }
 
+/// The shipped `guarded-division` is one question with two ways through it and no strategy
+/// to pick between them. The order `--trace` prints is Python's own: `guard` is False, so the
+/// `and` short-circuits and the division is never reached. In the same session a student may
+/// still compute the division instead, and meets a ZeroDivisionError that running the source
+/// would not raise; taking that back, the short circuit is still there to finish on.
+#[test]
+fn the_guarded_division_example_short_circuits_and_still_lets_a_student_divide() {
+	let traced: Output = cli(&[
+		"--python",
+		"--set",
+		EXAMPLE_PATH,
+		"--trace",
+		"--exercise",
+		"guarded-division",
+	]);
+	assert!(traced.status.success(), "{}", err(&traced));
+	assert!(err(&traced).is_empty(), "{}", err(&traced));
+	let printed: String = out(&traced);
+	contains(&printed, "count=6 guard=False step=0");
+	contains(&printed, "guard and (count / step)");
+	contains(&printed, "1. 将「guard」替换为 False");
+	contains(&printed, "2. 将「False and (count / step)」替换为 False");
+	contains(&printed, "完成：False");
+	assert!(!printed.contains("3. "), "{printed}");
+	assert!(!printed.contains("ZeroDivisionError"), "{printed}");
+
+	let shipped: QuestionSet = QuestionSet::parse(EXAMPLE_TEXT).unwrap();
+	let guarded: &Exercise = shipped
+		.find("guarded-division")
+		.unwrap()
+		.evaluation()
+		.unwrap();
+	assert_eq!(guarded.expression, "guard and (count / step)");
+	assert_eq!(guarded.assignments(), "count=6 guard=False step=0");
+	// The session's own order ends where the trace does.
+	let reference: Session = finish(guarded.session().unwrap());
+	assert!(reference.terminal_error().is_none());
+	assert_eq!(reference.render(), "False");
+	assert_eq!(reference.history().len(), 2);
+
+	let allowed = |session: &Session| -> Vec<NodeId> {
+		session
+			.allowed_steps()
+			.iter()
+			.map(|step| step.node_id)
+			.collect()
+	};
+	let mut session: Session = guarded.session().unwrap();
+	assert!(session.submit(node(&session, "guard"), "False").accepted());
+	// The `and` is decided now and may be taken, and the side it would skip is still open.
+	let short_circuit: NodeId = node(&session, "False and (count / step)");
+	assert!(allowed(&session).contains(&short_circuit));
+	assert!(allowed(&session).contains(&node(&session, "count")));
+	assert!(session.submit(node(&session, "count"), "6").accepted());
+	assert!(session.submit(node(&session, "step"), "0").accepted());
+	assert_eq!(session.render(), "False and (6 / 0)");
+	// Computing part of the skipped side does not use up the short circuit.
+	let division: NodeId = node(&session, "6 / 0");
+	assert!(allowed(&session).contains(&short_circuit));
+	assert!(allowed(&session).contains(&division));
+	assert_eq!(
+		session.next_step().map(|step| step.node_id),
+		Some(short_circuit),
+		"the hint still names the short circuit"
+	);
+
+	let raised: Feedback = session.submit(division, "ZeroDivisionError");
+	assert!(raised.accepted(), "{}", raised.message);
+	contains(
+		&raised.message,
+		"这个异常来自你选择计算的子式 6 / 0；Python 执行原式时不会在这里引发它。求值在这里终止。",
+	);
+	assert!(session.is_finished());
+	assert_eq!(
+		session.terminal_error().and_then(|error| error.name()),
+		Some("ZeroDivisionError")
+	);
+	assert!(session.allowed_steps().is_empty());
+	assert_eq!(
+		session.check_selection(short_circuit).unwrap_err().kind,
+		FeedbackKind::Finished
+	);
+
+	// Undo takes the exception back, and the short circuit then finishes normally.
+	assert!(session.undo());
+	assert!(!session.is_finished());
+	assert!(session.terminal_error().is_none());
+	let short: Feedback = session.submit(short_circuit, "False");
+	assert!(short.accepted(), "{}", short.message);
+	assert!(session.is_finished());
+	assert!(session.terminal_error().is_none());
+	assert_eq!(session.render(), "False");
+}
+
 // ---------------------------------------------------------------------------
 // The CLI entry.
 // ---------------------------------------------------------------------------
@@ -663,7 +844,7 @@ fn listing_an_external_set_shows_only_the_questions_of_the_chosen_language() {
 	let listed: String = out(&python);
 	assert_eq!(listed.lines().count(), 2);
 	contains(&listed, "literal-types");
-	contains(&listed, "eager-division");
+	contains(&listed, "guarded-division");
 	contains(&listed, "flag + (zero == negative)");
 	assert!(!listed.contains("chain"), "{listed}");
 	assert!(err(&python).is_empty());
@@ -776,17 +957,17 @@ fn trace_on_a_question_from_a_file_prints_the_steps_the_rules_derived() {
 		EXAMPLE_PATH,
 		"--trace",
 		"--exercise",
-		"eager-division",
+		"literal-types",
 	]);
 	assert!(traced.status.success(), "{}", err(&traced));
 	let printed: String = out(&traced);
 	// The assignments, then one numbered line per derived step, then the outcome.
-	contains(&printed, "count=6 guard=False step=0");
-	contains(&printed, "guard and (count / step)");
-	contains(&printed, "1. 将「guard」替换为 False");
-	contains(&printed, "将「6 / 0」替换为 ZeroDivisionError");
-	contains(&printed, "完成：ZeroDivisionError");
-	assert!(printed.contains("4. "), "{printed}");
+	contains(&printed, "flag=True negative=-0.0 zero=0");
+	contains(&printed, "flag + (zero == negative)");
+	contains(&printed, "1. 将「flag」替换为 True");
+	contains(&printed, "将「0 == -0.0」替换为 True");
+	contains(&printed, "完成：2");
+	assert!(printed.contains("6. "), "{printed}");
 }
 
 /// Every one of these names a question the set does not hold. `--proof NAME` is not among
@@ -818,7 +999,7 @@ fn a_set_that_does_not_load_never_touches_the_progress_file() {
 	let progress: PathBuf = write(&directory, "progress.json", "not json at all\n");
 	let before: Vec<u8> = fs::read(&progress).unwrap();
 
-	let broken: PathBuf = write(&directory, "broken.toml", "version = 1\nid = =\"x\"\n");
+	let broken: PathBuf = write(&directory, "broken.toml", "version = 2\nid = =\"x\"\n");
 	let unteachable: PathBuf = write(
 		&directory,
 		"unteachable.toml",
@@ -826,8 +1007,17 @@ fn a_set_that_does_not_load_never_touches_the_progress_file() {
 			&PYTHON_FIELDS.replace("expression = \"1 + 2\"", "expression = \"x + 1\""),
 		)),
 	);
+	// A set the earlier release wrote, refused on its version.
+	let outdated: PathBuf = write(
+		&directory,
+		"outdated.toml",
+		&set(&evaluation(&format!(
+			"{PYTHON_FIELDS}\nevaluation = \"eager\""
+		)))
+		.replace("version = 2", "version = 1"),
+	);
 
-	for path in [&broken, &unteachable] {
+	for path in [&broken, &unteachable, &outdated] {
 		let refused: Output = cli(&[
 			"--python",
 			"--set",
@@ -865,15 +1055,15 @@ fn a_set_that_does_not_load_never_touches_the_progress_file() {
 #[test]
 fn a_set_from_a_later_protocol_names_the_version_even_though_its_fields_are_unknown_here() {
 	let later: String = format!(
-		"version = 2\nname = \"probe\"\ntitle = \"探针题集\"\ndifficulty = \"hard\"\n{}",
+		"version = 3\nname = \"probe\"\ntitle = \"探针题集\"\ndifficulty = \"hard\"\n{}",
 		evaluation(PYTHON_FIELDS)
 	);
 	// The unknown field alone would be a TOML refusal; the version is read before it.
 	let refused: Invalid = invalid(&later);
 	assert_eq!(refused.question, None);
 	assert_eq!(refused.field, "version");
-	contains(&refused.to_string(), "version = 1");
-	contains(&refused.to_string(), "文件写的是 2");
+	contains(&refused.to_string(), "version = 2");
+	contains(&refused.to_string(), "文件写的是 3");
 	assert!(!refused.to_string().contains("difficulty"));
 }
 
@@ -947,10 +1137,9 @@ fn a_set_opens_its_own_first_question_when_no_question_is_named() {
 }
 
 /// A proof question binds no variable, so an assignment is refused rather than accepted and
-/// dropped. `--evaluation` is the course's strategy rather than the question's: a course that
-/// opens on a proof accepts it for the evaluation questions after it, and opens the proof.
+/// dropped; the same launch without it opens the proof.
 #[test]
-fn a_proof_question_refuses_an_assignment_and_leaves_the_strategy_to_the_course() {
+fn a_proof_question_refuses_an_assignment() {
 	let named: [&str; 6] = [
 		"--logic",
 		"--set",
@@ -964,10 +1153,61 @@ fn a_proof_question_refuses_an_assignment_and_leaves_the_strategy_to_the_course(
 	contains(&err(&assigned), "是证明题");
 	contains(&err(&assigned), "--assign");
 
-	let strategy: Output = cli(&[named.as_slice(), &["--evaluation", "eager"]].concat());
-	assert_eq!(strategy.status.code(), Some(1), "{}", err(&strategy));
-	contains(&err(&strategy), PROOF_OPENED);
-	assert!(!err(&strategy).contains("是证明题"), "{}", err(&strategy));
+	let opened: Output = cli(&named);
+	assert_eq!(opened.status.code(), Some(1), "{}", err(&opened));
+	contains(&err(&opened), PROOF_OPENED);
+	assert!(!err(&opened).contains("是证明题"), "{}", err(&opened));
+}
+
+/// There is no strategy left to choose, so the flag that chose one is gone rather than kept
+/// and ignored. The argument parser refuses it — its usage error, exit 2, not a failure of
+/// the program's own — before any question is read, drawn or traced.
+#[test]
+fn the_retired_evaluation_flag_is_an_unknown_argument_and_nothing_starts() {
+	let traced: [&str; 6] = [
+		"--python",
+		"--set",
+		EXAMPLE_PATH,
+		"--exercise",
+		"guarded-division",
+		"--trace",
+	];
+	// Without the flag this launch prints its trace, so the flag alone stops it below.
+	let baseline: Output = cli(&traced);
+	assert!(baseline.status.success(), "{}", err(&baseline));
+	assert!(!out(&baseline).is_empty());
+
+	let proof: [&str; 6] = [
+		"--logic",
+		"--set",
+		EXAMPLE_PATH,
+		"--exercise",
+		"chain",
+		"--no-save",
+	];
+	for launch in [traced.as_slice(), proof.as_slice(), &["--python", "1 + 1"]] {
+		for strategy in ["eager", "short-circuit"] {
+			let refused: Output = cli(&[launch, &["--evaluation", strategy]].concat());
+			assert_eq!(
+				refused.status.code(),
+				Some(2),
+				"{launch:?} --evaluation {strategy}: {}",
+				err(&refused)
+			);
+			assert!(out(&refused).is_empty(), "{}", out(&refused));
+			contains(&err(&refused), "unexpected argument '--evaluation'");
+			assert!(!err(&refused).contains(PROOF_OPENED), "{}", err(&refused));
+			assert!(
+				!err(&refused).contains(EVALUATION_OPENED),
+				"{}",
+				err(&refused)
+			);
+		}
+	}
+
+	let help: Output = cli(&["--help"]);
+	assert!(help.status.success());
+	assert!(!out(&help).contains("--evaluation"), "{}", out(&help));
 }
 
 /// A language whose only questions are proofs is a course of proofs, not an empty language:
@@ -1104,7 +1344,7 @@ fn an_ordered_set_resumes_at_an_unfinished_proof_and_moves_on_once_it_is_finishe
 	assert!(progress.points_at("probe", "chain"));
 	assert_eq!(progress.commands(&chain.proof().unwrap()).len(), 1);
 	progress.save(&progress_path).unwrap();
-	assert_eq!(app::resume_in_set(&progress, &questions, None).unwrap(), 1);
+	assert_eq!(app::resume_in_set(&progress, &questions).unwrap(), 1);
 	let resumed: Output = launch();
 	assert_eq!(resumed.status.code(), Some(1), "{}", err(&resumed));
 	contains(&err(&resumed), PROOF_OPENED);
@@ -1114,7 +1354,7 @@ fn an_ordered_set_resumes_at_an_unfinished_proof_and_moves_on_once_it_is_finishe
 	assert!(proof.is_finished());
 	progress.record_proof(&chain.set, &chain.name, &proof);
 	progress.save(&progress_path).unwrap();
-	assert_eq!(app::resume_in_set(&progress, &questions, None).unwrap(), 2);
+	assert_eq!(app::resume_in_set(&progress, &questions).unwrap(), 2);
 	let moved_on: Output = launch();
 	assert_eq!(moved_on.status.code(), Some(1), "{}", err(&moved_on));
 	contains(&err(&moved_on), EVALUATION_OPENED);
@@ -1193,6 +1433,7 @@ fn the_example_set_printed_in_the_readme_is_one_the_program_accepts() {
 		.replace("\r\n", "\n");
 	let documented: QuestionSet = QuestionSet::import(&block).expect("the documented set loads");
 	assert_eq!(documented.name, "example-set");
+	assert_eq!(documented.version(), exercises::FORMAT_VERSION);
 
 	// Both kinds are shown, and each field the block names is one the loader read.
 	assert_eq!(documented.questions().len(), 2);
@@ -1201,7 +1442,7 @@ fn the_example_set_printed_in_the_readme_is_one_the_program_accepts() {
 		.and_then(Question::evaluation)
 		.expect("the documented evaluation question");
 	assert_eq!(python.language, Language::Python);
-	assert_eq!(python.mode(), EvaluationMode::Eager);
+	assert_eq!(python.expression, "flag + (zero == negative)");
 	assert_eq!(python.bindings["negative"], "-0.0");
 	assert!(python.note.is_some());
 	let Some(Question::Proof(proof)) = documented.find("chain") else {

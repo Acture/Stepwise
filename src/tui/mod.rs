@@ -81,7 +81,7 @@ fn closing(lesson: &Lesson) -> String {
 		Task::Evaluation(practice) => {
 			let session: &crate::core::Session = practice.session();
 			match session.terminal_error() {
-				Some(error) => format!("{}\n{}", session.render(), error.name().unwrap_or("异常")),
+				Some(error) => format!("{}\n{}", session.render(), render::raised(session, error)),
 				None => session.render().into(),
 			}
 		}
