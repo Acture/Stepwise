@@ -104,6 +104,10 @@ pub struct Exercise {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProofQuestion {
+	/// The set this question came from, stamped like [`Exercise::set`]; empty for a proof
+	/// written out on the command line.
+	#[serde(skip)]
+	pub set: String,
 	pub name: String,
 	pub title: String,
 	#[serde(default)]
@@ -199,8 +203,9 @@ impl QuestionSet {
 		let mut set: Self = toml::from_str(text).map_err(|error| SetError::Syntax(error.into()))?;
 		let owner: String = set.name.clone();
 		for question in &mut set.questions {
-			if let Question::Evaluation(exercise) = question {
-				exercise.set = owner.clone();
+			match question {
+				Question::Evaluation(exercise) => exercise.set = owner.clone(),
+				Question::Proof(proof) => proof.set = owner.clone(),
 			}
 		}
 		set.validate()?;
@@ -237,12 +242,12 @@ impl QuestionSet {
 	pub fn exercises(&self) -> impl Iterator<Item = &Exercise> {
 		self.questions.iter().filter_map(Question::evaluation)
 	}
-	/// The evaluation questions of one language, in the order the set lists them.
-	pub fn evaluations(&self, language: Language) -> Vec<Exercise> {
+	/// Every question of one language — evaluation and proof alike — in the order the set
+	/// lists them: the course an ordered practice walks.
+	pub fn of_language(&self, language: Language) -> Vec<Question> {
 		self.questions
 			.iter()
-			.filter_map(Question::evaluation)
-			.filter(|exercise| exercise.language == language)
+			.filter(|question| question.language() == language)
 			.cloned()
 			.collect()
 	}
@@ -331,6 +336,13 @@ impl Question {
 			Self::Proof(question) => &question.title,
 		}
 	}
+	/// The set this question came from; empty for one that belongs to no set.
+	pub fn set(&self) -> &str {
+		match self {
+			Self::Evaluation(exercise) => &exercise.set,
+			Self::Proof(question) => &question.set,
+		}
+	}
 	/// Natural deduction is propositional, so a proof question is a logic question.
 	pub fn language(&self) -> Language {
 		match self {
@@ -384,10 +396,9 @@ impl Exercise {
 	}
 
 	/// The strategy this question opens in when nothing else decides: its own field, else
-	/// the language's own default.
+	/// short circuit, which both languages open with.
 	pub fn mode(&self) -> EvaluationMode {
-		self.evaluation
-			.unwrap_or_else(|| self.language.default_mode())
+		self.evaluation.unwrap_or_default()
 	}
 
 	pub fn assignments(&self) -> String {
@@ -426,7 +437,8 @@ impl Exercise {
 }
 
 impl ProofQuestion {
-	/// The proof this question opens, checked by the same rules a built-in one is.
+	/// The proof this question opens. The built-in proofs are questions of the embedded set,
+	/// so every proof reaches the checker this way.
 	pub fn proof(&self) -> Result<Proof, ParseError> {
 		Ok(Proof::new(
 			self.premises
@@ -437,8 +449,12 @@ impl ProofQuestion {
 		))
 	}
 
-	/// Premises and conclusion on one line, for a listing.
+	/// Premises and conclusion on one line, for a listing. A proof from no premises starts
+	/// at the turnstile.
 	pub fn sequent(&self) -> String {
+		if self.premises.is_empty() {
+			return format!("⊢ {}", self.conclusion);
+		}
 		format!("{} ⊢ {}", self.premises.join("，"), self.conclusion)
 	}
 

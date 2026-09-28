@@ -1,9 +1,8 @@
-use std::{
-	io::{self, IsTerminal},
-	path::PathBuf,
-};
+//! The proof half of the terminal adapter: the keys a proof binds and how it is drawn. Every
+//! character a student types belongs to the proof line, so changing question takes a control
+//! key here where the expression view uses a letter; either way it is the lesson that moves.
 
-use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers, MouseEventKind};
+use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers, MouseEventKind};
 use ratatui::{
 	Frame,
 	layout::{Position, Rect},
@@ -12,86 +11,64 @@ use ratatui::{
 	widgets::Paragraph,
 };
 
-use super::{
-	inline::{InlineTerminal, TerminalGuard},
-	say,
-	viewport::{self, Scroll},
-};
-use crate::{
-	app::ProofPractice,
-	logic::proof::{Proof, RULES},
-	progress::Progress,
-};
+use super::{keys::Screen, say, viewport};
+use crate::{core::ParseError, logic::proof::RULES};
 
-/// The terminal around one proof: how the rule reference scrolls and whether this run is
-/// ending. Every proof step goes through the app layer.
-struct ProofScreen {
-	practice: ProofPractice,
-	scroll: Scroll,
-	quit: bool,
-}
-
-impl ProofScreen {
-	fn new(practice: ProofPractice) -> Self {
-		Self {
-			practice,
-			scroll: Scroll::default(),
-			quit: false,
-		}
-	}
-
-	fn handle(&mut self, event: Event) -> bool {
+impl Screen {
+	pub(super) fn proof_event(&mut self, event: Event) -> Result<bool, ParseError> {
 		match event {
 			Event::Key(key) if key.kind != KeyEventKind::Release => {
 				if key.modifiers.contains(KeyModifiers::CONTROL) {
 					match key.code {
 						KeyCode::Char('c' | 'q') => self.quit = true,
-						KeyCode::Char('z') if self.practice.undo() => {
-							self.scroll.reset();
-							return true;
+						KeyCode::Char('z') if self.proof_mut().undo() => {
+							self.proof_scroll.reset();
+							return Ok(true);
 						}
-						KeyCode::Char('u') => self.practice.clear_input(),
+						KeyCode::Char('u') => self.proof_mut().clear_input(),
+						KeyCode::Char('n') => return self.change_question(true),
+						KeyCode::Char('p') => return self.change_question(false),
 						_ => {}
 					}
-					return false;
+					return Ok(false);
 				}
 				match key.code {
 					KeyCode::Enter => {
-						self.scroll.reset();
-						return self.practice.submit();
+						self.proof_scroll.reset();
+						return Ok(self.proof_mut().submit());
 					}
-					KeyCode::Backspace => self.practice.backspace(),
-					KeyCode::Esc => self.practice.clear_input(),
+					KeyCode::Backspace => self.proof_mut().backspace(),
+					KeyCode::Esc => self.proof_mut().clear_input(),
 					KeyCode::F(1) => {
-						self.practice.note(RULES);
-						self.scroll.reset();
+						self.proof_mut().note(RULES);
+						self.proof_scroll.reset();
 					}
-					KeyCode::Up | KeyCode::PageUp => self.scroll.up(),
-					KeyCode::Down | KeyCode::PageDown => self.scroll.down(),
+					KeyCode::Up | KeyCode::PageUp => self.proof_scroll.up(),
+					KeyCode::Down | KeyCode::PageDown => self.proof_scroll.down(),
 					KeyCode::Char(character) if !key.modifiers.contains(KeyModifiers::ALT) => {
-						self.practice.type_character(character);
+						self.proof_mut().type_character(character);
 					}
 					_ => {}
 				}
 			}
-			Event::Paste(text) => self.practice.paste(&text),
+			Event::Paste(text) => self.proof_mut().paste(&text),
 			Event::Mouse(mouse) => match mouse.kind {
-				MouseEventKind::ScrollUp => self.scroll.up(),
-				MouseEventKind::ScrollDown => self.scroll.down(),
+				MouseEventKind::ScrollUp => self.proof_scroll.up(),
+				MouseEventKind::ScrollDown => self.proof_scroll.down(),
 				_ => {}
 			},
 			_ => {}
 		}
-		false
+		Ok(false)
 	}
 
-	fn draw(&mut self, frame: &mut Frame<'_>) -> Option<Position> {
+	pub(super) fn draw_proof(&mut self, frame: &mut Frame<'_>) -> Option<Position> {
 		let [header, body, input, footer]: [Rect; 4] = viewport::compact_rows(frame.area(), true);
 		frame.render_widget(
 			Paragraph::new(format!(
 				"目标：{}{}",
-				self.practice.proof().goal,
-				if self.practice.is_finished() {
+				self.proof().proof().goal,
+				if self.proof().is_finished() {
 					" · 完成"
 				} else {
 					""
@@ -100,16 +77,16 @@ impl ProofScreen {
 			.style(Style::default().fg(Color::Cyan)),
 			header,
 		);
-		let (feedback, good): (String, bool) = say::feedback(self.practice.report());
+		let (feedback, good): (String, bool) = say::feedback(self.proof().report());
 		let text: Text<'_> = Text::raw(feedback).style(Style::default().fg(if good {
 			Color::Green
 		} else {
 			Color::Yellow
 		}));
-		viewport::draw_text(frame, body, text, &mut self.scroll);
-		let cursor: Option<Position> = viewport::draw_input(frame, input, self.practice.input());
+		viewport::draw_text(frame, body, text, &mut self.proof_scroll);
+		let cursor: Option<Position> = viewport::draw_input(frame, input, self.proof().input());
 		frame.render_widget(
-			Paragraph::new("Enter检查 F1规则 Ctrl+Z撤销 Ctrl+C退出")
+			Paragraph::new("Enter检查 F1规则 Ctrl+Z撤销 Ctrl+N/P换题 Ctrl+C退出")
 				.style(Style::default().fg(Color::DarkGray)),
 			footer,
 		);
@@ -117,60 +94,33 @@ impl ProofScreen {
 	}
 }
 
-pub fn run_proof(
-	proof: Proof,
-	progress: Progress,
-	path: Option<PathBuf>,
-) -> Result<(), Box<dyn std::error::Error>> {
-	if !io::stdin().is_terminal() || !io::stdout().is_terminal() {
-		return Err("自然演绎练习需要交互终端；使用 --check-proof 检查证明文件。".into());
-	}
-	let mut screen: ProofScreen = ProofScreen::new(ProofPractice::new(proof, progress)?);
-	let _guard: TerminalGuard = TerminalGuard::enter()?;
-	let mut terminal: InlineTerminal = InlineTerminal::new()?;
-	terminal.append(super::text(screen.practice.opening()))?;
-	loop {
-		terminal.draw(|frame| screen.draw(frame))?;
-		let before: usize = screen.practice.proof().lines().len();
-		let changed: bool = screen.handle(event::read()?);
-		if changed {
-			terminal.append(super::text(screen.practice.appended(before)))?;
-		}
-		if changed || screen.quit {
-			screen.practice.record();
-			if let Some(path) = &path {
-				screen.practice.progress().save(path)?;
-			}
-		}
-		if screen.quit {
-			terminal.finish(Text::raw(if screen.practice.is_finished() {
-				"证明完成。"
-			} else {
-				"本次练习结束。"
-			}))?;
-			return Ok(());
-		}
-	}
-}
-
 #[cfg(test)]
 mod tests {
-	use super::*;
-	use crate::logic::parse_formula;
 	use crossterm::event::KeyEvent;
 	use ratatui::{Terminal, backend::TestBackend};
 
-	fn screen(premises: &[&str], goal: &str) -> ProofScreen {
-		ProofScreen::new(
-			ProofPractice::new(
-				Proof::new(
-					premises
-						.iter()
-						.map(|source| parse_formula(source).unwrap())
-						.collect(),
-					parse_formula(goal).unwrap(),
-				),
+	use super::*;
+	use crate::{
+		app::{Course, Lesson},
+		core::EvaluationMode,
+		exercises::{ProofQuestion, Question},
+		progress::Progress,
+	};
+
+	fn screen(premises: &[&str], goal: &str) -> Screen {
+		let question: ProofQuestion = ProofQuestion {
+			set: String::new(),
+			name: "test".into(),
+			title: "test".into(),
+			premises: premises.iter().map(|premise| (*premise).into()).collect(),
+			conclusion: goal.into(),
+			note: None,
+		};
+		Screen::new(
+			Lesson::new(
+				Course::random(vec![Question::Proof(question)], 0).unwrap(),
 				Progress::default(),
+				EvaluationMode::Eager,
 			)
 			.unwrap(),
 		)
@@ -178,35 +128,37 @@ mod tests {
 
 	#[test]
 	fn rules_scroll_without_switching_views_and_drafts_survive_resizing() {
-		let mut app: ProofScreen = screen(&["P", "P -> Q"], "Q");
-		app.handle(Event::Paste("Q ; mp ; 1,2".into()));
+		let mut app: Screen = screen(&["P", "P -> Q"], "Q");
+		app.handle(Event::Paste("Q ; mp ; 1,2".into())).unwrap();
 		for (width, height) in [(40, 10), (20, 6), (1, 1), (0, 0), (80, 24)] {
 			let mut terminal: Terminal<TestBackend> =
 				Terminal::new(TestBackend::new(width, height)).unwrap();
 			terminal
 				.draw(|frame| {
-					app.draw(frame);
+					app.draw_proof(frame);
 				})
 				.unwrap();
-			assert_eq!(app.practice.input(), "Q ; mp ; 1,2");
+			assert_eq!(app.proof().input(), "Q ; mp ; 1,2");
 		}
 		let mut terminal: Terminal<TestBackend> = Terminal::new(TestBackend::new(30, 8)).unwrap();
-		app.handle(Event::Key(KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE)));
+		app.handle(Event::Key(KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE)))
+			.unwrap();
 		terminal
 			.draw(|frame| {
-				app.draw(frame);
+				app.draw_proof(frame);
 			})
 			.unwrap();
-		assert!(app.scroll.maximum > 0);
-		while app.scroll.offset < app.scroll.maximum {
+		assert!(app.proof_scroll.maximum > 0);
+		while app.proof_scroll.offset < app.proof_scroll.maximum {
 			app.handle(Event::Key(KeyEvent::new(
 				KeyCode::PageDown,
 				KeyModifiers::NONE,
-			)));
+			)))
+			.unwrap();
 		}
 		terminal
 			.draw(|frame| {
-				app.draw(frame);
+				app.draw_proof(frame);
 			})
 			.unwrap();
 		let text: String = terminal
@@ -218,12 +170,16 @@ mod tests {
 			.map(|cell| cell.symbol())
 			.collect();
 		assert!(text.contains("内部的行"));
-		app.handle(Event::Key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE)));
-		assert_eq!(app.practice.input(), "Q ; mp ; 1,2");
-		assert!(app.handle(Event::Key(KeyEvent::new(
-			KeyCode::Enter,
-			KeyModifiers::NONE
-		))));
-		assert!(app.practice.is_finished());
+		app.handle(Event::Key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE)))
+			.unwrap();
+		assert_eq!(app.proof().input(), "Q ; mp ; 1,2");
+		assert!(
+			app.handle(Event::Key(KeyEvent::new(
+				KeyCode::Enter,
+				KeyModifiers::NONE
+			)))
+			.unwrap()
+		);
+		assert!(app.proof().is_finished());
 	}
 }
