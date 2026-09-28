@@ -34,14 +34,6 @@ impl Language {
 			.find(|language| language.key() == key)
 	}
 
-	/// Python is taught with its own short circuit; propositional logic is taught eagerly.
-	pub fn default_mode(self) -> EvaluationMode {
-		match self {
-			Self::Python => EvaluationMode::ShortCircuit,
-			Self::Logic => EvaluationMode::Eager,
-		}
-	}
-
 	/// A typed answer is a literal of this language, never an expression to evaluate.
 	pub fn parse_answer(self, input: &str) -> Result<Value, ParseError> {
 		match self {

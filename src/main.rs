@@ -8,19 +8,49 @@ use std::{
 
 use clap::{ArgGroup, Parser};
 use stepwise::{
-	app::{self, Course, Practice},
+	app::{self, Course, Lesson},
 	core::{EvaluationMode, ExprKind, Language, Session},
-	exercises::{self, Exercise, Question, QuestionSet},
+	exercises::{self, Exercise, ProofQuestion, Question, QuestionSet},
 	generate,
 	logic::{Formula, parse_formula, proof::Proof},
 	progress::Progress,
 	tui,
 };
 
+/// What no written-out proof and no proof check combines with. clap waives a missing
+/// requirement when the missing argument conflicts with one already given, so `--premise` and
+/// `--check-proof` repeat these conflicts rather than relying on the `--goal` and
+/// `--proof` they require: `--python --premise P` has to be refused, not quietly dropped.
+const PROOF_ONLY: [&str; 9] = [
+	"python",
+	"expression",
+	"exercise",
+	"list",
+	"trace",
+	"evaluation",
+	"random",
+	"assign",
+	"equivalent",
+];
+
+/// What neither `--random` nor the `--seed` that requires it combines with. `--seed` carries
+/// the list too, for the same reason `PROOF_ONLY` exists: beside any of these, clap would
+/// waive its requirement and drop the seed.
+const NOT_RANDOM: [&str; 7] = [
+	"expression",
+	"exercise",
+	"list",
+	"assign",
+	"proof",
+	"goal",
+	"equivalent",
+];
+
 #[derive(Parser, Debug)]
 #[command(
 	version,
 	group(ArgGroup::new("language").required(true).args(["python", "logic"])),
+	group(ArgGroup::new("proof_source").args(["proof", "goal"])),
 	about = "选择下一步，理解求值与推理。支持 Python、命题逻辑和自然演绎。"
 )]
 struct Args {
@@ -33,22 +63,22 @@ struct Args {
 	#[arg(long)]
 	logic: bool,
 	/// 变量或命题赋值，可重复传入：--assign x=3 --assign flag=False
-	#[arg(long, value_parser = assignment, conflicts_with_all = ["proof", "list"])]
+	#[arg(long, value_parser = assignment, conflicts_with_all = ["proof", "goal", "list"])]
 	assign: Vec<(String, String)>,
 	/// 用 BDD 检查两个公式在所有赋值下是否等价，不进入练习
-	#[arg(long, requires_all = ["logic", "expression"], conflicts_with_all = ["trace", "exercise", "list", "evaluation", "assign"])]
+	#[arg(long, requires_all = ["logic", "expression"], conflicts_with_all = ["trace", "exercise", "proof", "list", "evaluation", "assign"])]
 	equivalent: Option<String>,
-	/// 自然演绎练习：mp 肯定前件，raa 反证法，identity 蕴涵引入
-	#[arg(long, requires = "logic", value_parser = ["mp", "raa", "identity"], conflicts_with_all = ["python", "expression", "exercise", "list", "trace", "evaluation"])]
+	/// 按名称打开当前题集里的一道证明题，与 --exercise 查同一份题集；--list 列出可用名称
+	#[arg(long, value_name = "NAME", requires = "logic", conflicts_with_all = ["python", "expression", "exercise", "list", "goal", "premise"])]
 	proof: Option<String>,
-	/// 自定义证明目标，与 --premise 配合使用
-	#[arg(long, requires = "proof")]
+	/// 自定义证明的结论，不属于任何题集；前提用 --premise 给出
+	#[arg(long, requires = "logic", conflicts_with_all = PROOF_ONLY)]
 	goal: Option<String>,
 	/// 自定义证明前提，可重复传入；没有前提也可证明
-	#[arg(long, requires = "goal")]
+	#[arg(long, requires = "goal", conflicts_with_all = PROOF_ONLY)]
 	premise: Vec<String>,
-	/// 检查 JSON 字符串数组中的证明步骤，不启动 TUI、不读写进度
-	#[arg(long, requires = "proof")]
+	/// 检查 JSON 字符串数组中的证明步骤，不启动 TUI、不读写进度；证明来自 --proof 或 --goal
+	#[arg(long, value_name = "FILE", requires = "proof_source", conflicts_with_all = PROOF_ONLY)]
 	check_proof: Option<PathBuf>,
 	/// 从当前题集选择题目 ID：默认内置题集，或 --set 指定的文件
 	#[arg(long, conflicts_with = "expression")]
@@ -61,19 +91,17 @@ struct Args {
 			"expression",
 			"random",
 			"seed",
-			"proof",
 			"goal",
 			"premise",
-			"check_proof",
 			"equivalent"
 		]
 	)]
 	set: Option<PathBuf>,
 	/// 开始新的随机题，跳过上次进度；不指定题目时默认随机出题
-	#[arg(long, conflicts_with_all = ["expression", "exercise", "list", "assign", "proof", "equivalent"])]
+	#[arg(long, conflicts_with_all = NOT_RANDOM)]
 	random: bool,
 	/// 固定随机种子，复现同一道题
-	#[arg(long, requires = "random")]
+	#[arg(long, requires = "random", conflicts_with_all = NOT_RANDOM)]
 	seed: Option<u64>,
 	#[arg(long)]
 	list: bool,
@@ -109,69 +137,68 @@ fn load_set(path: &Path) -> Result<QuestionSet, Box<dyn Error>> {
 
 /// The required language selects inside the loaded set; saying so beats an empty screen.
 fn no_questions(set: &QuestionSet, language: Language) -> String {
-	let proofs: bool = set
-		.questions()
-		.iter()
-		.any(|question| question.language() == language && question.evaluation().is_none());
-	if proofs {
-		format!(
-			"题集 {} 里 --{} 只有证明题；用 --exercise ID 选一道，或用 --list 查看。",
-			set.name,
-			language.key()
-		)
-	} else {
-		format!(
-			"题集 {} 里没有 --{} 的题目；用 --list 查看题集内容。",
-			set.name,
-			language.key()
-		)
-	}
+	format!(
+		"题集 {} 里没有 --{} 的题目；用 --list 查看题集内容。",
+		set.name,
+		language.key()
+	)
 }
 
-/// Where a named question sits among the ones this language can practise, or why it is not
-/// there: absent from the set, or present in the other language.
-fn choose(
-	set: &QuestionSet,
-	questions: &[Exercise],
-	id: &str,
+/// The question a name means in the loaded set, for the language this launch practises:
+/// the one lookup behind both `--exercise` and `--proof`, or why the name means nothing here —
+/// absent from the set, or present in the other language.
+fn named<'a>(
+	set: &'a QuestionSet,
+	name: &str,
 	language: Language,
-) -> Result<usize, Box<dyn Error>> {
-	if let Some(index) = questions.iter().position(|exercise| exercise.name == id) {
-		return Ok(index);
-	}
-	Err(match set.find(id) {
-		// A proof question was already opened above, so a match here differs by language.
-		Some(question) => format!(
-			"题目 {id} 是 --{} 的题目，当前是 --{}。",
-			question.language().key(),
-			language.key()
-		),
-		None => format!(
-			"题集 {} 里没有题目 {id}；用 --{} --list 查看可用 ID。",
+) -> Result<&'a Question, Box<dyn Error>> {
+	let question: &Question = set.find(name).ok_or_else(|| {
+		format!(
+			"题集 {} 里没有题目 {name}；用 --{} --list 查看可用 ID。",
 			set.name,
+			language.key()
+		)
+	})?;
+	if question.language() == language {
+		return Ok(question);
+	}
+	Err(match question {
+		Question::Proof(_) => format!("题目 {name} 是证明题，请改用 --logic。"),
+		Question::Evaluation(_) => format!(
+			"题目 {name} 是 --{} 的题目，当前是 --{}。",
+			question.language().key(),
 			language.key()
 		),
 	}
 	.into())
 }
 
-fn proof_for(args: &Args, name: &str) -> Result<Proof, Box<dyn Error>> {
-	let (premises, goal): (Vec<String>, String) = if let Some(goal) = &args.goal {
-		(args.premise.clone(), goal.clone())
-	} else {
-		match name {
-			"mp" => (vec!["P -> Q".into(), "P".into()], "Q".into()),
-			"raa" => (vec!["~~P".into()], "P".into()),
-			_ => (Vec::new(), "P -> P".into()),
-		}
-	};
-	Ok(Proof::new(
-		premises
-			.iter()
-			.map(|source| parse_formula(source))
-			.collect::<Result<_, _>>()?,
-		parse_formula(&goal)?,
-	))
+/// The proof this launch opens, if it opens one: a sequent written out with `--goal`, which
+/// belongs to no set, or a proof question the set names. `--proof` insists on a proof;
+/// `--exercise` opens whichever kind the name turns out to be.
+fn proof_question(
+	args: &Args,
+	named: Option<&Question>,
+) -> Result<Option<ProofQuestion>, Box<dyn Error>> {
+	if let Some(goal) = &args.goal {
+		return Ok(Some(ProofQuestion {
+			set: String::new(),
+			name: "custom-proof".into(),
+			title: "自定义证明".into(),
+			premises: args.premise.clone(),
+			conclusion: goal.clone(),
+			note: None,
+		}));
+	}
+	match named {
+		Some(Question::Proof(question)) => Ok(Some(question.clone())),
+		Some(Question::Evaluation(exercise)) if args.proof.is_some() => Err(format!(
+			"题目 {0} 是求值题，不是证明题；用 --exercise {0} 打开它。",
+			exercise.name
+		)
+		.into()),
+		Some(Question::Evaluation(_)) | None => Ok(None),
+	}
 }
 
 fn trace(mut session: Session) -> Result<(), Box<dyn Error>> {
@@ -239,19 +266,9 @@ fn execute(args: Args) -> Result<(), Box<dyn Error>> {
 		);
 		return Ok(());
 	}
-	if let (Some(name), Some(path)) = (&args.proof, &args.check_proof) {
-		let commands: Vec<String> = serde_json::from_reader(std::fs::File::open(path)?)?;
-		let mut proof: Proof = proof_for(&args, name)?;
-		for command in commands {
-			println!("{command}\n{}", proof.submit(&command)?);
-		}
-		if !proof.is_finished() {
-			return Err("步骤合法，但尚未在所有假设之外得到目标。".into());
-		}
-		return Ok(());
-	}
 	// One load path for every question: the embedded set is its default value, and --set
-	// replaces it with a file that went through exactly the same parsing and checking.
+	// replaces it with a file that went through exactly the same parsing and checking. The
+	// built-in proofs live there too, so --proof and --check-proof read the same set.
 	let set: QuestionSet = match &args.set {
 		Some(path) => load_set(path)?,
 		None => exercises::builtin()?,
@@ -281,6 +298,24 @@ fn execute(args: Args) -> Result<(), Box<dyn Error>> {
 		}
 		return Ok(());
 	}
+	let chosen: Option<&Question> = args
+		.proof
+		.as_deref()
+		.or(args.exercise.as_deref())
+		.map(|name| named(&set, name, language))
+		.transpose()?;
+	let proof: Option<ProofQuestion> = proof_question(&args, chosen)?;
+	if let Some(path) = &args.check_proof {
+		let commands: Vec<String> = serde_json::from_reader(fs::File::open(path)?)?;
+		let mut checked: Proof = proof.expect("clap requires --proof or --goal").proof()?;
+		for command in commands {
+			println!("{command}\n{}", checked.submit(&command)?);
+		}
+		if !checked.is_finished() {
+			return Err("步骤合法，但尚未在所有假设之外得到目标。".into());
+		}
+		return Ok(());
+	}
 	let path: Option<PathBuf> = if args.no_save || args.trace {
 		None
 	} else {
@@ -295,45 +330,23 @@ fn execute(args: Args) -> Result<(), Box<dyn Error>> {
 		.map(Progress::load)
 		.transpose()?
 		.unwrap_or_default();
-	if let Some(name) = &args.proof {
-		return tui::run_proof(proof_for(&args, name)?, progress, path);
-	}
 	let requested: Option<EvaluationMode> = match args.evaluation.as_deref() {
 		Some("eager") => Some(EvaluationMode::Eager),
 		Some("short-circuit") => Some(EvaluationMode::ShortCircuit),
 		_ => None,
 	};
-	// A set's proof question opens the same practice, checked by the same rules.
-	if let Some(Question::Proof(question)) = args.exercise.as_deref().and_then(|id| set.find(id)) {
-		if language != Language::Logic {
-			return Err(format!("题目 {} 是证明题，请改用 --logic。", question.name).into());
-		}
-		if args.trace {
-			return Err("证明题没有逐步演示；用 --check-proof 检查已保存的步骤。".into());
-		}
-		if let Some(flag) = [
-			(!args.assign.is_empty()).then_some("--assign"),
-			args.evaluation.is_some().then_some("--evaluation"),
-		]
-		.into_iter()
-		.flatten()
-		.next()
-		{
-			return Err(format!("题目 {} 是证明题，{flag} 对它没有意义。", question.name).into());
-		}
-		return tui::run_proof(question.proof()?, progress, path);
-	}
-	// --set makes the file the course: its questions, in its order, ending at the last one.
+	// --set makes the file the course: its questions of this language, evaluation and proof
+	// alike, in its order, ending at the last one.
 	let ordered: bool = args.set.is_some();
-	let mut questions: Vec<Exercise> = set.evaluations(language);
+	let mut questions: Vec<Question> = set.of_language(language);
 	let index: usize = if args.random {
-		questions = vec![generate::generate(
+		questions = vec![Question::Evaluation(generate::generate(
 			language,
 			args.seed.unwrap_or_else(generate::fresh_seed),
-		)?];
+		)?)];
 		0
 	} else if let Some(expression) = args.expression {
-		questions = vec![Exercise {
+		questions = vec![Question::Evaluation(Exercise {
 			set: String::new(),
 			name: if args.logic {
 				"custom-logic"
@@ -347,24 +360,49 @@ fn execute(args: Args) -> Result<(), Box<dyn Error>> {
 			bindings: BTreeMap::new(),
 			evaluation: None,
 			note: None,
-		}];
+		})];
 		0
-	} else if let Some(id) = &args.exercise {
-		choose(&set, &questions, id, language)?
+	} else if args.goal.is_some() {
+		questions = vec![Question::Proof(proof.expect("--goal writes out a proof"))];
+		0
+	} else if let Some(question) = chosen {
+		// `named` already found it among this language's questions.
+		questions
+			.iter()
+			.position(|candidate| candidate.name() == question.name())
+			.expect("a named question of this language is in its list")
+	} else if !args.assign.is_empty() {
+		// Assignments with no question named bind an evaluation question — a proof has
+		// nothing to assign — so the set is searched among those alone: in order from where
+		// progress left off with --set, else its current one or its first.
+		let evaluations: Vec<usize> = (0..questions.len())
+			.filter(|index| questions[*index].evaluation().is_some())
+			.collect();
+		if evaluations.is_empty() {
+			return Err(format!(
+				"题集 {} 里 --{} 没有求值题，--assign 没有可赋值的题目。",
+				set.name,
+				language.key()
+			)
+			.into());
+		}
+		let candidates: Vec<Question> = evaluations
+			.iter()
+			.map(|index| questions[*index].clone())
+			.collect();
+		evaluations[if ordered {
+			app::resume_in_set(&progress, &candidates, requested)?
+		} else {
+			candidates
+				.iter()
+				.position(|question| progress.points_at(question.set(), question.name()))
+				.unwrap_or(0)
+		}]
 	} else if ordered {
 		if questions.is_empty() {
 			return Err(no_questions(&set, language).into());
 		}
 		app::resume_in_set(&progress, &questions, requested)?
-	} else if !args.assign.is_empty() {
-		// Assignments with no question named stay on the set's current question, as before.
-		if questions.is_empty() {
-			return Err(no_questions(&set, language).into());
-		}
-		questions
-			.iter()
-			.position(|exercise| progress.points_at(&exercise.set, &exercise.name))
-			.unwrap_or(0)
 	} else {
 		questions = vec![app::resume_or_generate(language, &progress, &questions)?];
 		0
@@ -375,13 +413,35 @@ fn execute(args: Args) -> Result<(), Box<dyn Error>> {
 			return Err(format!("变量 {name} 被重复赋值。").into());
 		}
 	}
-	questions[index].bindings.extend(assigned);
+	match &mut questions[index] {
+		Question::Evaluation(exercise) => exercise.bindings.extend(assigned),
+		// Accepting assignments here would drop them: a proof binds no variable.
+		Question::Proof(question) if !assigned.is_empty() => {
+			return Err(format!("题目 {} 是证明题，--assign 对它没有意义。", question.name).into());
+		}
+		Question::Proof(_) => {}
+	}
+	// --evaluation is the course's strategy, so it stands even when the course opens on a
+	// proof: the evaluation questions after it open in it.
 	let mode: EvaluationMode = app::starting_mode(requested, &progress, &questions[index]);
 	if args.trace {
-		if !questions[index].bindings.is_empty() {
-			println!("{}", questions[index].assignments());
+		let Question::Evaluation(exercise) = &questions[index] else {
+			// Name the set too: --proof looks the name up in whichever set is loaded.
+			let from: String = args
+				.set
+				.as_ref()
+				.map(|path| format!("--set {} ", path.display()))
+				.unwrap_or_default();
+			return Err(format!(
+				"证明题没有逐步演示；写好的证明用 --logic {from}--proof {} --check-proof FILE 检查。",
+				questions[index].name()
+			)
+			.into());
+		};
+		if !exercise.bindings.is_empty() {
+			println!("{}", exercise.assignments());
 		}
-		return trace(questions[index].session(mode)?);
+		return trace(exercise.session(mode)?);
 	}
 	// The chosen question starts a practice sequence; the course supplies the rest.
 	let course: Course = if ordered {
@@ -389,7 +449,7 @@ fn execute(args: Args) -> Result<(), Box<dyn Error>> {
 	} else {
 		Course::random(vec![questions.remove(index)], 0)?
 	};
-	tui::run(Practice::new(course, progress, mode)?, path)
+	tui::run(Lesson::new(course, progress, mode)?, path)
 }
 
 fn main() -> ExitCode {
