@@ -579,17 +579,14 @@ fn other_progress_versions_are_refused_and_left_untouched() {
 #[test]
 fn a_version_one_file_without_its_strategy_or_with_an_unknown_field_is_refused() {
 	let original: String = fs::read_to_string(fixture(STRATEGIES)).unwrap();
-	let strategy: &str = "  \"mode\": \"eager\",\n";
+	// The field alone, not its line: a Windows checkout ends the fixture's lines with CRLF.
+	let strategy: &str = "\"mode\": \"eager\",";
 	let directory: tempfile::TempDir = tempfile::tempdir().unwrap();
 	let path: std::path::PathBuf = directory.path().join("progress.json");
 	for (text, reason) in [
 		(original.replacen(strategy, "", 1), "missing field `mode`"),
 		(
-			original.replacen(
-				strategy,
-				&format!("{strategy}  \"strategy\": \"eager\",\n"),
-				1,
-			),
+			original.replacen(strategy, &format!("{strategy} \"strategy\": \"eager\","), 1),
 			"unknown field `strategy`",
 		),
 	] {
