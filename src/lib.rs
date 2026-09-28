@@ -6,3 +6,6 @@ pub mod logic;
 pub mod progress;
 pub mod python;
 pub mod tui;
+
+#[cfg(test)]
+mod tests;

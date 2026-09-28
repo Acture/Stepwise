@@ -1,5 +1,5 @@
 use super::value;
-use crate::core::{EvaluationMode, Expr, Layout, Rules, Step, Value};
+use crate::core::{Expr, Layout, Outcome, Rules, Value};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum UnaryOp {
@@ -108,39 +108,13 @@ impl BoolOp {
 		}
 	}
 
-	fn step(self, operands: &[Expr], mode: EvaluationMode) -> Step {
-		if mode == EvaluationMode::Eager {
-			if let Some(index) = unreduced(operands) {
-				return Step::Operand(index);
-			}
-			let value: &Value = operands
-				.iter()
-				.filter_map(Expr::value)
-				.find(|value| self.stops(value))
-				.unwrap_or_else(|| {
-					operands
-						.last()
-						.and_then(Expr::value)
-						.expect("nonempty operands")
-				});
-			return Step::Apply {
-				outcome: Ok(value.clone()),
-				explanation: format!(
-					"短路已关闭：所有操作数均已求值，再按 {} 的操作数返回规则得到 {}（{}）。这是教学变体，不是 Python 的执行策略。",
-					self.symbol(),
-					value,
-					value.type_name()
-				),
-				skipped_operands: Vec::new(),
-			};
-		}
+	/// The operand the scan stops at is the result: the first that decides, or the last.
+	/// `None` while an operand the scan reaches is still unreduced.
+	fn apply(self, operands: &[Expr]) -> Option<(Outcome, String)> {
 		for (index, operand) in operands.iter().enumerate() {
-			let Some(value) = operand.value() else {
-				return Step::Operand(index);
-			};
+			let value: &Value = operand.value()?;
 			if self.stops(value) || index + 1 == operands.len() {
-				let skipped_operands: Vec<usize> = (index + 1..operands.len()).collect();
-				let explanation: String = if skipped_operands.is_empty() {
+				let explanation: String = if index + 1 == operands.len() {
 					format!(
 						"{} 返回最后求值的操作数 {}（{}），不会强制转成 bool。",
 						self.symbol(),
@@ -148,19 +122,25 @@ impl BoolOp {
 						value.type_name()
 					)
 				} else {
+					// Later operands that already hold values may have been computed by the
+					// student, so say plainly that Python itself would not compute them.
+					let rest: &str = if operands[index + 1..]
+						.iter()
+						.all(|operand| operand.value().is_some())
+					{
+						"；后面的操作数不影响结果，Python 执行时不会计算它们。"
+					} else {
+						"，跳过后面的子树。"
+					};
 					format!(
-						"短路求值：{} 遇到{}值 {}，直接返回该操作数（{}），跳过后面的子树。",
+						"短路求值：{} 遇到{}值 {}，直接返回该操作数（{}）{rest}",
 						self.symbol(),
 						if value::truthy(value) { "真" } else { "假" },
 						value,
 						value.type_name()
 					)
 				};
-				return Step::Apply {
-					outcome: Ok(value.clone()),
-					explanation,
-					skipped_operands,
-				};
+				return Some((Ok(value.clone()), explanation));
 			}
 		}
 		unreachable!("parser produces nonempty boolean expressions")
@@ -180,12 +160,6 @@ impl From<Op> for crate::core::Op {
 	fn from(op: Op) -> Self {
 		Self::Python(op)
 	}
-}
-
-fn unreduced(operands: &[Expr]) -> Option<usize> {
-	operands
-		.iter()
-		.position(|operand| operand.value().is_none())
 }
 
 /// Both values of a two-operand operation, or `None` while either is still unreduced.
@@ -221,47 +195,31 @@ impl Rules for Op {
 		}
 	}
 
-	fn step(&self, operands: &[Expr], mode: EvaluationMode) -> Step {
+	fn apply(&self, operands: &[Expr]) -> Option<(Outcome, String)> {
 		match self {
 			Self::Unary(op) => {
 				let [operand] = operands else {
 					unreachable!("a unary operation has one operand")
 				};
-				let Some(value) = operand.value() else {
-					return Step::Operand(0);
-				};
-				Step::Apply {
-					outcome: value::unary(value, *op),
-					explanation: op.rule().into(),
-					skipped_operands: Vec::new(),
-				}
+				Some((value::unary(operand.value()?, *op), op.rule().into()))
 			}
 			Self::Binary(op) => {
-				let Some((left, right)) = pair(operands) else {
-					return Step::Operand(unreduced(operands).expect("an operand is unreduced"));
-				};
-				Step::Apply {
-					outcome: value::binary(left, *op, right),
-					explanation: op.rule().into(),
-					skipped_operands: Vec::new(),
-				}
+				let (left, right) = pair(operands)?;
+				Some((value::binary(left, *op, right), op.rule().into()))
 			}
 			Self::Compare(op) => {
-				let Some((left, right)) = pair(operands) else {
-					return Step::Operand(unreduced(operands).expect("an operand is unreduced"));
-				};
-				Step::Apply {
-					outcome: value::compare(left, *op, right),
-					explanation: "比较两个已经求值的操作数，返回 True 或 False。".into(),
-					skipped_operands: Vec::new(),
-				}
+				let (left, right) = pair(operands)?;
+				Some((
+					value::compare(left, *op, right),
+					"比较两个已经求值的操作数，返回 True 或 False。".into(),
+				))
 			}
-			Self::Bool(op) => op.step(operands, mode),
+			Self::Bool(op) => op.apply(operands),
 		}
 	}
 
-	fn skips_operands(&self, mode: EvaluationMode) -> bool {
-		matches!(self, Self::Bool(_)) && mode == EvaluationMode::ShortCircuit
+	fn short_circuits(&self) -> bool {
+		matches!(self, Self::Bool(_))
 	}
 
 	fn negative_brackets(&self, index: usize) -> Option<&'static str> {

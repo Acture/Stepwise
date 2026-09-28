@@ -5,14 +5,35 @@ use std::{
 
 use num_traits::ToPrimitive;
 use stepwise::{
-	core::{EvaluationMode, Language, NextStep, Session, Value},
+	core::{ExprKind, Language, NextStep, Session, Value},
 	exercises::Exercise,
 	generate,
 	progress::Progress,
 };
 
-fn finish(mut session: Session) -> Value {
-	while let Some(step) = session.next_step() {
+/// The step a hint names: the language's own short-circuit order.
+fn hinted(session: &Session) -> NextStep {
+	session.next_step().unwrap()
+}
+
+/// An allowed step that applies no operation before every operand is a value, so nothing a
+/// short circuit could skip is left unread.
+fn computing_everything(session: &Session) -> NextStep {
+	session
+		.allowed_steps()
+		.into_iter()
+		.find(|step| {
+			!matches!(
+				&session.root().find(step.node_id).unwrap().kind,
+				ExprKind::Operation(_, operands) if operands.iter().any(|operand| operand.value().is_none())
+			)
+		})
+		.expect("computing every operand is always allowed")
+}
+
+fn finish(mut session: Session, choose: fn(&Session) -> NextStep) -> Value {
+	while !session.is_finished() {
+		let step: NextStep = choose(&session);
 		let value: Value = step.outcome.unwrap();
 		assert!(value.to_string().len() <= 10);
 		match &value {
@@ -30,16 +51,21 @@ fn finish(mut session: Session) -> Value {
 }
 
 #[test]
-fn generated_questions_are_varied_bounded_and_solvable_under_both_strategies() {
+fn generated_questions_are_varied_bounded_and_solvable_by_either_route() {
 	for language in [Language::Python, Language::Logic] {
 		let mut sources: BTreeSet<String> = BTreeSet::new();
 		for seed in (0..128).chain([u64::MAX]) {
 			let exercise: Exercise = generate::generate(language, seed).unwrap();
 			assert!(!exercise.bindings.is_empty());
 			assert!(exercise.expression.len() <= 180);
-			let short: Value = finish(exercise.session(EvaluationMode::ShortCircuit).unwrap());
-			let eager: Value = finish(exercise.session(EvaluationMode::Eager).unwrap());
-			assert!(short.same_answer(&eager), "{}", exercise.expression);
+			// Both routes run in the same kind of session; nothing switches between them.
+			let short: Value = finish(exercise.session().unwrap(), hinted);
+			let complete: Value = finish(exercise.session().unwrap(), computing_everything);
+			assert!(
+				short.same_answer(&complete) && short.type_name() == complete.type_name(),
+				"{}",
+				exercise.expression
+			);
 			sources.insert(exercise.expression);
 		}
 		assert!(
@@ -71,9 +97,9 @@ fn versioned_seed_restores_the_exact_question_and_partial_progress() {
 		};
 		assert_eq!(exercise.expression, source);
 		assert_eq!(exercise.assignments(), assignments);
-		let mut session: Session = exercise.session(EvaluationMode::Eager).unwrap();
+		let mut session: Session = exercise.session().unwrap();
 		for _ in 0..3 {
-			let step: NextStep = session.next_step().unwrap();
+			let step: NextStep = computing_everything(&session);
 			assert!(
 				session
 					.submit(step.node_id, &step.outcome.unwrap().to_string())
@@ -87,7 +113,7 @@ fn versioned_seed_restores_the_exact_question_and_partial_progress() {
 		let restored: Exercise = generate::restore(&progress.current).unwrap().unwrap();
 		assert_eq!(restored.expression, exercise.expression);
 		assert_eq!(restored.bindings, exercise.bindings);
-		let initial: Session = restored.session(progress.mode).unwrap();
+		let initial: Session = restored.session().unwrap();
 		let restored: Session = initial.clone().replay(progress.attempts(&initial)).unwrap();
 		assert_eq!(restored.render(), session.render());
 		assert_eq!(restored.attempts(), session.attempts());
@@ -208,4 +234,32 @@ fn seeded_random_cli_is_repeatable_and_rejects_conflicting_modes() {
 	] {
 		assert!(!cli(&args).status.success());
 	}
+}
+
+/// Seeds still draw the questions they drew before P-741. `random-v1-seeds.tsv` was written by
+/// a binary built at c3e2aea — the base commit, where suitability checked the two evaluation
+/// modes — from its own `--trace` over seeds 0–127 and `u64::MAX` per language. Suitability now
+/// checks the two reference routes instead; if that ever accepted or refused a draw the modes
+/// did not, a persisted `random-v1-` ID would reopen as another question, and this fails.
+#[test]
+fn seeds_draw_the_questions_the_base_commit_drew() {
+	let fixture: &str = include_str!("fixtures/random-v1-seeds.tsv");
+	let mut checked: usize = 0;
+	for line in fixture.lines() {
+		let [language, seed, assignments, expression] = line.split('\t').collect::<Vec<&str>>()[..]
+		else {
+			panic!("malformed line: {line}");
+		};
+		let language: Language = Language::from_key(language).unwrap();
+		let exercise: Exercise = generate::generate(language, seed.parse().unwrap()).unwrap();
+		assert_eq!(exercise.assignments(), assignments, "{line}");
+		assert_eq!(exercise.expression, expression, "{line}");
+		assert_eq!(
+			exercise.name,
+			format!("random-v1-{}-{seed}", language.key()),
+			"{line}"
+		);
+		checked += 1;
+	}
+	assert_eq!(checked, 258);
 }

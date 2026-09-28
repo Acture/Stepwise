@@ -17,7 +17,7 @@ use std::{
 use serde::Deserialize;
 
 use crate::{
-	core::{EvaluationMode, Language, ParseError, Session, Value},
+	core::{Language, ParseError, Session, Value},
 	logic::{self, Formula, parse_formula, parse_truth, proof::Proof},
 	python::{self, parse_value},
 };
@@ -28,8 +28,10 @@ use crate::{
 pub const BUILTIN_SET: &str = "builtin";
 
 /// The set format this build reads. A file naming another version is refused rather than
-/// guessed at, so a binary never half-reads a set written for a different protocol.
-pub const FORMAT_VERSION: u32 = 1;
+/// guessed at, so a binary never half-reads a set written for a different protocol. Version 2
+/// dropped the evaluation question's `evaluation` field: a student may short-circuit or keep
+/// computing in any question, so no question picks a strategy any more.
+pub const FORMAT_VERSION: u32 = 2;
 
 /// What one imported set may weigh. The limits on a single expression, formula or proof stay
 /// with the language module that parses it; these bound the file around them.
@@ -92,15 +94,9 @@ pub struct Exercise {
 	/// lose exactly those distinctions, so they stay strings.
 	#[serde(default)]
 	pub bindings: BTreeMap<String, String>,
-	/// The strategy this question opens in. The student still switches it, and each strategy
-	/// keeps its own progress.
-	#[serde(default)]
-	pub evaluation: Option<EvaluationMode>,
 }
 
-/// A natural-deduction question: the premises given and the formula to derive. Short circuit
-/// is an evaluation strategy and has no meaning here, so `deny_unknown_fields` refuses an
-/// `evaluation` field on this type.
+/// A natural-deduction question: the premises given and the formula to derive.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProofQuestion {
@@ -191,10 +187,16 @@ impl QuestionSet {
 		let declared: Declared =
 			toml::from_str(text).map_err(|error| SetError::Syntax(error.into()))?;
 		if declared.version != FORMAT_VERSION {
+			// The one older protocol differs by a single field, so its file says how to move on.
+			let upgrade: &str = if declared.version == 1 {
+				"version 2 去掉了求值题的 evaluation 字段：每道题都可以短路，也可以继续计算操作数，不再由题目指定策略。删去所有 evaluation 行，再把 version 改成 2。"
+			} else {
+				""
+			};
 			return Err(Invalid::set(
 				"version",
 				format!(
-					"这个程序读 version = {FORMAT_VERSION} 的题集，文件写的是 {}。",
+					"这个程序读 version = {FORMAT_VERSION} 的题集，文件写的是 {}。{upgrade}",
 					declared.version
 				),
 			)
@@ -374,7 +376,7 @@ impl Question {
 
 impl Exercise {
 	/// Bindings are stored as source literals; each language reads its own.
-	pub fn session(&self, mode: EvaluationMode) -> Result<Session, ParseError> {
+	pub fn session(&self) -> Result<Session, ParseError> {
 		match self.language {
 			Language::Python => {
 				let bindings: BTreeMap<String, Value> = self
@@ -382,7 +384,7 @@ impl Exercise {
 					.iter()
 					.map(|(name, literal)| Ok((name.clone(), parse_value(literal)?)))
 					.collect::<Result<_, ParseError>>()?;
-				python::session(&self.expression, &bindings, mode)
+				python::session(&self.expression, &bindings)
 			}
 			Language::Logic => {
 				let bindings: BTreeMap<String, bool> = self
@@ -390,15 +392,9 @@ impl Exercise {
 					.iter()
 					.map(|(name, literal)| Ok((name.clone(), parse_truth(literal)?)))
 					.collect::<Result<_, ParseError>>()?;
-				logic::session(&self.expression, &bindings, mode)
+				logic::session(&self.expression, &bindings)
 			}
 		}
-	}
-
-	/// The strategy this question opens in when nothing else decides: its own field, else
-	/// short circuit, which both languages open with.
-	pub fn mode(&self) -> EvaluationMode {
-		self.evaluation.unwrap_or_default()
 	}
 
 	pub fn assignments(&self) -> String {
@@ -430,7 +426,7 @@ impl Exercise {
 				));
 			}
 		}
-		self.session(self.mode())
+		self.session()
 			.map(drop)
 			.map_err(|error| Invalid::question(&self.name, "expression", error.to_string()))
 	}

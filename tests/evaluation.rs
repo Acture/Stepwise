@@ -1,12 +1,12 @@
 use std::collections::BTreeMap;
 
 use stepwise::{
-	core::{EvaluationMode, FeedbackKind, NodeId, Session, Value},
+	core::{EvalError, Feedback, FeedbackKind, NodeId, Session, Value},
 	python::{self, parse_expression, parse_value},
 };
 
 fn session(source: &str) -> Session {
-	python::session(source, &BTreeMap::new(), EvaluationMode::ShortCircuit).unwrap()
+	python::session(source, &BTreeMap::new()).unwrap()
 }
 
 #[test]
@@ -115,37 +115,92 @@ fn strict_selection_and_no_skipping() {
 	assert_eq!(practice.root().render(), "5 * 9");
 }
 
+/// One session holds both routes: the short circuit answers with its own type, and the
+/// operand it skips may still be computed, raising only because the student chose it.
 #[test]
-fn short_circuit_types_and_eager_exception_are_distinct() {
+fn short_circuit_types_and_a_chosen_exception_are_distinct() {
 	let mut practice: Session = session("False and (3 / 0 > 1)");
-	assert_eq!(
-		practice
-			.submit(node(&practice, "3 / 0"), "ZeroDivisionError")
-			.kind,
-		FeedbackKind::Skipped
-	);
 	assert_eq!(practice.submit(0, "0").kind, FeedbackKind::WrongType);
-	assert!(practice.submit(0, "False").accepted());
-	assert_eq!(practice.history().len(), 1);
-	let mut eager: Session = python::session(
-		"False and (3 / 0 > 1)",
-		&BTreeMap::new(),
-		EvaluationMode::Eager,
-	)
-	.unwrap();
-	assert_eq!(eager.submit(0, "False").kind, FeedbackKind::NeedsInner);
-	assert!(
-		eager
-			.submit(node(&eager, "3 / 0"), "ZeroDivisionError")
-			.accepted()
-	);
+	let division: NodeId = node(&practice, "3 / 0");
+	let feedback: Feedback = practice.submit(division, "ZeroDivisionError");
+	assert!(feedback.accepted(), "{}", feedback.message);
+	let error: &EvalError = practice.terminal_error().unwrap();
+	assert_eq!(error.name(), Some("ZeroDivisionError"));
 	assert_eq!(
-		eager.terminal_error().unwrap().name(),
-		Some("ZeroDivisionError")
+		feedback.message,
+		format!(
+			"正确。{error} 这个异常来自你选择计算的子式 3 / 0；Python 执行原式时不会在这里引发它。求值在这里终止。"
+		)
 	);
-	assert!(eager.is_finished());
-	assert!(eager.undo());
-	assert!(!eager.is_finished());
+	assert!(practice.is_finished());
+	assert!(practice.allowed_steps().is_empty());
+	assert_eq!(practice.submit(0, "False").kind, FeedbackKind::Finished);
+	assert!(practice.undo());
+	assert!(!practice.is_finished());
+	assert!(practice.submit(0, "False").accepted());
+	assert!(practice.terminal_error().is_none());
+	assert_eq!(practice.history().len(), 1);
+	let undecided: Session = session("True and (3 / 0 > 1)");
+	assert_eq!(
+		undecided.check_attempt(0, "False").kind,
+		FeedbackKind::NeedsInner
+	);
+}
+
+/// The exception wording says whether Python itself would raise there, running the question
+/// on in its own order from the state the student reached.
+#[test]
+fn a_chosen_exception_says_whether_python_raises_it_there() {
+	for (source, selected, origin) in [
+		("True and (3 / 0 > 1)", "3 / 0", ""),
+		(
+			"(1 / 0) + (2 % 0)",
+			"2 % 0",
+			"这个异常来自你选择计算的子式 2 % 0；Python 执行原式时不会在这里引发它。",
+		),
+		// A limit of this program stops the reference first, so nothing is said of Python.
+		(
+			"(2 ** 99999999999999) + (1 / 0)",
+			"1 / 0",
+			"这个异常来自你选择计算的子式 1 / 0。",
+		),
+	] {
+		let mut practice: Session = session(source);
+		let feedback: Feedback = practice.submit(node(&practice, selected), "ZeroDivisionError");
+		assert!(feedback.accepted(), "{source}: {}", feedback.message);
+		let error: &EvalError = practice.terminal_error().unwrap();
+		assert_eq!(
+			feedback.message,
+			format!("正确。{error} {origin}求值在这里终止。"),
+			"{source}"
+		);
+	}
+}
+
+/// Computing the operand a short circuit skips changes neither its result nor its type. While
+/// part of it is still unreduced the short circuit skips that subtree; once all of it is a
+/// value the wording says Python itself would not have computed it, so the extra evaluation
+/// is never passed off as Python's own order.
+#[test]
+fn a_computed_operand_leaves_the_short_circuit_result_and_names_the_extra_evaluation() {
+	let skipping: &str =
+		"正确。短路求值：or 遇到真值 True，直接返回该操作数（bool），跳过后面的子树。";
+	let mut direct: Session = session("True or (1 + 1)");
+	assert_eq!(direct.submit(0, "True").message, skipping);
+
+	let mut practice: Session = session("True or (1 + 1)");
+	assert!(practice.submit(node(&practice, "1 + 1"), "2").accepted());
+	assert_eq!(practice.render(), "True or (2)");
+	assert_eq!(practice.check_attempt(0, "True").message, skipping);
+	assert!(practice.submit(node(&practice, "(2)"), "2").accepted());
+	assert_eq!(practice.render(), "True or 2");
+	assert_eq!(practice.submit(0, "2").kind, FeedbackKind::WrongType);
+	let feedback: Feedback = practice.submit(0, "True");
+	assert!(feedback.accepted());
+	assert_eq!(
+		feedback.message,
+		"正确。短路求值：or 遇到真值 True，直接返回该操作数（bool）；后面的操作数不影响结果，Python 执行时不会计算它们。"
+	);
 }
 
 #[test]
@@ -194,21 +249,20 @@ fn precedence_and_rules_have_expected_step_sequences() {
 #[test]
 fn final_negative_literals_are_values_without_recorded_answers() {
 	for source in ["-10", "-10.5", "-0", "-0.0", "- 10"] {
-		for mode in [EvaluationMode::ShortCircuit, EvaluationMode::Eager] {
-			let mut practice: Session = python::session(source, &BTreeMap::new(), mode).unwrap();
-			assert!(practice.is_finished(), "{source}");
-			assert!(practice.next_step().is_none());
-			assert!(practice.history().is_empty());
-			assert!(practice.attempts().is_empty());
-			assert!(
-				practice
-					.root()
-					.value()
-					.unwrap()
-					.same_answer(&parse_value(source).unwrap())
-			);
-			assert!(!practice.undo());
-		}
+		let mut practice: Session = session(source);
+		assert!(practice.is_finished(), "{source}");
+		assert!(practice.next_step().is_none());
+		assert!(practice.allowed_steps().is_empty());
+		assert!(practice.history().is_empty());
+		assert!(practice.attempts().is_empty());
+		assert!(
+			practice
+				.root()
+				.value()
+				.unwrap()
+				.same_answer(&parse_value(source).unwrap())
+		);
+		assert!(!practice.undo());
 	}
 }
 

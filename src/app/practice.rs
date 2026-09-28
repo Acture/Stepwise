@@ -2,7 +2,7 @@ use std::ops::Range;
 
 use super::{Notice, Report};
 use crate::{
-	core::{EvaluationMode, ExprKind, Feedback, NodeId, ParseError, RecordedAttempt, Session},
+	core::{ExprKind, Feedback, NodeId, ParseError, RecordedAttempt, Session},
 	exercises::Exercise,
 	progress::Progress,
 };
@@ -28,14 +28,10 @@ pub struct Practice {
 }
 
 impl Practice {
-	/// Starts this question, replaying whatever this exact question, mode and valuation
-	/// already have saved.
-	pub fn new(
-		question: Exercise,
-		progress: Progress,
-		mode: EvaluationMode,
-	) -> Result<Self, ParseError> {
-		let initial: Session = question.session(mode)?;
+	/// Starts this question, replaying whatever this exact question and valuation already
+	/// have saved under the current teaching rules.
+	pub fn new(question: Exercise, progress: Progress) -> Result<Self, ParseError> {
+		let initial: Session = question.session()?;
 		let attempts: &[RecordedAttempt] = progress.attempts(&initial);
 		let session: Session = initial.replay(attempts)?;
 		let selected: NodeId = session.root().id;
@@ -272,23 +268,12 @@ impl Practice {
 	/// Start this question again from its source; saved progress is rewritten on the next
 	/// [`Practice::record`].
 	pub fn reset(&mut self) -> Result<bool, ParseError> {
-		let session: Session = self.question.session(self.session.mode())?;
+		let session: Session = self.question.session()?;
 		self.session = session;
 		self.selected = self.session.root().id;
 		self.cancel();
 		self.open_final_pair();
 		self.report = Report::Notice(Notice::Restarted);
-		Ok(true)
-	}
-
-	/// Switch evaluation strategy. The two strategies keep separate progress, so the current
-	/// attempts are recorded under the old key before the session is rebuilt; the question
-	/// is left untouched when the other strategy cannot build it.
-	pub fn toggle_mode(&mut self) -> Result<bool, ParseError> {
-		self.record();
-		let mode: EvaluationMode = self.session.mode().toggled();
-		*self = Self::new(self.question.clone(), self.progress.clone(), mode)?;
-		self.report = Report::Notice(Notice::ModeSwitched(mode));
 		Ok(true)
 	}
 

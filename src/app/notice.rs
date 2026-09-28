@@ -1,4 +1,4 @@
-use crate::core::{EvaluationMode, Feedback};
+use crate::core::Feedback;
 
 /// Why the app layer needs something said when no step was judged. It stands beside
 /// [`crate::core::FeedbackKind`] and is never merged into it: that one types what the
@@ -24,8 +24,6 @@ pub enum Notice {
 	Undone,
 	/// The question started again from its source.
 	Restarted,
-	/// The evaluation strategy changed to this one; each keeps its own progress.
-	ModeSwitched(EvaluationMode),
 	/// An ordered set has no question after the current one.
 	CourseEnded,
 	/// A proof just opened and no line has been entered.

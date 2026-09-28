@@ -103,7 +103,8 @@ fn the_built_in_proofs_keep_the_progress_keys_their_saved_work_is_filed_under() 
 /// `progress-17c6f55.json` was written by the base commit's own `ProofPractice::record` and
 /// `Progress::save`, with the proofs still built in `main.rs`: modus ponens and the identity
 /// finished, reductio two lines in. The questions now come from the embedded set, and the
-/// same file reopens all three exactly where they were left.
+/// same file reopens all three exactly where they were left. It is a version-1 file, the
+/// evaluation strategy it saved included: loading it drops that strategy and keeps the proofs.
 #[test]
 fn progress_saved_before_the_proofs_became_data_still_replays() {
 	let saved: Progress = Progress::load(Path::new(&fixture("progress-17c6f55.json"))).unwrap();
@@ -163,21 +164,11 @@ fn naming_a_built_in_proof_opens_the_proof_practice_either_way() {
 }
 
 /// `--proof NAME` and `--exercise NAME` are one lookup, and `--proof` only insists the
-/// question is a proof, so a proof named either way takes the course strategy, refuses a
-/// trace with the same words and refuses an assignment.
+/// question is a proof, so a proof named either way refuses a trace with the same words and
+/// refuses an assignment.
 #[test]
-fn a_proof_named_either_way_takes_the_course_strategy_and_refuses_a_trace_or_an_assignment() {
+fn a_proof_named_either_way_refuses_a_trace_or_an_assignment() {
 	for flag in ["--exercise", "--proof"] {
-		let strategy: Output = cli(&["--logic", flag, "raa", "--evaluation", "eager", "--no-save"]);
-		assert_eq!(
-			strategy.status.code(),
-			Some(1),
-			"{flag}: {}",
-			err(&strategy)
-		);
-		contains(&err(&strategy), "自然演绎练习需要交互终端");
-		assert!(!err(&strategy).contains("是证明题"), "{}", err(&strategy));
-
 		let traced: Output = cli(&["--logic", flag, "raa", "--trace"]);
 		assert_eq!(traced.status.code(), Some(1), "{flag}: {}", err(&traced));
 		assert_eq!(
