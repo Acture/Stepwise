@@ -1,13 +1,16 @@
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, ops::Range};
 
-use super::selection::available_steps;
+use super::selection::{allowed_steps, reference_steps};
 use super::surface::Surface;
 
 use super::{
-	EvalError, EvaluationMode, Expr, ExprKind, Language, NextStep, NodeId, ParseError, Value,
-	next_step,
+	EvalError, Expr, ExprKind, Language, NextStep, NodeId, ParseError, Path, Value, reference_step,
 };
+
+/// The teaching-rule version in every progress key. Bump it whenever the steps a student may
+/// submit change, so records written under other rules stay apart instead of replaying wrongly.
+const RULES: &str = "flexible-substitution-v4";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FeedbackKind {
@@ -15,7 +18,6 @@ pub enum FeedbackKind {
 	AlreadyValue,
 	NeedsInner,
 	OutOfOrder,
-	Skipped,
 	WrongValue,
 	WrongType,
 	InvalidInput,
@@ -62,7 +64,6 @@ pub struct HistoryEntry {
 
 #[derive(Clone, Debug)]
 pub struct Session {
-	mode: EvaluationMode,
 	context: String,
 	language: Language,
 	source: String,
@@ -76,16 +77,9 @@ pub struct Session {
 impl Session {
 	/// Built by the language module that parsed `root`; `context` is part of the saved
 	/// progress key, so each language spells its own name and binding rendering.
-	pub(crate) fn new(
-		language: Language,
-		source: String,
-		root: Expr,
-		context: String,
-		mode: EvaluationMode,
-	) -> Self {
+	pub(crate) fn new(language: Language, source: String, root: Expr, context: String) -> Self {
 		let surface: Surface = Surface::new(&source, &root);
 		let mut session: Self = Self {
-			mode,
 			context,
 			language,
 			root,
@@ -100,8 +94,7 @@ impl Session {
 	}
 
 	pub fn progress_key(&self) -> String {
-		let rules: &str = "flexible-substitution-v3";
-		format!("{rules}\n{}\n{}", self.mode.key(), self.context)
+		format!("{RULES}\n{}", self.context)
 	}
 
 	/// A whole expression that already spells a complete answer finishes without a step.
@@ -138,9 +131,6 @@ impl Session {
 	pub fn source(&self) -> &str {
 		&self.source
 	}
-	pub fn mode(&self) -> EvaluationMode {
-		self.mode
-	}
 	pub fn root(&self) -> &Expr {
 		&self.root
 	}
@@ -176,12 +166,27 @@ impl Session {
 				.all(|child| child.value().is_some()))
 		.then_some(self.root.id)
 	}
+
+	/// Every step the student may submit now: wherever the operands already decide a short
+	/// circuit it may be taken, and the operands it would skip may still be computed. Empty
+	/// once the question is finished.
+	pub fn allowed_steps(&self) -> Vec<NextStep> {
+		if self.is_finished() {
+			Vec::new()
+		} else {
+			allowed_steps(&self.root)
+		}
+	}
+
+	/// The one step a hint names: the language's own short-circuit order, within the
+	/// precedence the exercise teaches. It is one of [`Session::allowed_steps`], often not the
+	/// only one, and a front end must not use it to preselect anything.
 	pub fn next_step(&self) -> Option<NextStep> {
 		if self.is_finished() {
 			None
 		} else {
-			let mut choices: Vec<NextStep> = available_steps(&self.root, self.mode);
-			let preferred: Option<NextStep> = next_step(&self.root, self.mode);
+			let mut choices: Vec<NextStep> = reference_steps(&self.root);
+			let preferred: Option<NextStep> = reference_step(&self.root, Path::ShortCircuit);
 			let index: usize = preferred
 				.and_then(|step| {
 					choices
@@ -246,57 +251,111 @@ impl Session {
 				"这个节点已不存在，请重新选择。",
 			));
 		};
-		if let Some(choice) = available_steps(&self.root, self.mode)
-			.into_iter()
-			.find(|choice| choice.node_id == node_id)
-		{
-			return Ok(choice);
+		let allowed: Vec<NextStep> = allowed_steps(&self.root);
+		if let Some(choice) = allowed.iter().find(|choice| choice.node_id == node_id) {
+			return Ok(choice.clone());
 		}
-		if node_id != step.node_id {
-			if step.skipped.iter().any(|id| {
-				self.root
-					.find(*id)
-					.is_some_and(|tree| tree.find(node_id).is_some())
-			}) {
-				return Err(Feedback::new(
-					FeedbackKind::Skipped,
+		if selected.value().is_some() {
+			return Err(Feedback::new(
+				FeedbackKind::AlreadyValue,
+				"这里已经是一个值，无需再算。请选择一个运算表达式。",
+			));
+		}
+		let inner: Option<NextStep> = reference_step(selected, Path::ShortCircuit);
+		Err(
+			if let Some(inner) = inner.filter(|inner| inner.node_id != node_id) {
+				// Name inner work the student may do now: the reference's own step when it is
+				// allowed, else the first allowed step inside, else the reference's step.
+				let named: NodeId = allowed
+					.iter()
+					.map(|choice| choice.node_id)
+					.filter(|id| *id != node_id && selected.find(*id).is_some())
+					.min_by_key(|id| *id != inner.node_id)
+					.unwrap_or(inner.node_id);
+				Feedback::new(
+					FeedbackKind::NeedsInner,
 					format!(
-						"这棵子树会被跳过。{} 请选择整个 {} 表达式。",
-						step.explanation,
-						self.root.find(step.node_id).expect("step exists").render()
+						"这一步不能跳过内部运算。请先计算 {}，再回到当前表达式。",
+						selected.find(named).expect("inner step exists").render()
 					),
-				));
+				)
+			} else {
+				let expected: &Expr = self
+					.root
+					.find(self.blocker(node_id, &allowed).unwrap_or(step.node_id))
+					.expect("step exists");
+				Feedback::new(
+					FeedbackKind::OutOfOrder,
+					format!(
+						"这里目前还不能计算，请先处理 {}。同优先级的独立子式可以任选。",
+						expected.render()
+					),
+				)
+			},
+		)
+	}
+
+	/// What holds a ready operation back: an allowed operation of higher precedence in the same
+	/// bracket scope, outside the operation's own ancestors — naming an ancestor would tell the
+	/// student to take a step that removes what they selected. The one nearest the selection
+	/// wins, then the higher precedence.
+	fn blocker(&self, node_id: NodeId, allowed: &[NextStep]) -> Option<NodeId> {
+		let path: Vec<&Expr> = lineage(&self.root, node_id);
+		let scope = |path: &[&Expr]| -> Option<NodeId> {
+			path[..path.len() - 1]
+				.iter()
+				.rev()
+				.find(|node| matches!(node.kind, ExprKind::Group(_)))
+				.map(|node| node.id)
+		};
+		let precedence = |node: &Expr| -> Option<u8> {
+			match &node.kind {
+				ExprKind::Operation(op, _) => Some(op.rules().precedence()),
+				_ => None,
 			}
-			if selected.value().is_some() {
-				return Err(Feedback::new(
-					FeedbackKind::AlreadyValue,
-					"这里已经是一个值，无需再算。请选择一个运算表达式。",
-				));
+		};
+		let own: u8 = precedence(path.last()?)?;
+		allowed
+			.iter()
+			.filter_map(|choice| {
+				let other: Vec<&Expr> = lineage(&self.root, choice.node_id);
+				let rank: u8 = precedence(other.last()?)?;
+				let shared: usize = path
+					.iter()
+					.zip(&other)
+					.take_while(|(left, right)| left.id == right.id)
+					.count();
+				// Neither an ancestor nor inside the operand a short circuit here would skip.
+				let apart: bool = shared < other.len() && shared < path.len();
+				(rank > own && apart && scope(&other) == scope(&path)).then_some((
+					shared,
+					rank,
+					choice.node_id,
+				))
+			})
+			.max_by_key(|(shared, rank, _)| (*shared, *rank))
+			.map(|(_, _, id)| id)
+	}
+
+	/// Whether running the question on from here in the language's own order raises at this
+	/// very node: `Some(true)` when it does, `Some(false)` when that order finishes, raises
+	/// somewhere else first or discards the node unevaluated, `None` when a limit of this
+	/// program stops it before any of those.
+	fn raised_in_order(&self, node_id: NodeId) -> Option<bool> {
+		let mut root: Expr = self.root.clone();
+		while let Some(step) = reference_step(&root, Path::ShortCircuit) {
+			match step.outcome {
+				Ok(value) => {
+					root.replace(step.node_id, &value);
+					if root.find(node_id).is_none() {
+						return Some(false);
+					}
+				}
+				Err(EvalError::Limit(_)) if step.node_id != node_id => return None,
+				Err(_) => return Some(step.node_id == node_id),
 			}
-			let inner: Option<NextStep> = next_step(selected, self.mode);
-			return Err(
-				if let Some(inner) = inner.filter(|inner| inner.node_id != node_id) {
-					let expected: &Expr = selected.find(inner.node_id).expect("inner step exists");
-					Feedback::new(
-						FeedbackKind::NeedsInner,
-						format!(
-							"这一步不能跳过内部运算。请先计算 {}，再回到当前表达式。",
-							expected.render()
-						),
-					)
-				} else {
-					let expected: &Expr = self.root.find(step.node_id).expect("step exists");
-					Feedback::new(
-						FeedbackKind::OutOfOrder,
-						format!(
-							"这里目前还不能计算，请先处理 {}。同优先级且不受短路限制的独立子式可以任选。",
-							expected.render()
-						),
-					)
-				},
-			);
 		}
-		Ok(step)
+		Some(false)
 	}
 
 	/// Checks location before reading the answer; never advances the session.
@@ -313,9 +372,18 @@ impl Session {
 			),
 			Err(error) => {
 				if Some(input.trim()) == error.name() {
+					let chosen: &str = &self.surface.text[self.surface.ranges[&node_id].clone()];
+					// Only Python raises, so the note about running the original names Python.
+					let origin: String = match self.raised_in_order(node_id) {
+						Some(true) => String::new(),
+						Some(false) => format!(
+							"这个异常来自你选择计算的子式 {chosen}；Python 执行原式时不会在这里引发它。"
+						),
+						None => format!("这个异常来自你选择计算的子式 {chosen}。"),
+					};
 					Feedback::new(
 						FeedbackKind::Correct,
-						format!("正确。{} 求值在这里终止。", step.explanation),
+						format!("正确。{} {origin}求值在这里终止。", step.explanation),
 					)
 				} else {
 					Feedback::new(
@@ -469,4 +537,21 @@ impl Session {
 		self.terminal_error = None;
 		true
 	}
+}
+
+/// The nodes from the root down to this one, both included; empty when it is not in the tree.
+fn lineage(root: &Expr, node_id: NodeId) -> Vec<&Expr> {
+	if root.id == node_id {
+		return vec![root];
+	}
+	root.children()
+		.into_iter()
+		.find_map(|child| {
+			let mut path: Vec<&Expr> = lineage(child, node_id);
+			(!path.is_empty()).then(|| {
+				path.insert(0, root);
+				path
+			})
+		})
+		.unwrap_or_default()
 }

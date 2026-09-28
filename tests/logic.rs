@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use stepwise::{
-	core::{EvaluationMode, FeedbackKind, Session, Value},
+	core::{Feedback, FeedbackKind, NodeId, Session, Value},
 	logic::{self, Formula, LogicOp, parse_formula, proof::Proof},
 };
 
@@ -13,6 +13,17 @@ fn proof(premises: &[&str], goal: &str) -> Proof {
 		premises.iter().map(|source| formula(source)).collect(),
 		formula(goal),
 	)
+}
+
+fn operand(session: &Session, name: &str) -> NodeId {
+	session
+		.root()
+		.rows()
+		.into_iter()
+		.find(|(_, node)| node.render() == name)
+		.unwrap_or_else(|| panic!("missing {name} in {}", session.render()))
+		.1
+		.id
 }
 
 #[test]
@@ -40,10 +51,17 @@ fn ascii_unicode_precedence_and_equivalence() {
 	}
 }
 
+/// Each connective gives its truth table whether the student short-circuits or computes the
+/// right side first. `∧` over a false left side, `∨` over a true one and `→` over a false
+/// antecedent may apply at once; `↔` always needs both sides.
 #[test]
-fn truth_tables_and_both_evaluation_strategies() {
+fn truth_tables_whether_or_not_the_right_side_is_computed() {
 	for op in [LogicOp::And, LogicOp::Or, LogicOp::Implies, LogicOp::Iff] {
 		for left in [false, true] {
+			let decided: bool = matches!(
+				(op, left),
+				(LogicOp::And, false) | (LogicOp::Or, true) | (LogicOp::Implies, false)
+			);
 			for right in [false, true] {
 				let source: String = format!("P {} Q", op.symbol());
 				let expected: bool = match op {
@@ -52,25 +70,66 @@ fn truth_tables_and_both_evaluation_strategies() {
 					LogicOp::Implies => !left || right,
 					LogicOp::Iff => left == right,
 				};
-				for mode in [EvaluationMode::ShortCircuit, EvaluationMode::Eager] {
-					let mut session: Session = logic::session(
+				let answer: String = Value::Bool(expected).to_string();
+				let start = || {
+					logic::session(
 						&source,
 						&BTreeMap::from([("P".into(), left), ("Q".into(), right)]),
-						mode,
 					)
-					.unwrap();
-					while let Some(step) = session.next_step() {
-						assert!(
-							session
-								.submit(step.node_id, &step.outcome.unwrap().to_string())
-								.accepted()
-						);
-					}
-					assert_eq!(
-						session.root().value(),
-						Some(&Value::Bool(expected)),
-						"{source}, {left}, {right}, {mode:?}"
+					.unwrap()
+				};
+				let mut hinted: Session = start();
+				while let Some(step) = hinted.next_step() {
+					assert!(
+						hinted
+							.submit(step.node_id, &step.outcome.unwrap().to_string())
+							.accepted()
 					);
+				}
+				assert_eq!(
+					hinted.root().value(),
+					Some(&Value::Bool(expected)),
+					"{source}, {left}, {right}"
+				);
+				assert_eq!(hinted.attempts().len(), if decided { 2 } else { 3 });
+				let mut complete: Session = start();
+				let p: NodeId = operand(&complete, "P");
+				assert!(
+					complete
+						.submit(p, &Value::Bool(left).to_string())
+						.accepted()
+				);
+				let q: NodeId = operand(&complete, "Q");
+				assert!(
+					complete
+						.submit(q, &Value::Bool(right).to_string())
+						.accepted()
+				);
+				let root: NodeId = complete.root().id;
+				assert!(complete.submit(root, &answer).accepted(), "{source}");
+				assert_eq!(complete.root().value(), Some(&Value::Bool(expected)));
+				let mut early: Session = start();
+				let p: NodeId = operand(&early, "P");
+				assert!(early.submit(p, &Value::Bool(left).to_string()).accepted());
+				let root: NodeId = early.root().id;
+				assert_eq!(
+					early
+						.allowed_steps()
+						.iter()
+						.any(|step| step.node_id == root),
+					decided,
+					"{source}, {left}"
+				);
+				let feedback: Feedback = early.submit(root, &answer);
+				if decided {
+					assert!(
+						feedback.accepted(),
+						"{source}, {left}: {}",
+						feedback.message
+					);
+					assert_eq!(early.render(), answer);
+				} else {
+					assert_eq!(feedback.kind, FeedbackKind::NeedsInner, "{source}, {left}");
 				}
 			}
 		}
@@ -79,13 +138,8 @@ fn truth_tables_and_both_evaluation_strategies() {
 
 #[test]
 fn logic_requires_binding_and_rejects_numeric_answers() {
-	assert!(logic::session("P", &BTreeMap::new(), EvaluationMode::Eager).is_err());
-	let mut session: Session = logic::session(
-		"P",
-		&BTreeMap::from([("P".into(), true)]),
-		EvaluationMode::Eager,
-	)
-	.unwrap();
+	assert!(logic::session("P", &BTreeMap::new()).is_err());
+	let mut session: Session = logic::session("P", &BTreeMap::from([("P".into(), true)])).unwrap();
 	assert_eq!(session.submit(0, "1").kind, FeedbackKind::InvalidInput);
 	assert!(session.submit(0, "真").accepted());
 }

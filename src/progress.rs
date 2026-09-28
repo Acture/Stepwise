@@ -10,15 +10,18 @@ use serde::{Deserialize, Serialize};
 use tempfile::NamedTempFile;
 
 use crate::{
-	core::{EvaluationMode, RecordedAttempt, Session},
+	core::{RecordedAttempt, Session},
 	logic::proof::Proof,
 };
 
-/// The progress format this build reads. Question sets did not change it: they added a name
+/// The progress format this build writes. Question sets did not change it: they added a name
 /// beside the pointer, and a file written before them simply has no name there, which is
-/// what a question belonging to no set says too. The records themselves — the work — are
-/// read either way.
-const VERSION: u32 = 1;
+/// what a question belonging to no set says too. Version 3 dropped the evaluation strategy
+/// the pointer was left in, because a student now short-circuits or keeps computing inside
+/// one question instead of switching. Versions 1 and 2 both saved that strategy — 2 was
+/// written for a short while when question sets first landed, then set back to 1 — so both
+/// still load, see [`Strategic`].
+const VERSION: u32 = 3;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -32,10 +35,54 @@ pub struct Progress {
 	#[serde(default)]
 	pub current_set: String,
 	pub current: String,
-	pub mode: EvaluationMode,
-	/// Key includes both strategy and source; progress must not cross semantic modes.
+	/// Keyed by teaching-rule version and content, so work recorded under other rules or for
+	/// an edited question stays in the file without replaying into this one.
 	pub sessions: BTreeMap<String, Vec<RecordedAttempt>>,
 	pub proofs: BTreeMap<String, Vec<String>>,
+}
+
+/// A version-1 or version-2 file: the same pointer and records, plus the evaluation strategy
+/// the pointer was left in. Loading one drops that strategy and keeps everything else
+/// verbatim. Its evaluation records carry the strategy in their keys, written under earlier
+/// teaching rules, so they stay in the file untouched rather than being re-keyed or merged, and
+/// none of them replays: an evaluation question the pointer names has no record under today's
+/// rules, so a random question, the question an ordered set resumes at, or one named with
+/// `--exercise` opens from its start, while a bare launch whose pointer names a set question
+/// draws a new random question, since nothing under today's rules says it was begun. Its proof
+/// records replay as before.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Strategic {
+	#[serde(rename = "version")]
+	_version: u32,
+	#[serde(default)]
+	current_set: String,
+	current: String,
+	#[serde(rename = "mode")]
+	_mode: Strategy,
+	sessions: BTreeMap<String, Vec<RecordedAttempt>>,
+	proofs: BTreeMap<String, Vec<String>>,
+}
+
+/// The two strategies a build that saved one could write. Read only so that a value no build ever
+/// wrote is refused rather than guessed at; nothing keeps it.
+#[derive(Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum Strategy {
+	ShortCircuit,
+	Eager,
+}
+
+impl From<Strategic> for Progress {
+	fn from(file: Strategic) -> Self {
+		Self {
+			version: VERSION,
+			current_set: file.current_set,
+			current: file.current,
+			sessions: file.sessions,
+			proofs: file.proofs,
+		}
+	}
 }
 
 impl Default for Progress {
@@ -44,7 +91,6 @@ impl Default for Progress {
 			version: VERSION,
 			current_set: String::new(),
 			current: String::new(),
-			mode: EvaluationMode::ShortCircuit,
 			sessions: BTreeMap::new(),
 			proofs: BTreeMap::new(),
 		}
@@ -76,12 +122,15 @@ impl Progress {
 			version: u32,
 		}
 		let declared: Declared = serde_json::from_str(&text).map_err(io::Error::other)?;
-		if declared.version != VERSION {
-			return Err(io::Error::other(
+		match declared.version {
+			VERSION => serde_json::from_str(&text).map_err(io::Error::other),
+			1 | 2 => serde_json::from_str::<Strategic>(&text)
+				.map(Self::from)
+				.map_err(io::Error::other),
+			_ => Err(io::Error::other(
 				"不支持的进度版本；请指定新的 --progress-file 或使用 --no-save。原文件未改动。",
-			));
+			)),
 		}
-		serde_json::from_str(&text).map_err(io::Error::other)
 	}
 
 	/// Point at this question and save its attempts. The set name travels with the ID, so
@@ -89,15 +138,11 @@ impl Progress {
 	pub fn record(&mut self, set: &str, question: &str, session: &Session) {
 		self.current_set = set.into();
 		self.current = question.into();
-		self.mode = session.mode();
 		self.sessions
 			.insert(session.progress_key(), session.attempts().to_vec());
 	}
 
-	/// Point at this proof question and save its lines. The saved strategy belongs to the
-	/// evaluation question it was recorded with and is left alone: a proof has none, so a
-	/// launch that resumes at a proof opens the questions after it in the requested strategy
-	/// or the default.
+	/// Point at this proof question and save its lines.
 	pub fn record_proof(&mut self, set: &str, question: &str, proof: &Proof) {
 		self.current_set = set.into();
 		self.current = question.into();

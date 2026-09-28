@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 
 use stepwise::{
 	app::{Course, Lesson, Notice, Practice, ProofPractice, Report, Supply, Task, Transcript},
-	core::{EvaluationMode, Language, NodeId},
+	core::{Language, NextStep, NodeId},
 	exercises::{self, Exercise, ProofQuestion, Question, QuestionSet},
 	generate,
 	progress::Progress,
@@ -60,29 +60,23 @@ fn written(premises: &[&str], conclusion: &str) -> ProofQuestion {
 
 /// One question on its own. Which question comes next is a lesson's business, so a test
 /// that never moves needs no course.
-fn practice(question: Exercise, progress: Progress, mode: EvaluationMode) -> Practice {
-	Practice::new(question, progress, mode).unwrap()
+fn practice(question: Exercise, progress: Progress) -> Practice {
+	Practice::new(question, progress).unwrap()
 }
 
 /// Random practice opening on `first` and drawing a new question after it, as a launch with
 /// no set does.
-fn random_lesson(first: Exercise, progress: Progress, mode: EvaluationMode) -> Lesson {
+fn random_lesson(first: Exercise, progress: Progress) -> Lesson {
 	Lesson::new(
 		Course::random(vec![Question::Evaluation(first)], 0).unwrap(),
 		progress,
-		mode,
 	)
 	.unwrap()
 }
 
 /// A fixed set walked in file order from `index`, as a launch with `--set` does.
-fn lesson(
-	questions: Vec<Question>,
-	index: usize,
-	progress: Progress,
-	mode: EvaluationMode,
-) -> Lesson {
-	Lesson::new(Course::ordered(questions, index).unwrap(), progress, mode).unwrap()
+fn lesson(questions: Vec<Question>, index: usize, progress: Progress) -> Lesson {
+	Lesson::new(Course::ordered(questions, index).unwrap(), progress).unwrap()
 }
 
 /// The evaluation question in hand. A proof there is the failure, and the message says which.
@@ -148,11 +142,7 @@ fn at(practice: &Practice, token: &str) -> NodeId {
 
 #[test]
 fn a_whole_question_is_selected_answered_undone_and_resumed_without_a_terminal() {
-	let mut session: Practice = practice(
-		builtin("precedence"),
-		Progress::default(),
-		EvaluationMode::ShortCircuit,
-	);
+	let mut session: Practice = practice(builtin("precedence"), Progress::default());
 	assert_eq!(session.session().render(), "2 + (3 * 4)");
 
 	// Selecting opens a blank and reports why. The reason carries no sentence at all, so it
@@ -191,11 +181,7 @@ fn a_whole_question_is_selected_answered_undone_and_resumed_without_a_terminal()
 	session.paste("12");
 	assert!(session.submit());
 	session.record();
-	let resumed: Lesson = random_lesson(
-		builtin("precedence"),
-		session.progress().clone(),
-		EvaluationMode::ShortCircuit,
-	);
+	let resumed: Lesson = random_lesson(builtin("precedence"), session.progress().clone());
 	assert_eq!(evaluating(&resumed).session().render(), "2 + (12)");
 	assert_eq!(evaluating(&resumed).session().attempts().len(), 1);
 
@@ -208,28 +194,34 @@ fn a_whole_question_is_selected_answered_undone_and_resumed_without_a_terminal()
 
 #[test]
 fn a_selection_the_rules_forbid_only_changes_the_feedback() {
-	let mut session: Practice = practice(
-		builtin("independent-sums"),
-		Progress::default(),
-		EvaluationMode::ShortCircuit,
-	);
+	let mut session: Practice = practice(builtin("independent-sums"), Progress::default());
 	let outer: NodeId = at(&session, "*");
 	assert!(!session.select(outer));
 	assert!(session.draft().is_none());
 	assert!(taught(session.report()).contains("不能跳过"));
 	assert!(session.session().history().is_empty());
 
-	// A skipped branch stays unselectable while short circuit is on.
-	let mut short: Practice = practice(
-		builtin("short-circuit"),
-		Progress::default(),
-		EvaluationMode::ShortCircuit,
-	);
+	// Inside the operand a short circuit would skip, the rules refuse only what they refuse
+	// anywhere: the comparison waits for the division inside it. The division itself is a
+	// step like any other, and the short circuit stays available beside it.
+	let mut short: Practice = practice(builtin("short-circuit"), Progress::default());
+	let comparison: NodeId = at(&short, ">");
+	assert!(!short.select(comparison));
+	assert!(short.draft().is_none());
+	assert!(taught(short.report()).contains("请先计算 3 / 0"));
 	let division: NodeId = at(&short, "/");
 	assert!(!short.select(division));
-	assert!(short.draft().is_none());
-	assert!(taught(short.report()).contains("跳过"));
+	assert_eq!(short.draft(), Some(division));
+	assert_eq!(short.report(), &Report::Notice(Notice::DraftOpen));
 	assert!(short.session().attempts().is_empty());
+	let whole: NodeId = short.session().root().id;
+	assert!(
+		short
+			.session()
+			.allowed_steps()
+			.iter()
+			.any(|step| step.node_id == whole)
+	);
 }
 
 #[test]
@@ -241,14 +233,9 @@ fn a_finished_pair_of_brackets_is_removed_by_selection_and_saves_no_answer() {
 		expression: "((3))".into(),
 		language: Language::Python,
 		bindings: BTreeMap::new(),
-		evaluation: None,
 		note: None,
 	};
-	let mut session: Practice = practice(
-		nested.clone(),
-		Progress::default(),
-		EvaluationMode::ShortCircuit,
-	);
+	let mut session: Practice = practice(nested.clone(), Progress::default());
 	// The outer pair is not finished yet, so selecting it removes nothing.
 	let outer: NodeId = session.node_owners()[0].unwrap();
 	assert!(!session.select(outer));
@@ -262,11 +249,7 @@ fn a_finished_pair_of_brackets_is_removed_by_selection_and_saves_no_answer() {
 	assert_eq!(session.session().attempts()[0].input, None);
 
 	session.record();
-	let resumed: Practice = practice(
-		nested,
-		session.progress().clone(),
-		EvaluationMode::ShortCircuit,
-	);
+	let resumed: Practice = practice(nested, session.progress().clone());
 	assert_eq!(resumed.session().render(), "(3)");
 	assert!(
 		resumed
@@ -286,11 +269,9 @@ fn one_answer_substitutes_every_occurrence_of_the_same_name() {
 		expression: "x + y * x".into(),
 		language: Language::Python,
 		bindings: BTreeMap::from([("x".into(), "2".into()), ("y".into(), "3".into())]),
-		evaluation: None,
 		note: None,
 	};
-	let mut session: Practice =
-		practice(repeated, Progress::default(), EvaluationMode::ShortCircuit);
+	let mut session: Practice = practice(repeated, Progress::default());
 	let first: NodeId = session.node_owners()[0].unwrap();
 	assert!(!session.select(first));
 	// Both blanks belong to one answer, and a front end reads them straight off.
@@ -307,36 +288,56 @@ fn one_answer_substitutes_every_occurrence_of_the_same_name() {
 	assert_eq!(session.session().render(), "x + y * x");
 }
 
+/// A question keeps one record, keyed by the teaching rules and its content and by no
+/// strategy: short-circuiting and computing the operand a short circuit would skip are two
+/// ways through the same question, and the way the student took last is the work saved.
 #[test]
-fn each_evaluation_strategy_keeps_its_own_progress() {
-	let mut session: Practice = practice(
-		builtin("precedence"),
-		Progress::default(),
-		EvaluationMode::ShortCircuit,
+fn one_question_keeps_one_record_whichever_way_the_student_evaluates_it() {
+	let guarded: Exercise = Exercise {
+		set: String::new(),
+		name: "guarded".into(),
+		title: "guarded".into(),
+		expression: "False and (2 + 3 > 1)".into(),
+		language: Language::Python,
+		bindings: BTreeMap::new(),
+		note: None,
+	};
+	let key: String = guarded.session().unwrap().progress_key();
+	assert_eq!(
+		key,
+		"flexible-substitution-v4\npython\n{}\nFalse and (2 + 3 > 1)"
 	);
-	let multiply: NodeId = at(&session, "3 * 4");
-	session.select(multiply);
-	session.paste("12");
-	assert!(session.submit());
 
-	assert!(session.toggle_mode().unwrap());
-	assert_eq!(session.session().mode(), EvaluationMode::Eager);
-	assert_eq!(session.session().render(), "2 + (3 * 4)");
-	assert!(session.session().history().is_empty());
+	// Short circuit at once: one step finishes the question, and one record holds it.
+	let mut short: Practice = practice(guarded.clone(), Progress::default());
+	take(&mut short, "and");
+	assert!(short.session().is_finished());
+	short.record();
+	assert_eq!(short.progress().sessions.len(), 1);
+	assert_eq!(short.progress().sessions[&key].len(), 1);
 
-	assert!(session.toggle_mode().unwrap());
-	assert_eq!(session.session().mode(), EvaluationMode::ShortCircuit);
-	assert_eq!(session.session().render(), "2 + (12)");
-	assert_eq!(session.progress().sessions.len(), 2);
+	// Reopened from that record, the student takes the short circuit back and computes the
+	// operand it skipped instead. The same record now holds that way through, and no second
+	// one appears beside it.
+	let mut long: Practice = practice(guarded, short.progress().clone());
+	assert!(long.session().is_finished());
+	assert!(long.undo());
+	take(&mut long, "2 + 3");
+	take(&mut long, ">");
+	solve(&mut long);
+	assert_eq!(long.session().render(), "False");
+	long.record();
+	assert_eq!(long.progress().sessions.len(), 1);
+	assert_eq!(
+		long.progress().sessions[&key],
+		long.session().attempts().to_vec()
+	);
+	assert!(long.progress().sessions[&key].len() > 1);
 }
 
 #[test]
 fn the_next_question_is_generated_and_going_back_restores_the_earlier_attempts() {
-	let mut walk: Lesson = random_lesson(
-		builtin("precedence"),
-		Progress::default(),
-		EvaluationMode::ShortCircuit,
-	);
+	let mut walk: Lesson = random_lesson(builtin("precedence"), Progress::default());
 	let multiply: NodeId = at(evaluating(&walk), "3 * 4");
 	let session: &mut Practice = evaluating_mut(&mut walk);
 	session.select(multiply);
@@ -376,8 +377,7 @@ fn an_ordered_course_stops_at_its_last_question_without_generating_one() {
 	)
 	.unwrap();
 	assert_eq!(course.supply(), Supply::Ordered);
-	let mut walk: Lesson =
-		Lesson::new(course, Progress::default(), EvaluationMode::ShortCircuit).unwrap();
+	let mut walk: Lesson = Lesson::new(course, Progress::default()).unwrap();
 
 	assert!(walk.next_question().unwrap());
 	assert_eq!(walk.question().name(), "true-division");
@@ -402,11 +402,7 @@ fn a_default_launch_resumes_unfinished_work_and_replaces_a_finished_question() {
 	assert!(fresh.name().starts_with("random-v1-python-"));
 
 	// An unfinished embedded question comes back.
-	let mut session: Practice = practice(
-		builtin("precedence"),
-		Progress::default(),
-		EvaluationMode::ShortCircuit,
-	);
+	let mut session: Practice = practice(builtin("precedence"), Progress::default());
 	let multiply: NodeId = at(&session, "3 * 4");
 	session.select(multiply);
 	session.paste("12");
@@ -418,14 +414,6 @@ fn a_default_launch_resumes_unfinished_work_and_replaces_a_finished_question() {
 			.unwrap()
 			.name(),
 		"precedence"
-	);
-	assert_eq!(
-		stepwise::app::starting_mode(
-			None,
-			&unfinished,
-			&Question::Evaluation(builtin("precedence"))
-		),
-		EvaluationMode::ShortCircuit
 	);
 
 	// A pointer into a set this launch does not have — the file was not passed, or is gone —
@@ -454,28 +442,9 @@ fn a_default_launch_resumes_unfinished_work_and_replaces_a_finished_question() {
 	// A saved random question is reconstructed from its versioned seed alone.
 	let mut random: Progress = Progress::default();
 	random.current = generate::generate(Language::Logic, 42).unwrap().name;
-	random.mode = EvaluationMode::Eager;
 	let restored: Question =
 		stepwise::app::resume_or_generate(Language::Logic, &random, &[]).unwrap();
 	assert_eq!(restored.name(), random.current);
-	assert_eq!(
-		stepwise::app::starting_mode(None, &random, &restored),
-		EvaluationMode::Eager
-	);
-	// An explicit choice overrides the saved strategy, and a question with nothing saved opens
-	// in the default: short circuit, in logic as in Python.
-	assert_eq!(
-		stepwise::app::starting_mode(Some(EvaluationMode::ShortCircuit), &random, &restored),
-		EvaluationMode::ShortCircuit
-	);
-	assert_eq!(
-		stepwise::app::starting_mode(
-			None,
-			&Progress::default(),
-			&Question::Evaluation(builtin("logic-and"))
-		),
-		EvaluationMode::ShortCircuit
-	);
 }
 
 #[test]
@@ -527,11 +496,7 @@ fn a_proof_is_submitted_undone_and_resumed_from_its_saved_commands() {
 
 #[test]
 fn the_draft_and_selection_contract_holds_without_a_front_end() {
-	let mut session: Practice = practice(
-		builtin("independent-sums"),
-		Progress::default(),
-		EvaluationMode::ShortCircuit,
-	);
+	let mut session: Practice = practice(builtin("independent-sums"), Progress::default());
 	assert_eq!(session.report(), &Report::Notice(Notice::Start));
 
 	// A hint names the next step; it never opens a draft or fills one in.
@@ -584,15 +549,10 @@ fn every_notice_the_app_layer_raises_is_a_reason_and_carries_no_sentence() {
 		expression: "2 + 3".into(),
 		language: Language::Python,
 		bindings: BTreeMap::new(),
-		evaluation: None,
 		note: None,
 	};
 	// A whole binary expression over two values opens its own blank and says why.
-	let mut session: Practice = practice(
-		pair.clone(),
-		Progress::default(),
-		EvaluationMode::ShortCircuit,
-	);
+	let mut session: Practice = practice(pair.clone(), Progress::default());
 	assert_eq!(session.report(), &Report::Notice(Notice::FinalPair));
 	session.paste("5");
 	assert!(session.submit());
@@ -607,24 +567,8 @@ fn every_notice_the_app_layer_raises_is_a_reason_and_carries_no_sentence() {
 	assert!(session.reset().unwrap());
 	assert_eq!(session.report(), &Report::Notice(Notice::Restarted));
 
-	// Switching strategy reports which one is now running, not a sentence about it.
-	assert!(session.toggle_mode().unwrap());
-	assert_eq!(
-		session.report(),
-		&Report::Notice(Notice::ModeSwitched(EvaluationMode::Eager))
-	);
-	assert!(session.toggle_mode().unwrap());
-	assert_eq!(
-		session.report(),
-		&Report::Notice(Notice::ModeSwitched(EvaluationMode::ShortCircuit))
-	);
-
 	// A question a student has not finished opens on the starting reason.
-	let mut course: Practice = practice(
-		builtin("precedence"),
-		Progress::default(),
-		EvaluationMode::ShortCircuit,
-	);
+	let mut course: Practice = practice(builtin("precedence"), Progress::default());
 	assert_eq!(course.report(), &Report::Notice(Notice::Start));
 	// A sentence the front end owns still passes through untouched.
 	course.note("front-end help");
@@ -649,11 +593,7 @@ fn every_notice_the_app_layer_raises_is_a_reason_and_carries_no_sentence() {
 /// exact lines, and this is the only place they are written.
 #[test]
 fn the_archived_marker_says_whether_a_step_was_taken_back_or_the_question_restarted() {
-	let mut walk: Lesson = random_lesson(
-		builtin("precedence"),
-		Progress::default(),
-		EvaluationMode::ShortCircuit,
-	);
+	let mut walk: Lesson = random_lesson(builtin("precedence"), Progress::default());
 	let mut transcript: Transcript = Transcript::default();
 	assert_eq!(transcript.sync(&walk), ["Python 运算练习"]);
 
@@ -681,11 +621,7 @@ fn the_archived_marker_says_whether_a_step_was_taken_back_or_the_question_restar
 
 #[test]
 fn changing_question_archives_a_new_header_and_the_first_question_has_no_earlier_one() {
-	let mut walk: Lesson = random_lesson(
-		builtin("long-arithmetic"),
-		Progress::default(),
-		EvaluationMode::ShortCircuit,
-	);
+	let mut walk: Lesson = random_lesson(builtin("long-arithmetic"), Progress::default());
 	let mut transcript: Transcript = Transcript::default();
 	// Nothing is archived before a step: just the language and this question's valuation.
 	let opening: Vec<String> = transcript.sync(&walk);
@@ -725,7 +661,6 @@ fn changing_question_archives_a_new_header_and_the_first_question_has_no_earlier
 		vec![Question::Proof(builtin_proof("raa"))],
 		0,
 		Progress::default(),
-		EvaluationMode::Eager,
 	);
 	proving_mut(&mut proving_first).paste("~P ; assume");
 	proving_mut(&mut proving_first).note("rules");
@@ -743,7 +678,7 @@ fn changing_question_archives_a_new_header_and_the_first_question_has_no_earlier
 /// Three questions whose file order is not their alphabetical order: a course that sorted
 /// them, or reordered them at all, would walk `add, div, mul` instead.
 const ORDERED_SET: &str = r##"
-version = 1
+version = 2
 name = "ordered-set"
 title = "顺序题集"
 
@@ -775,7 +710,7 @@ note = "整个式子只是一次加法。"
 /// A set carrying both question kinds and both languages, for what a course may be asked
 /// to filter out of one file.
 const MIXED_SET: &str = r##"
-version = 1
+version = 2
 name = "mixed-set"
 title = "混合题集"
 
@@ -816,48 +751,11 @@ expression = "6 / (1 + 2)"
 note = "结果的类型也是答案的一部分。"
 "##;
 
-/// One set whose questions differ in where their opening strategy comes from: a field of
-/// their own, or the default of the language they are written in.
-const MODE_SET: &str = r##"
-version = 1
-name = "mode-set"
-title = "开场策略"
-
-[[questions]]
-kind = "evaluation"
-name = "eager-q"
-title = "关掉短路之后"
-language = "python"
-expression = "False and (6 / 3)"
-note = "短路开着时右边整支跳过；这题默认关掉短路。"
-evaluation = "eager"
-
-[[questions]]
-kind = "evaluation"
-name = "plain-q"
-title = "跳过的右边"
-language = "python"
-expression = "False and (1 + 2)"
-note = "括号里的运算一定会执行吗？"
-
-[[questions]]
-kind = "evaluation"
-name = "logic-q"
-title = "一行真值表"
-language = "logic"
-expression = "(P → Q) ∧ ¬Q → ¬P"
-note = "只算这一个赋值。"
-
-[questions.bindings]
-P = "True"
-Q = "False"
-"##;
-
 /// A logic course that runs evaluation → proof → evaluation, with a Python question between
 /// the first two in the file. The logic course steps over that one and walks the rest in file
 /// order whichever kind each is, so every move below crosses from one kind to the other.
 const WALK_SET: &str = r##"
-version = 1
+version = 2
 name = "walk-set"
 title = "求值与证明交替"
 
@@ -907,7 +805,7 @@ const CHAIN: [&str; 2] = ["Q ; mp ; 1,3", "R ; mp ; 2,4"];
 fn set_around(set_id: &str, name: &str, expression: &str) -> String {
 	format!(
 		r##"
-version = 1
+version = 2
 name = "{set_id}"
 title = "{name}"
 
@@ -951,16 +849,12 @@ fn ids(questions: &[Question]) -> Vec<&str> {
 	questions.iter().map(Question::name).collect()
 }
 
-/// The question at `index` of a set, opened on its own in the strategy these tests share.
+/// The question at `index` of a set, opened on its own.
 fn ordered(questions: &[Exercise], index: usize, progress: Progress) -> Practice {
-	practice(
-		questions[index].clone(),
-		progress,
-		EvaluationMode::ShortCircuit,
-	)
+	practice(questions[index].clone(), progress)
 }
 
-/// One student step: take the step the rules name, answering it where it needs an answer.
+/// One student step: take the step a hint names, answering it where it needs an answer.
 fn step_once(session: &mut Practice) {
 	let step: NodeId = session.session().next_step().expect("a step left").node_id;
 	if !session.select(step) {
@@ -982,15 +876,25 @@ fn solve(session: &mut Practice) {
 	}
 }
 
-/// The progress after one step of `exercise` in `mode`, or every step when `finish`, added to
-/// what `progress` already holds.
-fn stepped(
-	exercise: &Exercise,
-	mode: EvaluationMode,
-	finish: bool,
-	progress: Progress,
-) -> Progress {
-	let mut session: Practice = practice(exercise.clone(), progress, mode);
+/// One student step at `token`, which must be a step the rules allow now, whether or not a
+/// hint would name it: select it and answer it with its value.
+fn take(session: &mut Practice, token: &str) {
+	let node: NodeId = at(session, token);
+	let step: NextStep = session
+		.session()
+		.allowed_steps()
+		.into_iter()
+		.find(|step| step.node_id == node)
+		.unwrap_or_else(|| panic!("{token} is not an allowed step"));
+	assert!(!session.select(node));
+	session.paste(&step.outcome.expect("a value").to_string());
+	assert!(session.submit(), "{token}: {:?}", session.report());
+}
+
+/// The progress after one step of `exercise`, or every step when `finish`, added to what
+/// `progress` already holds.
+fn stepped(exercise: &Exercise, finish: bool, progress: Progress) -> Progress {
+	let mut session: Practice = practice(exercise.clone(), progress);
 	if finish {
 		solve(&mut session);
 	} else {
@@ -1003,12 +907,7 @@ fn stepped(
 
 /// The progress a student leaves behind after working on one question of one set.
 fn worked(questions: &[Exercise], index: usize, finish: bool) -> Progress {
-	stepped(
-		&questions[index],
-		EvaluationMode::ShortCircuit,
-		finish,
-		Progress::default(),
-	)
+	stepped(&questions[index], finish, Progress::default())
 }
 
 /// The progress after writing these proof lines, each one accepted, added to what `progress`
@@ -1029,12 +928,7 @@ fn an_ordered_course_over_an_imported_set_walks_the_file_and_ends_at_its_last_qu
 	let questions: Vec<Question> = set.of_language(Language::Python);
 	assert_eq!(ids(&questions), ["mul", "div", "add"]);
 
-	let mut walk: Lesson = lesson(
-		questions,
-		0,
-		Progress::default(),
-		EvaluationMode::ShortCircuit,
-	);
+	let mut walk: Lesson = lesson(questions, 0, Progress::default());
 	assert_eq!(walk.course().supply(), Supply::Ordered);
 	// The set travels with every question it handed out; progress is saved against it.
 	assert_eq!(evaluating(&walk).question().set, "ordered-set");
@@ -1066,7 +960,7 @@ fn an_ordered_set_opens_where_the_saved_pointer_left_off_inside_that_very_set() 
 
 	// Nothing saved: the set opens at its first question.
 	assert_eq!(
-		stepwise::app::resume_in_set(&Progress::default(), &questions, None).unwrap(),
+		stepwise::app::resume_in_set(&Progress::default(), &questions).unwrap(),
 		0
 	);
 
@@ -1074,19 +968,19 @@ fn an_ordered_set_opens_where_the_saved_pointer_left_off_inside_that_very_set() 
 	let unfinished: Progress = worked(&exercises, 1, false);
 	assert!(unfinished.points_at("ordered-set", "div"));
 	assert_eq!(
-		stepwise::app::resume_in_set(&unfinished, &questions, None).unwrap(),
+		stepwise::app::resume_in_set(&unfinished, &questions).unwrap(),
 		1
 	);
 
 	// Once it is finished, the set moves on by one — from wherever it was, not to the end.
 	let finished_first: Progress = worked(&exercises, 0, true);
 	assert_eq!(
-		stepwise::app::resume_in_set(&finished_first, &questions, None).unwrap(),
+		stepwise::app::resume_in_set(&finished_first, &questions).unwrap(),
 		1
 	);
 	let finished_middle: Progress = worked(&exercises, 1, true);
 	assert_eq!(
-		stepwise::app::resume_in_set(&finished_middle, &questions, None).unwrap(),
+		stepwise::app::resume_in_set(&finished_middle, &questions).unwrap(),
 		2
 	);
 
@@ -1094,7 +988,7 @@ fn an_ordered_set_opens_where_the_saved_pointer_left_off_inside_that_very_set() 
 	let finished_last: Progress = worked(&exercises, 2, true);
 	assert!(finished_last.points_at("ordered-set", "add"));
 	assert_eq!(
-		stepwise::app::resume_in_set(&finished_last, &questions, None).unwrap(),
+		stepwise::app::resume_in_set(&finished_last, &questions).unwrap(),
 		2
 	);
 
@@ -1104,7 +998,7 @@ fn an_ordered_set_opens_where_the_saved_pointer_left_off_inside_that_very_set() 
 	elsewhere.current_set = "other-set".into();
 	assert_eq!(elsewhere.current, "div");
 	assert_eq!(
-		stepwise::app::resume_in_set(&elsewhere, &questions, None).unwrap(),
+		stepwise::app::resume_in_set(&elsewhere, &questions).unwrap(),
 		0
 	);
 
@@ -1115,7 +1009,7 @@ fn an_ordered_set_opens_where_the_saved_pointer_left_off_inside_that_very_set() 
 	alternated.current_set = "other-set".into();
 	alternated.current = "whatever-was-practised-there".into();
 	assert_eq!(
-		stepwise::app::resume_in_set(&alternated, &questions, None).unwrap(),
+		stepwise::app::resume_in_set(&alternated, &questions).unwrap(),
 		1
 	);
 }
@@ -1145,8 +1039,7 @@ fn two_sets_naming_the_same_question_differently_never_reopen_each_others_work()
 	assert!(!stranger.session().is_finished());
 	assert!(stranger.session().attempts().is_empty());
 	assert_eq!(
-		stepwise::app::resume_in_set(&progress, &other.of_language(Language::Python), None)
-			.unwrap(),
+		stepwise::app::resume_in_set(&progress, &other.of_language(Language::Python)).unwrap(),
 		0
 	);
 }
@@ -1164,10 +1057,10 @@ fn a_question_copied_byte_for_byte_into_another_set_shares_the_work_but_not_the_
 
 	let progress: Progress = worked(&first_questions, 1, true);
 
-	// Attempts are keyed by content — the rules version, the strategy, the language, the
-	// bindings and the source — so the same work done on the same question is the same
-	// work, whichever file it was distributed in. This is the key doing its job, not a
-	// leak: what is set-scoped is the POINTER, and that is asserted right below.
+	// Attempts are keyed by content — the rules version, the language, the bindings and the
+	// source — so the same work done on the same question is the same work, whichever file
+	// it was distributed in. This is the key doing its job, not a leak: what is set-scoped is
+	// the POINTER, and that is asserted right below.
 	let shared: Practice = ordered(&copy_questions, 1, progress.clone());
 	assert!(shared.session().is_finished());
 	assert_eq!(
@@ -1177,7 +1070,7 @@ fn a_question_copied_byte_for_byte_into_another_set_shares_the_work_but_not_the_
 			.attempts()
 	);
 	assert_eq!(
-		stepwise::app::resume_in_set(&progress, &copy.of_language(Language::Python), None).unwrap(),
+		stepwise::app::resume_in_set(&progress, &copy.of_language(Language::Python)).unwrap(),
 		0
 	);
 }
@@ -1187,10 +1080,7 @@ fn editing_a_question_opens_it_fresh_and_leaves_the_earlier_attempts_in_the_file
 	let before: QuestionSet = imported(&set_around("set-a", "甲套", "2 + (3 * 4)"));
 	let before_questions: Vec<Exercise> = evaluations(&before, Language::Python);
 	let progress: Progress = worked(&before_questions, 1, true);
-	let old_key: String = before_questions[1]
-		.session(EvaluationMode::ShortCircuit)
-		.unwrap()
-		.progress_key();
+	let old_key: String = before_questions[1].session().unwrap().progress_key();
 	assert!(progress.sessions.contains_key(&old_key));
 	let saved: usize = progress.sessions.len();
 
@@ -1209,8 +1099,7 @@ fn editing_a_question_opens_it_fresh_and_leaves_the_earlier_attempts_in_the_file
 
 	// The pointer still names this question of this set, so that is where the set opens.
 	assert_eq!(
-		stepwise::app::resume_in_set(&progress, &after.of_language(Language::Python), None)
-			.unwrap(),
+		stepwise::app::resume_in_set(&progress, &after.of_language(Language::Python)).unwrap(),
 		1
 	);
 }
@@ -1226,81 +1115,10 @@ fn the_set_a_question_came_from_travels_into_the_progress_and_a_random_one_carri
 
 	// A generated question belongs to no set, and an empty name is what says so.
 	let random: Exercise = generate::generate(Language::Python, 7).unwrap();
-	let mut drawn: Practice = practice(
-		random.clone(),
-		Progress::default(),
-		EvaluationMode::ShortCircuit,
-	);
+	let mut drawn: Practice = practice(random.clone(), Progress::default());
 	drawn.record();
 	assert!(drawn.progress().current_set.is_empty());
 	assert_eq!(drawn.progress().current, random.name);
-}
-
-#[test]
-fn a_question_opens_in_the_strategy_its_own_file_asked_for_unless_something_beats_it() {
-	let set: QuestionSet = imported(MODE_SET);
-	let questions: Vec<Question> = set.of_language(Language::Python);
-	let eager: &Question = &questions[0];
-	let plain: &Question = &questions[1];
-	let logic_questions: Vec<Question> = set.of_language(Language::Logic);
-	let logic: &Question = &logic_questions[0];
-
-	// Python is taught with short circuit on; this question says otherwise for itself, and
-	// its neighbour in the same file shows the difference is the field, not the language.
-	assert_eq!(
-		stepwise::app::starting_mode(None, &Progress::default(), eager),
-		EvaluationMode::Eager
-	);
-	assert_eq!(
-		stepwise::app::starting_mode(None, &Progress::default(), plain),
-		EvaluationMode::ShortCircuit
-	);
-
-	// What the student asked for on the command line still wins.
-	assert_eq!(
-		stepwise::app::starting_mode(
-			Some(EvaluationMode::ShortCircuit),
-			&Progress::default(),
-			eager
-		),
-		EvaluationMode::ShortCircuit
-	);
-
-	// A saved strategy is this question's only when the pointer names this set and this ID.
-	let mut saved: Progress = Progress::default();
-	saved.current_set = "mode-set".into();
-	saved.current = "plain-q".into();
-	saved.mode = EvaluationMode::Eager;
-	assert_eq!(
-		stepwise::app::starting_mode(None, &saved, plain),
-		EvaluationMode::Eager
-	);
-	let mut elsewhere: Progress = saved.clone();
-	elsewhere.current_set = "other-set".into();
-	assert_eq!(
-		stepwise::app::starting_mode(None, &elsewhere, plain),
-		EvaluationMode::ShortCircuit
-	);
-
-	// Nor does a saved strategy reach the question beside it in its own set: the logic
-	// question keeps what the pointer left on it, and the Python question with no field of
-	// its own opens in the default rather than in what was saved for logic.
-	let mut on_logic: Progress = Progress::default();
-	on_logic.current_set = "mode-set".into();
-	on_logic.current = "logic-q".into();
-	on_logic.mode = EvaluationMode::Eager;
-	assert_eq!(
-		logic.evaluation().expect("an evaluation question").mode(),
-		EvaluationMode::ShortCircuit
-	);
-	assert_eq!(
-		stepwise::app::starting_mode(None, &on_logic, logic),
-		EvaluationMode::Eager
-	);
-	assert_eq!(
-		stepwise::app::starting_mode(None, &on_logic, plain),
-		EvaluationMode::ShortCircuit
-	);
 }
 
 /// A course is one language's questions of a set, every kind included: the proof in the file
@@ -1330,12 +1148,7 @@ fn one_file_may_mix_languages_and_question_kinds_and_a_course_gets_every_questio
 	assert_eq!(proof.set(), "mixed-set");
 
 	// The Python course steps from one Python question to the next and ends there.
-	let mut walk: Lesson = lesson(
-		set.of_language(Language::Python),
-		0,
-		Progress::default(),
-		EvaluationMode::ShortCircuit,
-	);
+	let mut walk: Lesson = lesson(set.of_language(Language::Python), 0, Progress::default());
 	assert!(walk.next_question().unwrap());
 	assert_eq!(evaluating(&walk).question().name, "py-two");
 	assert!(!walk.next_question().unwrap());
@@ -1357,7 +1170,7 @@ fn a_logic_course_walks_evaluation_and_proof_questions_in_file_order_and_ends_on
 	let questions: Vec<Question> = set.of_language(Language::Logic);
 	assert_eq!(ids(&questions), ["before", "chain", "after"]);
 
-	let mut walk: Lesson = lesson(questions, 0, Progress::default(), EvaluationMode::Eager);
+	let mut walk: Lesson = lesson(questions, 0, Progress::default());
 	assert_eq!(evaluating(&walk).question().name, "before");
 
 	assert!(walk.next_question().unwrap());
@@ -1386,12 +1199,7 @@ fn a_logic_course_walks_evaluation_and_proof_questions_in_file_order_and_ends_on
 	// A set that ends on a proof ends the same way, and the proof in hand keeps the line the
 	// student was still typing.
 	let mixed: QuestionSet = imported(MIXED_SET);
-	let mut ending: Lesson = lesson(
-		mixed.of_language(Language::Logic),
-		0,
-		Progress::default(),
-		EvaluationMode::Eager,
-	);
+	let mut ending: Lesson = lesson(mixed.of_language(Language::Logic), 0, Progress::default());
 	assert!(ending.next_question().unwrap());
 	assert_eq!(proving(&ending).question().name, "chain");
 	proving_mut(&mut ending).paste("Q ; mp");
@@ -1411,12 +1219,7 @@ fn work_on_each_question_survives_moving_away_and_back_and_undo_stays_inside_its
 	let set: QuestionSet = imported(WALK_SET);
 	let before: Exercise = evaluation_question(&set, "before");
 	let chain: ProofQuestion = proof_question(&set, "chain");
-	let mut walk: Lesson = lesson(
-		set.of_language(Language::Logic),
-		0,
-		Progress::default(),
-		EvaluationMode::Eager,
-	);
+	let mut walk: Lesson = lesson(set.of_language(Language::Logic), 0, Progress::default());
 	step_once(evaluating_mut(&mut walk));
 	let stepped_render: String = evaluating(&walk).session().render().into();
 	assert_eq!(evaluating(&walk).session().attempts().len(), 1);
@@ -1437,9 +1240,7 @@ fn work_on_each_question_survives_moving_away_and_back_and_undo_stays_inside_its
 		[CHAIN[0]]
 	);
 	assert_eq!(
-		walk.progress()
-			.attempts(&before.session(EvaluationMode::Eager).unwrap())
-			.len(),
+		walk.progress().attempts(&before.session().unwrap()).len(),
 		1
 	);
 
@@ -1461,82 +1262,89 @@ fn work_on_each_question_survives_moving_away_and_back_and_undo_stays_inside_its
 	assert!(evaluating(&walk).session().attempts().is_empty());
 }
 
-/// A proof has no evaluation strategy, so the one the student switched to on an evaluation
-/// question is carried across it and the next evaluation question opens in it; a course that
-/// opens on a proof carries the strategy it was opened with.
+/// A proof has no evaluation strategy, and now neither has an evaluation question: nothing
+/// about how the student evaluated one question is carried across a proof to the next. Each
+/// evaluation question opens exactly as it opens on its own, and its attempts stay under its
+/// own key, whichever way the course reached it.
 #[test]
-fn the_strategy_the_student_chose_is_carried_across_a_proof_to_the_next_evaluation_question() {
+fn evaluation_questions_on_either_side_of_a_proof_keep_their_own_attempts_and_inherit_nothing() {
 	let set: QuestionSet = imported(WALK_SET);
-	let mut walk: Lesson = lesson(
-		set.of_language(Language::Logic),
-		0,
-		Progress::default(),
-		EvaluationMode::Eager,
-	);
-	assert_eq!(walk.mode(), EvaluationMode::Eager);
-	assert!(evaluating_mut(&mut walk).toggle_mode().unwrap());
-	assert_eq!(walk.mode(), EvaluationMode::ShortCircuit);
+	let before: Exercise = evaluation_question(&set, "before");
+	let after: Exercise = evaluation_question(&set, "after");
+	let mut walk: Lesson = lesson(set.of_language(Language::Logic), 0, Progress::default());
+	step_once(evaluating_mut(&mut walk));
 
 	assert!(walk.next_question().unwrap());
 	assert_eq!(proving(&walk).question().name, "chain");
-	assert_eq!(walk.mode(), EvaluationMode::ShortCircuit);
-
 	assert!(walk.next_question().unwrap());
+
+	// Past the proof, the next question is the same session it is on its own.
+	let alone: Practice = practice(after.clone(), Progress::default());
 	assert_eq!(evaluating(&walk).question().name, "after");
 	assert_eq!(
-		evaluating(&walk).session().mode(),
-		EvaluationMode::ShortCircuit
+		evaluating(&walk).session().render(),
+		alone.session().render()
 	);
-	// Recording the proof on the way left the saved strategy where the evaluation question
-	// before it put it.
-	assert_eq!(walk.progress().mode, EvaluationMode::ShortCircuit);
+	assert_eq!(
+		evaluating(&walk).session().allowed_steps(),
+		alone.session().allowed_steps()
+	);
+	assert!(evaluating(&walk).session().attempts().is_empty());
+	step_once(evaluating_mut(&mut walk));
 
-	// Back across the proof, the first question opens in that strategy too.
+	// Back across the proof: one record per evaluation question, each under the key its own
+	// content gives it, and the first question replays its own.
 	assert!(walk.previous_question().unwrap());
 	assert!(walk.previous_question().unwrap());
 	assert_eq!(evaluating(&walk).question().name, "before");
-	assert_eq!(
-		evaluating(&walk).session().mode(),
-		EvaluationMode::ShortCircuit
-	);
+	assert_eq!(evaluating(&walk).session().attempts().len(), 1);
+	let keys: Vec<String> = walk.progress().sessions.keys().cloned().collect();
+	let mut expected: Vec<String> = vec![
+		before.session().unwrap().progress_key(),
+		after.session().unwrap().progress_key(),
+	];
+	expected.sort();
+	assert_eq!(keys, expected);
+	assert_eq!(walk.progress().attempts(&after.session().unwrap()).len(), 1);
 
-	// Opened on a proof, the course carries what it was opened with — here not the logic
-	// default — into the evaluation question it goes back to.
+	// Opened on a proof, a course has nothing to hand the evaluation question it goes back
+	// to: that question too opens as it does on its own.
 	let mixed: QuestionSet = imported(MIXED_SET);
-	let mut on_proof: Lesson = lesson(
-		mixed.of_language(Language::Logic),
-		1,
-		Progress::default(),
-		EvaluationMode::ShortCircuit,
-	);
+	let mut on_proof: Lesson = lesson(mixed.of_language(Language::Logic), 1, Progress::default());
 	assert_eq!(proving(&on_proof).question().name, "chain");
-	assert_eq!(on_proof.mode(), EvaluationMode::ShortCircuit);
 	assert!(on_proof.previous_question().unwrap());
+	let logic_one: Practice = practice(
+		evaluation_question(&mixed, "logic-one"),
+		Progress::default(),
+	);
+	assert_eq!(evaluating(&on_proof).question().name, "logic-one");
 	assert_eq!(
-		evaluating(&on_proof).session().mode(),
-		EvaluationMode::ShortCircuit
+		evaluating(&on_proof).session().allowed_steps(),
+		logic_one.session().allowed_steps()
 	);
 }
 
 /// Recording a proof moves the pointer to it, set and name, so a later launch knows where the
-/// student was. The strategy is an evaluation matter and is left as it was. A proof written
-/// out on the command line belongs to no set and says so with an empty name, and a bare
-/// launch after it has nothing to rebuild it from, so it draws a new question.
+/// student was, and leaves every evaluation record as it was. A proof written out on the
+/// command line belongs to no set and says so with an empty name, and a bare launch after it
+/// has nothing to rebuild it from, so it draws a new question.
 #[test]
-fn recording_a_proof_points_the_progress_at_it_and_leaves_the_saved_strategy_alone() {
+fn recording_a_proof_points_the_progress_at_it_and_leaves_the_evaluation_records_alone() {
 	let set: QuestionSet = imported(MIXED_SET);
 	let chain: ProofQuestion = proof_question(&set, "chain");
 	assert_eq!(chain.set, "mixed-set");
-	for mode in [EvaluationMode::ShortCircuit, EvaluationMode::Eager] {
-		let mut elsewhere: Progress = Progress::default();
-		elsewhere.current_set = "other-set".into();
-		elsewhere.current = "q1".into();
-		elsewhere.mode = mode;
-		let recorded: Progress = proved(&chain, &CHAIN[..1], elsewhere);
-		assert!(recorded.points_at("mixed-set", "chain"));
-		assert_eq!(recorded.mode, mode);
-		assert_eq!(recorded.commands(&chain.proof().unwrap()), &CHAIN[..1]);
-	}
+	let mut elsewhere: Progress = stepped(
+		&evaluation_question(&set, "logic-one"),
+		false,
+		Progress::default(),
+	);
+	assert_eq!(elsewhere.sessions.len(), 1);
+	elsewhere.current_set = "other-set".into();
+	elsewhere.current = "q1".into();
+	let recorded: Progress = proved(&chain, &CHAIN[..1], elsewhere.clone());
+	assert!(recorded.points_at("mixed-set", "chain"));
+	assert_eq!(recorded.sessions, elsewhere.sessions);
+	assert_eq!(recorded.commands(&chain.proof().unwrap()), &CHAIN[..1]);
 
 	let custom: ProofQuestion = written(&["P", "Q"], "(P ∧ Q) ∨ R");
 	let recorded: Progress = proved(&custom, &["P ∧ Q ; and-intro ; 1,2"], Progress::default());
@@ -1559,11 +1367,8 @@ fn an_ordered_set_skips_a_finished_proof_and_stops_at_an_unfinished_one() {
 	let before: Exercise = evaluation_question(&set, "before");
 	let after: Exercise = evaluation_question(&set, "after");
 	let chain: ProofQuestion = proof_question(&set, "chain");
-	// Evaluation questions are worked in the default strategy, the one the set judges a
-	// question the pointer does not name in.
-	let default: EvaluationMode = EvaluationMode::default();
 	let resume = |progress: &Progress| -> usize {
-		stepwise::app::resume_in_set(progress, &questions, None).unwrap()
+		stepwise::app::resume_in_set(progress, &questions).unwrap()
 	};
 
 	// The pointer on the proof itself.
@@ -1575,15 +1380,14 @@ fn an_ordered_set_skips_a_finished_proof_and_stops_at_an_unfinished_one() {
 
 	// The pointer on the finished question before it: an unfinished proof is where the set
 	// stops, whether it has a line, an empty record or no record at all.
-	let first_done: Progress = stepped(&before, default, true, Progress::default());
+	let first_done: Progress = stepped(&before, true, Progress::default());
 	assert!(first_done.points_at("walk-set", "before"));
 	assert!(first_done.proofs.is_empty());
 	assert_eq!(resume(&first_done), 1);
-	assert_eq!(resume(&stepped(&before, default, true, opened.clone())), 1);
+	assert_eq!(resume(&stepped(&before, true, opened.clone())), 1);
 	assert_eq!(
 		resume(&stepped(
 			&before,
-			default,
 			true,
 			proved(&chain, &CHAIN[..1], Progress::default())
 		)),
@@ -1591,26 +1395,13 @@ fn an_ordered_set_skips_a_finished_proof_and_stops_at_an_unfinished_one() {
 	);
 	// A finished proof is passed over, to the evaluation question after it.
 	let proof_done: Progress = proved(&chain, &CHAIN, Progress::default());
-	assert_eq!(
-		resume(&stepped(&before, default, true, proof_done.clone())),
-		2
-	);
+	assert_eq!(resume(&stepped(&before, true, proof_done.clone())), 2);
 
 	// Everything finished: the last question stays in hand, from wherever the pointer is.
-	let all_done: Progress = stepped(
-		&after,
-		default,
-		true,
-		stepped(&before, default, true, proof_done.clone()),
-	);
+	let all_done: Progress = stepped(&after, true, stepped(&before, true, proof_done.clone()));
 	assert!(all_done.points_at("walk-set", "after"));
 	assert_eq!(resume(&all_done), 2);
-	let pointer_first: Progress = stepped(
-		&before,
-		default,
-		true,
-		stepped(&after, default, true, proof_done.clone()),
-	);
+	let pointer_first: Progress = stepped(&before, true, stepped(&after, true, proof_done.clone()));
 	assert!(pointer_first.points_at("walk-set", "before"));
 	assert_eq!(resume(&pointer_first), 2);
 
@@ -1622,11 +1413,11 @@ fn an_ordered_set_skips_a_finished_proof_and_stops_at_an_unfinished_one() {
 	let finished: Progress = proved(
 		&mixed_chain,
 		&CHAIN,
-		stepped(&logic_one, default, true, Progress::default()),
+		stepped(&logic_one, true, Progress::default()),
 	);
 	assert!(finished.points_at("mixed-set", "chain"));
 	assert_eq!(
-		stepwise::app::resume_in_set(&finished, &mixed_questions, None).unwrap(),
+		stepwise::app::resume_in_set(&finished, &mixed_questions).unwrap(),
 		1
 	);
 }
@@ -1652,11 +1443,9 @@ fn a_bare_launch_reopens_an_unfinished_built_in_proof_and_replaces_a_finished_on
 
 	// The lesson it opens continues from the saved lines, and random practice draws an
 	// evaluation question after it: the generator writes expressions, not proofs.
-	let mode: EvaluationMode = stepwise::app::starting_mode(None, &two_lines, &reopened);
 	let mut resumed: Lesson = Lesson::new(
 		Course::random(vec![reopened], 0).unwrap(),
 		two_lines.clone(),
-		mode,
 	)
 	.unwrap();
 	assert_eq!(proving(&resumed).proof().lines().len(), 3);
@@ -1702,42 +1491,13 @@ fn a_bare_launch_reopens_an_unfinished_built_in_proof_and_replaces_a_finished_on
 	);
 }
 
-/// A proof has no strategy of its own: the one asked for, else the default. A saved strategy
-/// never reaches it, even when the pointer names the proof.
-#[test]
-fn a_proof_question_starts_in_the_requested_strategy_or_the_default() {
-	let mp: ProofQuestion = builtin_proof("mp");
-	let question: Question = Question::Proof(mp.clone());
-	assert_eq!(
-		stepwise::app::starting_mode(None, &Progress::default(), &question),
-		EvaluationMode::ShortCircuit
-	);
-	assert_eq!(
-		stepwise::app::starting_mode(Some(EvaluationMode::Eager), &Progress::default(), &question),
-		EvaluationMode::Eager
-	);
-
-	let mut pointed: Progress = proved(&mp, &[], Progress::default());
-	pointed.mode = EvaluationMode::Eager;
-	assert!(pointed.points_at("builtin", "mp"));
-	assert_eq!(
-		stepwise::app::starting_mode(None, &pointed, &question),
-		EvaluationMode::ShortCircuit
-	);
-}
-
 /// One record across both kinds: each question opens its own block, separated from the one
 /// before by one blank line. An evaluation block ends on the expression as it was left; a
 /// proof owes nothing when it closes, since each line is archived once as it is accepted.
 #[test]
 fn the_transcript_archives_evaluation_and_proof_blocks_across_one_lesson() {
 	let set: QuestionSet = imported(WALK_SET);
-	let mut walk: Lesson = lesson(
-		set.of_language(Language::Logic),
-		0,
-		Progress::default(),
-		EvaluationMode::Eager,
-	);
+	let mut walk: Lesson = lesson(set.of_language(Language::Logic), 0, Progress::default());
 	let mut transcript: Transcript = Transcript::default();
 	assert_eq!(transcript.sync(&walk), ["命题逻辑", "P=True Q=False"]);
 

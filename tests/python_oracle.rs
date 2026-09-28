@@ -1,12 +1,13 @@
 use std::{
 	collections::BTreeMap,
 	io::Write,
+	ops::Range,
 	process::{Command, Stdio},
 };
 
 use serde::{Deserialize, Serialize};
 use stepwise::{
-	core::{EvaluationMode, Language, Outcome, Session, Value},
+	core::{EvalError, Language, NextStep, NodeId, Outcome, Session, Value},
 	exercises, generate,
 	python::{self, parse_value},
 };
@@ -26,6 +27,12 @@ struct Observation {
 	bits: String,
 }
 
+/// Two checks share one CPython process. Along the language's own order every displayed state
+/// must evaluate, as a whole, to what CPython gives the original. Every step a student may
+/// submit in those states is checked locally instead: the selected span alone must evaluate
+/// to that step's own outcome. A step that computes an operand a short circuit would skip is
+/// real Python semantics for that span, but the route it opens need not end where CPython
+/// ends the original, so no whole-expression claim is made about it.
 #[test]
 #[ignore = "requires python3; run cargo test --test python_oracle -- --ignored --nocapture"]
 fn matches_cpython_values_types_exceptions_and_float_bits() {
@@ -91,6 +98,15 @@ fn matches_cpython_values_types_exceptions_and_float_bits() {
 		"None == None",
 		"1e308 ** 2",
 		"(10**1000) + 0.5",
+		// Operands a short circuit skips may still be computed, and some of them raise.
+		"False and (1 / 0 > 1)",
+		"True or (2 % 0)",
+		"0 and (1 // 0)",
+		"(1 > 2) and (3 / 0 > 1)",
+		"False and 2 + 3 > 1",
+		"True or (False and 4 > 5)",
+		"(False and (4 > 5)) or ((1 + 1) == 2)",
+		"0 or (0 and (1 / 0))",
 	] {
 		sources.push(source.into());
 	}
@@ -101,7 +117,11 @@ fn matches_cpython_values_types_exceptions_and_float_bits() {
 			bindings: BTreeMap::new(),
 		})
 		.collect();
-	for exercise in exercises::builtin().unwrap().exercises() {
+	let sets: [exercises::QuestionSet; 2] = [
+		exercises::builtin().unwrap(),
+		exercises::QuestionSet::import(include_str!("../questions/example.toml")).unwrap(),
+	];
+	for exercise in sets.iter().flat_map(exercises::QuestionSet::exercises) {
 		if matches!(exercise.language, Language::Python) && !exercise.bindings.is_empty() {
 			originals.push(Case {
 				source: exercise.expression.clone(),
@@ -134,19 +154,41 @@ fn matches_cpython_values_types_exceptions_and_float_bits() {
 	let original_count: usize = originals.len();
 	let mut cases: Vec<Case> = Vec::new();
 	let mut expected: Vec<Outcome> = Vec::new();
+	let mut spans: Vec<Case> = Vec::new();
+	let mut span_outcomes: Vec<Outcome> = Vec::new();
+	let mut limited: usize = 0;
 	for original in originals {
 		let bindings: BTreeMap<String, Value> = original
 			.bindings
 			.iter()
 			.map(|(name, literal)| (name.clone(), parse_value(literal).unwrap()))
 			.collect();
-		let mut session: Session =
-			python::session(&original.source, &bindings, EvaluationMode::ShortCircuit).unwrap();
+		let mut session: Session = python::session(&original.source, &bindings).unwrap();
 		let mut states: Vec<String> = vec![original.source.clone()];
 		if session.render() != original.source {
 			states.push(session.render().into());
 		}
 		while let Some(step) = session.next_step() {
+			let allowed: Vec<NextStep> = session.allowed_steps();
+			assert!(
+				allowed.contains(&step),
+				"{}: the hinted step is not submittable in {}",
+				original.source,
+				session.render()
+			);
+			let (text, ranges): (&str, &BTreeMap<NodeId, Range<usize>>) =
+				session.render_with_ranges();
+			for choice in allowed {
+				if matches!(choice.outcome, Err(EvalError::Limit(_))) {
+					limited += 1;
+					continue;
+				}
+				spans.push(Case {
+					source: text[ranges[&choice.node_id].clone()].trim().into(),
+					bindings: original.bindings.clone(),
+				});
+				span_outcomes.push(choice.outcome);
+			}
 			let answer: String = match step.outcome {
 				Ok(value) => value.to_string(),
 				Err(error) => error
@@ -179,6 +221,10 @@ fn matches_cpython_values_types_exceptions_and_float_bits() {
 			expected.push(outcome.clone());
 		}
 	}
+	let state_count: usize = cases.len();
+	let span_count: usize = spans.len();
+	cases.extend(spans);
+	expected.extend(span_outcomes);
 	let mut child: std::process::Child = Command::new("python3")
 		.arg(concat!(
 			env!("CARGO_MANIFEST_DIR"),
@@ -237,7 +283,6 @@ fn matches_cpython_values_types_exceptions_and_float_bits() {
 		}
 	}
 	eprintln!(
-		"CPython oracle: {original_count} original expressions and {} displayed states matched (types, values, exceptions, float bits).",
-		cases.len()
+		"CPython oracle: {original_count} original expressions and {state_count} displayed states matched as a whole; {span_count} submittable steps matched their selected span alone; {limited} steps beyond this program's limits skipped (types, values, exceptions, float bits)."
 	);
 }

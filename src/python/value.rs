@@ -135,7 +135,7 @@ fn type_error(reason: &str) -> EvalError {
 fn zero_division() -> EvalError {
 	EvalError::Raised {
 		name: "ZeroDivisionError",
-		reason: "除数为零；Python 会在这一步停止，不会得到一个数值。".into(),
+		reason: "除数为零；这一步引发异常，不会得到一个数值。".into(),
 	}
 }
 

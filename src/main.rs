@@ -9,7 +9,7 @@ use std::{
 use clap::{ArgGroup, Parser};
 use stepwise::{
 	app::{self, Course, Lesson},
-	core::{EvaluationMode, ExprKind, Language, Session},
+	core::{ExprKind, Language, Session},
 	exercises::{self, Exercise, ProofQuestion, Question, QuestionSet},
 	generate,
 	logic::{Formula, parse_formula, proof::Proof},
@@ -21,13 +21,12 @@ use stepwise::{
 /// requirement when the missing argument conflicts with one already given, so `--premise` and
 /// `--check-proof` repeat these conflicts rather than relying on the `--goal` and
 /// `--proof` they require: `--python --premise P` has to be refused, not quietly dropped.
-const PROOF_ONLY: [&str; 9] = [
+const PROOF_ONLY: [&str; 8] = [
 	"python",
 	"expression",
 	"exercise",
 	"list",
 	"trace",
-	"evaluation",
 	"random",
 	"assign",
 	"equivalent",
@@ -66,7 +65,7 @@ struct Args {
 	#[arg(long, value_parser = assignment, conflicts_with_all = ["proof", "goal", "list"])]
 	assign: Vec<(String, String)>,
 	/// 用 BDD 检查两个公式在所有赋值下是否等价，不进入练习
-	#[arg(long, requires_all = ["logic", "expression"], conflicts_with_all = ["trace", "exercise", "proof", "list", "evaluation", "assign"])]
+	#[arg(long, requires_all = ["logic", "expression"], conflicts_with_all = ["trace", "exercise", "proof", "list", "assign"])]
 	equivalent: Option<String>,
 	/// 按名称打开当前题集里的一道证明题，与 --exercise 查同一份题集；--list 列出可用名称
 	#[arg(long, value_name = "NAME", requires = "logic", conflicts_with_all = ["python", "expression", "exercise", "list", "goal", "premise"])]
@@ -108,9 +107,6 @@ struct Args {
 	/// 输出逐步演示，不启动 TUI、不读写进度
 	#[arg(long)]
 	trace: bool,
-	/// 短路开关；关闭时 Python 模式为教学变体
-	#[arg(long, value_parser = ["short-circuit", "eager"])]
-	evaluation: Option<String>,
 	#[arg(long)]
 	no_save: bool,
 	#[arg(long)]
@@ -330,11 +326,6 @@ fn execute(args: Args) -> Result<(), Box<dyn Error>> {
 		.map(Progress::load)
 		.transpose()?
 		.unwrap_or_default();
-	let requested: Option<EvaluationMode> = match args.evaluation.as_deref() {
-		Some("eager") => Some(EvaluationMode::Eager),
-		Some("short-circuit") => Some(EvaluationMode::ShortCircuit),
-		_ => None,
-	};
 	// --set makes the file the course: its questions of this language, evaluation and proof
 	// alike, in its order, ending at the last one.
 	let ordered: bool = args.set.is_some();
@@ -358,7 +349,6 @@ fn execute(args: Args) -> Result<(), Box<dyn Error>> {
 			language,
 			expression,
 			bindings: BTreeMap::new(),
-			evaluation: None,
 			note: None,
 		})];
 		0
@@ -391,7 +381,7 @@ fn execute(args: Args) -> Result<(), Box<dyn Error>> {
 			.map(|index| questions[*index].clone())
 			.collect();
 		evaluations[if ordered {
-			app::resume_in_set(&progress, &candidates, requested)?
+			app::resume_in_set(&progress, &candidates)?
 		} else {
 			candidates
 				.iter()
@@ -402,7 +392,7 @@ fn execute(args: Args) -> Result<(), Box<dyn Error>> {
 		if questions.is_empty() {
 			return Err(no_questions(&set, language).into());
 		}
-		app::resume_in_set(&progress, &questions, requested)?
+		app::resume_in_set(&progress, &questions)?
 	} else {
 		questions = vec![app::resume_or_generate(language, &progress, &questions)?];
 		0
@@ -421,9 +411,6 @@ fn execute(args: Args) -> Result<(), Box<dyn Error>> {
 		}
 		Question::Proof(_) => {}
 	}
-	// --evaluation is the course's strategy, so it stands even when the course opens on a
-	// proof: the evaluation questions after it open in it.
-	let mode: EvaluationMode = app::starting_mode(requested, &progress, &questions[index]);
 	if args.trace {
 		let Question::Evaluation(exercise) = &questions[index] else {
 			// Name the set too: --proof looks the name up in whichever set is loaded.
@@ -441,7 +428,7 @@ fn execute(args: Args) -> Result<(), Box<dyn Error>> {
 		if !exercise.bindings.is_empty() {
 			println!("{}", exercise.assignments());
 		}
-		return trace(exercise.session(mode)?);
+		return trace(exercise.session()?);
 	}
 	// The chosen question starts a practice sequence; the course supplies the rest.
 	let course: Course = if ordered {
@@ -449,7 +436,7 @@ fn execute(args: Args) -> Result<(), Box<dyn Error>> {
 	} else {
 		Course::random(vec![questions.remove(index)], 0)?
 	};
-	tui::run(Lesson::new(course, progress, mode)?, path)
+	tui::run(Lesson::new(course, progress)?, path)
 }
 
 fn main() -> ExitCode {

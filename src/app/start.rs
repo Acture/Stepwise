@@ -1,6 +1,6 @@
 use crate::{
-	core::{EvaluationMode, Language, ParseError, RecordedAttempt, Session},
-	exercises::{Exercise, Question},
+	core::{Language, ParseError, RecordedAttempt, Session},
+	exercises::Question,
 	generate,
 	logic::proof::Proof,
 	progress::Progress,
@@ -32,13 +32,11 @@ pub fn resume_or_generate(
 		let begun: bool = match &question {
 			Question::Evaluation(exercise) => {
 				exercise.name.starts_with("random-")
-					|| !progress
-						.attempts(&exercise.session(progress.mode)?)
-						.is_empty()
+					|| !progress.attempts(&exercise.session()?).is_empty()
 			}
 			Question::Proof(proof) => !progress.commands(&proof.proof()?).is_empty(),
 		};
-		if begun && !finished(&question, progress, progress.mode)? {
+		if begun && !finished(&question, progress)? {
 			return Ok(question);
 		}
 	}
@@ -53,21 +51,13 @@ pub fn resume_or_generate(
 /// does not name is searched from its first question rather than restarted at it; a set with
 /// nothing left opens its last. An ordered set never generates a question.
 /// `questions` is the set's practisable questions and must not be empty.
-pub fn resume_in_set(
-	progress: &Progress,
-	questions: &[Question],
-	requested: Option<EvaluationMode>,
-) -> Result<usize, ParseError> {
+pub fn resume_in_set(progress: &Progress, questions: &[Question]) -> Result<usize, ParseError> {
 	let remembered: usize = questions
 		.iter()
 		.position(|question| progress.points_at(question.set(), question.name()))
 		.unwrap_or(0);
 	for (index, question) in questions.iter().enumerate().skip(remembered) {
-		if !finished(
-			question,
-			progress,
-			starting_mode(requested, progress, question),
-		)? {
+		if !finished(question, progress)? {
 			return Ok(index);
 		}
 	}
@@ -75,15 +65,12 @@ pub fn resume_in_set(
 }
 
 /// Whether the work saved for this question already finishes it: an evaluation question
-/// replayed in `mode`, or a proof replayed from its lines.
-fn finished(
-	question: &Question,
-	progress: &Progress,
-	mode: EvaluationMode,
-) -> Result<bool, ParseError> {
+/// replayed from its attempts — a value or an exception ends it alike — or a proof replayed
+/// from its lines.
+fn finished(question: &Question, progress: &Progress) -> Result<bool, ParseError> {
 	Ok(match question {
 		Question::Evaluation(exercise) => {
-			let initial: Session = exercise.session(mode)?;
+			let initial: Session = exercise.session()?;
 			let attempts: &[RecordedAttempt] = progress.attempts(&initial);
 			initial.replay(attempts)?.is_finished()
 		}
@@ -93,27 +80,4 @@ fn finished(
 			initial.clone().replay(commands)?.is_finished()
 		}
 	})
-}
-
-/// The strategy a launch starts in: what the caller asked for, else the saved strategy when
-/// it belongs to this very question of this very set, else the question's own. A proof has no
-/// strategy of its own, so a course that opens on one carries the caller's, or the default,
-/// into the evaluation questions after it.
-pub fn starting_mode(
-	requested: Option<EvaluationMode>,
-	progress: &Progress,
-	question: &Question,
-) -> EvaluationMode {
-	requested.unwrap_or_else(|| match question {
-		Question::Evaluation(exercise) => evaluation_mode(progress, exercise),
-		Question::Proof(_) => EvaluationMode::default(),
-	})
-}
-
-fn evaluation_mode(progress: &Progress, exercise: &Exercise) -> EvaluationMode {
-	if progress.points_at(&exercise.set, &exercise.name) {
-		progress.mode
-	} else {
-		exercise.mode()
-	}
 }
