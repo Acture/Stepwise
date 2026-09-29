@@ -1,0 +1,12 @@
+{
+	"$schema": "../gen/schemas/desktop-schema.json",
+	"identifier": "default",
+	"description": "Exactly what the main window's page calls. The shell's own commands (view, act, load_set) need no entry: a local page may call an app's commands while it declares no app manifest. The page opens question sets with the dialog plugin's open; data-tauri-drag-region starts a drag and, on a double click, toggles maximize (Tauri's drag.js); the devtools shortcut exists only in debug builds. A page that calls anything else adds it here.",
+	"windows": ["main"],
+	"permissions": [
+		"dialog:allow-open",
+		"core:window:allow-start-dragging",
+		"core:window:allow-internal-toggle-maximize",
+		"core:webview:allow-internal-toggle-devtools"
+	]
+}

@@ -35,4 +35,4 @@ pub use notice::{Notice, Report};
 pub use practice::Practice;
 pub use proof::ProofPractice;
 pub use start::{resume_in_set, resume_or_generate};
-pub use transcript::Transcript;
+pub use transcript::{Archived, Transcript};
