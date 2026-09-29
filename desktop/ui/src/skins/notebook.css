@@ -1,0 +1,54 @@
+/* 练习本: a squared exercise book. Blue-black ink is the line in hand and a paler ink what
+ * was already written; the line being written is in pencil, since it is not ink until the
+ * rules accept it; a blue ballpoint points; the teacher's red pen marks a mistake and a
+ * restrained green what is accepted. LXGW WenKai reads as handwriting here as it reads as
+ * chalk on slate. The marks waver a little, as a pen's do, and carry no grain. */
+
+[data-skin="notebook"] {
+	--skin-prose:
+		"LXGW WenKai", "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC",
+		"Microsoft YaHei", sans-serif;
+	--skin-formula:
+		"LXGW WenKai Mono", "LXGW WenKai", "SF Mono", Menlo, monospace;
+
+	--ink: #1c2b4a;
+	--ink-faded: #5e6a80;
+	--ink-bright: #0d2f86;
+	--mark-write: #545860;
+	--mark-wrong: #d12a24;
+	--mark-point: #1d5fd0;
+	--mark-good: #2c7a4b;
+	--quiet-mark: rgba(28, 43, 74, 0.2);
+
+	/* Paper ruled in fine blue squares. */
+	--surface:
+		linear-gradient(to right, rgba(74, 128, 196, 0.13) 1px, transparent 1px),
+		linear-gradient(to bottom, rgba(74, 128, 196, 0.13) 1px, transparent 1px),
+		#f4f6f1;
+	--surface-size: 20px 20px;
+	--surface-shadow: none;
+
+	/* The page's ruled foot. */
+	--tray: linear-gradient(
+		to bottom,
+		rgba(74, 128, 196, 0.5) 0 1px,
+		transparent 1px 3px,
+		rgba(74, 128, 196, 0.5) 3px 4px,
+		#eceee7 4px
+	);
+	--tray-shadow: none;
+
+	/* Ink sinks into paper a hair beyond its stroke. */
+	--ink-shadow: 0 0 0.35px currentColor;
+	--ink-glow: 0 0 8px rgba(29, 95, 208, 0.3);
+	--ink-texture: none;
+	--stroke-filter: none;
+	--mark-roughness: 0.7;
+
+	--focus-ring: 2px solid rgba(29, 95, 208, 0.55);
+	--scrollbar: rgba(28, 43, 74, 0.22);
+	--scrim: rgba(28, 43, 74, 0.16);
+	--sheet-shadow: -10px 0 28px rgba(28, 43, 74, 0.14);
+
+	color-scheme: light;
+}

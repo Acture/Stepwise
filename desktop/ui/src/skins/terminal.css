@@ -4,11 +4,11 @@
  * covers ∧ ∨ → ↔ ¬ (SF Mono does not); ⊥ and Chinese fall back to the system's fonts, as
  * they do in Terminal. */
 
-.board[data-skin="terminal"] {
-	--prose:
+[data-skin="terminal"] {
+	--skin-prose:
 		Menlo, ui-monospace, "Cascadia Mono", Consolas, "DejaVu Sans Mono",
 		"PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", monospace;
-	--formula: var(--prose);
+	--skin-formula: var(--skin-prose);
 	--size-formula: 26px;
 	--size-history: 17px;
 	--size-lead: 18px;
@@ -42,6 +42,8 @@
 
 	--focus-ring: 1px solid #5ec4d6;
 	--scrollbar: rgba(213, 216, 221, 0.2);
+	--scrim: rgba(0, 0, 0, 0.35);
+	--sheet-shadow: -18px 0 36px rgba(0, 0, 0, 0.45);
 
 	color-scheme: dark;
 }

@@ -13,7 +13,13 @@
 		view,
 		host,
 		onmenu,
-	}: { view: EvaluationView; host: Host; onmenu: () => void } = $props();
+		onsettings,
+	}: {
+		view: EvaluationView;
+		host: Host;
+		onmenu: () => void;
+		onsettings: () => void;
+	} = $props();
 
 	let work: HTMLElement | undefined = $state();
 	let next: HTMLElement | undefined = $state();
@@ -45,7 +51,7 @@
 	});
 </script>
 
-<Header course={view.course} {host} {onmenu} />
+<Header course={view.course} {host} {onmenu} {onsettings} />
 
 <main bind:this={work}>
 	{#if view.message}
@@ -220,7 +226,7 @@
 	}
 
 	.feedback.good {
-		color: var(--mark-good, var(--mark-point));
+		color: var(--mark-good);
 	}
 
 	.next-row {
