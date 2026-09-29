@@ -25,14 +25,14 @@ use ratatui::text::{Line, Text};
 use inline::{InlineTerminal, TerminalGuard};
 use keys::Screen;
 
-use crate::app::{Lesson, Task, Transcript};
+use crate::app::{Archived, Lesson, Task, Transcript};
 
 /// Archived lines as the inline terminal wants them; the app layer names no widget type.
-fn text(lines: Vec<String>) -> Text<'static> {
+fn text(lines: Vec<Archived>) -> Text<'static> {
 	Text::from(
 		lines
-			.into_iter()
-			.map(Line::from)
+			.iter()
+			.map(|line| Line::from(line.text().to_owned()))
 			.collect::<Vec<Line<'static>>>(),
 	)
 }
@@ -55,7 +55,7 @@ pub fn run(
 	let mut terminal: InlineTerminal = InlineTerminal::new()?;
 	let mut transcript: Transcript = Transcript::default();
 	loop {
-		let added: Vec<String> = transcript.sync(&screen.lesson);
+		let added: Vec<Archived> = transcript.sync(&screen.lesson);
 		if !added.is_empty() {
 			terminal.append(text(added))?;
 		}
@@ -78,13 +78,10 @@ pub fn run(
 /// was finished.
 fn closing(lesson: &Lesson) -> String {
 	match lesson.task() {
-		Task::Evaluation(practice) => {
-			let session: &crate::core::Session = practice.session();
-			match session.terminal_error() {
-				Some(error) => format!("{}\n{}", session.render(), render::raised(session, error)),
-				None => session.render().into(),
-			}
-		}
+		Task::Evaluation(practice) => match practice.raised() {
+			Some(raised) => format!("{}\n{raised}", practice.session().render()),
+			None => practice.session().render().into(),
+		},
 		Task::Proof(practice) => if practice.is_finished() {
 			"证明完成。"
 		} else {
