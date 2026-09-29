@@ -81,10 +81,10 @@ bun install --frozen-lockfile
 bun run app
 ```
 
-生成的 `target/release/bundle/macos/Stepwise.app` 可以直接打开；本机构建只做了临时签名，签名、公证和安装包见后续发布任务。和命令行一样，`--progress-file PATH` 指定进度文件，`--no-save` 不读写进度：
+生成的 `Stepwise.app` 在仓库根目录的 `target/release/bundle/macos/` 下，可以直接打开；本机构建只做了临时签名，签名、公证和安装包见后续发布任务。和命令行一样，`--progress-file PATH` 指定进度文件，`--no-save` 不读写进度：
 
 ```fish
-open target/release/bundle/macos/Stepwise.app --args --progress-file /tmp/stepwise-试用.json
+open ../../target/release/bundle/macos/Stepwise.app --args --progress-file /tmp/stepwise-试用.json
 ```
 
 窗口先让你选 Python 或命题逻辑（命题逻辑里也有自然演绎证明题）。标题栏右侧的 `‹ ›` 换题，`☰` 打开题目列表：可以点选题集里的任一道题、随机出题、打开 TOML 题集文件、换一种语言，或者换皮肤。题集文件打开后按文件里的顺序练习，走到最后一题为止。鼠标和键盘指向同一个节点：没有空格打开时，`↑↓` / `j k` 选一处，`Enter` 打开空格，`u` 撤销，`r` 重来，`n`、`p` 换题，`h` 提示，`?` 帮助；证明里每个字母都是输入，换题用 `Ctrl+N` / `Ctrl+P`。中文输入法在空格里正常使用，选字时按的 `Enter` 不会提交答案。

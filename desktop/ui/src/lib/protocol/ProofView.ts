@@ -4,7 +4,11 @@ import type { CourseView } from "./CourseView";
 import type { Feedback } from "./Feedback";
 import type { ProofLineView } from "./ProofLineView";
 
-export type ProofView = { course: CourseView, catalog: Catalog, goal: string, lines: Array<ProofLineView>, 
+export type ProofView = { 
+/**
+ * Which state of the board this is; see [`Command::Draft`].
+ */
+edition: number, course: CourseView, catalog: Catalog, goal: string, lines: Array<ProofLineView>, 
 /**
  * How many assumptions are open: the depth the next line is written at.
  */

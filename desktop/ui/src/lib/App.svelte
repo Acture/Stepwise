@@ -47,15 +47,26 @@
 			return;
 		}
 		const typing: boolean = event.target instanceof HTMLInputElement;
-		if (
-			typing ||
-			view.kind !== "evaluation" ||
-			event.metaKey ||
-			event.ctrlKey ||
-			event.altKey
-		) {
+		if (typing || event.metaKey || event.ctrlKey || event.altKey) return;
+		// While a blank or a proof line is open every key belongs to it, as in the terminal:
+		// Enter and Escape still check and cancel, and any other key puts the caret back in
+		// the field instead of acting as a command on work the student is in the middle of.
+		const field: HTMLInputElement | null = document.querySelector(
+			".blank input, .slot input",
+		);
+		if (view.kind === "proof" || (view.kind === "evaluation" && view.draft)) {
+			if (
+				view.kind === "evaluation" &&
+				(event.key === "Enter" || event.key === "Escape")
+			) {
+				event.preventDefault();
+				host.send({ kind: event.key === "Enter" ? "submit" : "cancel" });
+			} else {
+				field?.focus();
+			}
 			return;
 		}
+		if (view.kind !== "evaluation") return;
 		const command: Command | undefined = keys[event.key];
 		if (command) {
 			event.preventDefault();

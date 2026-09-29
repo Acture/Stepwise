@@ -28,7 +28,7 @@ use stepwise::{
 	exercises,
 	progress::Progress,
 };
-use tauri::{Manager, State, Window, WindowEvent};
+use tauri::{AppHandle, Manager, RunEvent, State};
 
 #[derive(Parser, Debug)]
 #[command(version, about = "Stepwise 桌面窗口：选择下一步，理解求值与推理。")]
@@ -47,6 +47,10 @@ struct Shell {
 	/// Where the progress is written: none with `--no-save`, or when the file could not be
 	/// read, so a file this build does not understand is never overwritten.
 	path: Option<PathBuf>,
+	/// A change whose write failed. Only then does quitting write again: every other change
+	/// is on disk already, and writing an unchanged snapshot on the way out would overwrite
+	/// whatever the terminal saved to the same file in the meantime.
+	unsaved: bool,
 }
 
 impl Shell {
@@ -55,6 +59,7 @@ impl Shell {
 		Ok(Self {
 			desk: Desk::new(progress, exercises::builtin()?, message),
 			path,
+			unsaved: false,
 		})
 	}
 
@@ -68,7 +73,9 @@ impl Shell {
 
 	/// Writes the progress after a change; the window says so when the write fails.
 	fn saved(&mut self) {
-		if let Err(error) = self.save() {
+		let written: io::Result<()> = self.save();
+		self.unsaved = written.is_err();
+		if let Err(error) = written {
 			self.desk
 				.alert(format!("进度未能保存：{}。", reason(&error)));
 		}
@@ -162,14 +169,18 @@ fn abort_on_panic() {
 	}));
 }
 
-/// Every change was written when it happened; closing writes once more, as the terminal
-/// does on quitting. No page is left to show a failure, so it goes to stderr.
-fn closing(window: &Window, event: &WindowEvent) {
-	if window.label() != "main" || !matches!(event, WindowEvent::CloseRequested { .. }) {
+/// Every change was written when it happened, so quitting — the window's close button or
+/// the app's Quit — writes only a change whose write had failed. No page is left to show a
+/// second failure, so it goes to stderr.
+fn leaving(app: &AppHandle, event: RunEvent) {
+	if !matches!(event, RunEvent::Exit) {
 		return;
 	}
-	let shell: State<'_, Mutex<Shell>> = window.state::<Mutex<Shell>>();
-	if let Err(error) = hold(&shell).save() {
+	let shell: State<'_, Mutex<Shell>> = app.state::<Mutex<Shell>>();
+	let mut shell: MutexGuard<'_, Shell> = hold(&shell);
+	if shell.unsaved
+		&& let Err(error) = shell.save()
+	{
 		eprintln!("Stepwise: 进度未能保存：{error}");
 	}
 }
@@ -179,8 +190,9 @@ fn run(shell: Shell) -> tauri::Result<()> {
 		.plugin(tauri_plugin_dialog::init())
 		.manage(Mutex::new(shell))
 		.invoke_handler(tauri::generate_handler![view, act, load_set])
-		.on_window_event(closing)
-		.run(tauri::generate_context!())
+		.build(tauri::generate_context!())?
+		.run(leaving);
+	Ok(())
 }
 
 fn main() -> ExitCode {

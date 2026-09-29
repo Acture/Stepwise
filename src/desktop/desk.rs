@@ -39,12 +39,38 @@ pub struct Desk {
 	stage: Stage,
 	/// Something the window has to say that no lesson reported, such as a file that failed.
 	message: Option<String>,
+	/// Moves on with every command but a draft, so the page knows when its field no longer
+	/// holds the blank or the line the desk has.
+	edition: u32,
 }
 
 enum Stage {
 	/// Choosing a language, holding the progress snapshot until a lesson takes it.
 	Entry(Progress),
 	Lesson(Box<Board>),
+}
+
+/// What one command did to the question in hand.
+struct Outcome {
+	/// The lesson changed in a way worth saving.
+	changed: bool,
+	/// The teaching rules judged something, so a turned-down report is a mistake.
+	judged: bool,
+}
+
+impl Outcome {
+	fn quiet(changed: bool) -> Self {
+		Self {
+			changed,
+			judged: false,
+		}
+	}
+	fn judged(changed: bool) -> Self {
+		Self {
+			changed,
+			judged: true,
+		}
+	}
 }
 
 /// A lesson on the board, with what this window keeps around it.
@@ -94,24 +120,24 @@ impl Board {
 
 	/// One command on the question in hand. True when the lesson changed in a way worth saving.
 	fn apply(&mut self, command: Command) -> Result<bool, ParseError> {
-		self.judged = matches!(command, Command::Submit | Command::Select { .. });
-		let changed: bool = match command {
+		let outcome: Outcome = match command {
 			Command::Next | Command::Previous => {
 				self.pointed = false;
 				self.rules = false;
-				if command == Command::Next {
+				Outcome::quiet(if command == Command::Next {
 					self.lesson.next_question()?
 				} else {
 					self.lesson.previous_question()?
-				}
+				})
 			}
 			command => match self.lesson.task_mut() {
 				Task::Evaluation(practice) => evaluate(practice, command, &mut self.pointed)?,
 				Task::Proof(practice) => prove(practice, command, &mut self.rules),
 			},
 		};
+		self.judged = outcome.judged;
 		self.sync();
-		Ok(changed)
+		Ok(outcome.changed)
 	}
 
 	fn tone(&self) -> Tone {
@@ -169,11 +195,12 @@ impl Board {
 		}
 	}
 
-	fn view(&self, set: &QuestionSet, message: Option<String>) -> View {
+	fn view(&self, set: &QuestionSet, message: Option<String>, edition: u32) -> View {
 		match self.lesson.task() {
 			Task::Evaluation(practice) => {
 				let line: Line = expression(practice, self.pointed);
 				View::Evaluation(EvaluationView {
+					edition,
 					course: self.course(set),
 					catalog: self.catalog(set),
 					bindings: practice
@@ -204,71 +231,98 @@ impl Board {
 					message,
 				})
 			}
-			Task::Proof(practice) => View::Proof(proof(
-				practice,
-				self.course(set),
-				self.catalog(set),
-				self.feedback(),
-				(self.judged && self.tone() == Tone::Good)
-					.then_some(practice.proof().lines().len()),
-				self.rules,
-				message,
-			)),
+			Task::Proof(practice) => {
+				let sheet: Sheet = proof(practice);
+				View::Proof(ProofView {
+					edition,
+					course: self.course(set),
+					catalog: self.catalog(set),
+					goal: sheet.goal,
+					lines: sheet.lines,
+					open: sheet.open,
+					finished: sheet.finished,
+					input: sheet.input,
+					feedback: self.feedback(),
+					judged: (self.judged && self.tone() == Tone::Good)
+						.then_some(practice.proof().lines().len()),
+					rules: self.rules.then(|| RULES.into()),
+					message,
+				})
+			}
 		}
 	}
 }
 
-/// A command on an expression question. True when the session changed.
+/// A command on an expression question.
 fn evaluate(
 	practice: &mut Practice,
 	command: Command,
 	pointed: &mut bool,
-) -> Result<bool, ParseError> {
+) -> Result<Outcome, ParseError> {
 	Ok(match command {
 		Command::Select { node } => {
-			*pointed = true;
-			practice.select(node)
+			// A click on the blank already open changes nothing, so nothing is judged either.
+			if practice.draft() == Some(node) {
+				return Ok(Outcome::quiet(false));
+			}
+			let advanced: bool = practice.select(node);
+			// A finished group comes off and its node is gone: nothing is left pointed at.
+			*pointed = !advanced;
+			Outcome::judged(advanced)
 		}
-		Command::Draft { text } => {
+		Command::Draft { text, .. } => {
 			if practice.draft().is_some() {
 				practice.clear_input();
 				practice.paste(&text);
 			}
-			false
+			Outcome::quiet(false)
 		}
-		// With no blank open this opens one at the node pointed at: the keyboard reaches the
-		// same node a click does.
-		Command::Submit => practice.submit(),
+		Command::Submit => {
+			// With no blank open this opens one at the node pointed at, so the keyboard reaches
+			// the node a click does. With nothing pointed at there is nothing to open: the
+			// session's own selection is one nobody chose, and judging it would call it a mistake.
+			if practice.draft().is_none() && !*pointed {
+				return Ok(Outcome::quiet(false));
+			}
+			let accepted: bool = practice.submit();
+			if accepted {
+				*pointed = false;
+			}
+			Outcome::judged(accepted)
+		}
 		Command::Cancel => {
 			practice.cancel();
-			false
+			Outcome::quiet(false)
 		}
 		Command::Step { forward } => {
 			if practice.draft().is_none() {
-				*pointed = true;
-				if forward {
-					practice.select_next();
-				} else {
+				// From nothing pointed at, either arrow starts at the first node in display
+				// order. The session's own selection is then the whole expression or a node
+				// already gone, and stepping back from either lands on that first node.
+				if !*pointed || !forward {
 					practice.select_previous();
+				} else {
+					practice.select_next();
 				}
+				*pointed = true;
 			}
-			false
+			Outcome::quiet(false)
 		}
 		Command::Undo => {
 			*pointed = false;
-			practice.undo()
+			Outcome::quiet(practice.undo())
 		}
 		Command::Reset => {
 			*pointed = false;
-			practice.reset()?
+			Outcome::quiet(practice.reset()?)
 		}
 		Command::Hint => {
 			practice.hint();
-			false
+			Outcome::quiet(false)
 		}
 		Command::Help => {
 			practice.note(say::HELP);
-			false
+			Outcome::quiet(false)
 		}
 		Command::Choose { .. }
 		| Command::Leave
@@ -276,27 +330,27 @@ fn evaluate(
 		| Command::Pick { .. }
 		| Command::Next
 		| Command::Previous
-		| Command::Rules => false,
+		| Command::Rules => Outcome::quiet(false),
 	})
 }
 
-/// A command on a proof. True when the proof changed.
-fn prove(practice: &mut ProofPractice, command: Command, rules: &mut bool) -> bool {
+/// A command on a proof.
+fn prove(practice: &mut ProofPractice, command: Command, rules: &mut bool) -> Outcome {
 	match command {
-		Command::Draft { text } => {
+		Command::Draft { text, .. } => {
 			practice.clear_input();
 			practice.paste(&text);
-			false
+			Outcome::quiet(false)
 		}
-		Command::Submit => practice.submit(),
-		Command::Undo => practice.undo(),
+		Command::Submit => Outcome::judged(practice.submit()),
+		Command::Undo => Outcome::quiet(practice.undo()),
 		Command::Rules => {
 			*rules = !*rules;
-			false
+			Outcome::quiet(false)
 		}
 		Command::Help => {
 			practice.note(say::PROOF_HELP);
-			false
+			Outcome::quiet(false)
 		}
 		Command::Choose { .. }
 		| Command::Leave
@@ -308,7 +362,7 @@ fn prove(practice: &mut ProofPractice, command: Command, rules: &mut bool) -> bo
 		| Command::Reset
 		| Command::Hint
 		| Command::Next
-		| Command::Previous => false,
+		| Command::Previous => Outcome::quiet(false),
 	}
 }
 
@@ -413,18 +467,18 @@ fn expression(practice: &Practice, pointed: bool) -> Line {
 	}
 }
 
-fn proof(
-	practice: &ProofPractice,
-	course: CourseView,
-	catalog: Catalog,
-	feedback: Feedback,
-	judged: Option<usize>,
-	rules: bool,
-	message: Option<String>,
-) -> ProofView {
-	ProofView {
-		course,
-		catalog,
+/// The proof half of a proof view: the proof as it stands.
+struct Sheet {
+	goal: String,
+	lines: Vec<ProofLineView>,
+	/// How many assumptions are open: the depth the next line is written at.
+	open: usize,
+	finished: bool,
+	input: String,
+}
+
+fn proof(practice: &ProofPractice) -> Sheet {
+	Sheet {
 		goal: practice.proof().goal.to_string(),
 		lines: practice
 			.proof()
@@ -444,10 +498,6 @@ fn proof(
 		open: practice.proof().open_assumptions().len(),
 		finished: practice.is_finished(),
 		input: practice.input().into(),
-		feedback,
-		judged,
-		rules: rules.then(|| RULES.into()),
-		message,
 	}
 }
 
@@ -460,6 +510,7 @@ impl Desk {
 			opened: None,
 			stage: Stage::Entry(progress),
 			message,
+			edition: 0,
 		}
 	}
 
@@ -469,7 +520,9 @@ impl Desk {
 				set: self.opened.as_ref().map(|set| set.title.clone()),
 				message: self.message.clone(),
 			}),
-			Stage::Lesson(board) => board.view(self.set_of(board), self.message.clone()),
+			Stage::Lesson(board) => {
+				board.view(self.set_of(board), self.message.clone(), self.edition)
+			}
 		}
 	}
 
@@ -492,6 +545,11 @@ impl Desk {
 	/// One command from the page. True when the progress changed and is worth writing. A
 	/// question that cannot be opened leaves everything as it was and says why.
 	pub fn handle(&mut self, command: Command) -> bool {
+		match &command {
+			Command::Draft { edition, .. } if *edition != self.edition => return false,
+			Command::Draft { .. } => {}
+			_ => self.edition = self.edition.wrapping_add(1),
+		}
 		self.message = None;
 		match self.apply(command) {
 			Ok(changed) => changed,
@@ -506,6 +564,7 @@ impl Desk {
 	/// set that fails to load changes nothing, the progress included. On the language choice
 	/// the set waits for a language; in a lesson it replaces the course in the same language.
 	pub fn load(&mut self, text: &str, source: &str) -> bool {
+		self.edition = self.edition.wrapping_add(1);
 		self.message = None;
 		let set: QuestionSet = match QuestionSet::import(text) {
 			Ok(set) => set,

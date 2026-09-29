@@ -52,16 +52,20 @@ jobs:
       - name: WebKitGTK and GTK for the window
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev
+      # bash, so a failing check stops the step on Windows too: PowerShell carries on past a
+      # native command's exit code and would report only the last one.
       - name: The page
         working-directory: desktop/ui
+        shell: bash
         run: |
           bun install --frozen-lockfile
           bun run check
           bun run lint
           bun run build
       - run: cargo +stable fmt --all --check
-      # The shell embeds the built page, so it is checked after `bun run build`.
       - run: cargo +stable clippy --locked -p stepwise-desktop --all-targets -- -D warnings
+      # A release build embeds the built page; this compiles that path, after `bun run build`.
+      - run: cargo +stable check --locked -p stepwise-desktop --features tauri/custom-protocol
       # The shell's own tests: progress written, refused and left alone. They open no window.
       - run: cargo +stable test --locked -p stepwise-desktop
       - name: The page's protocol matches the Rust types

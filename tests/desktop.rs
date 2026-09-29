@@ -88,10 +88,28 @@ fn open_builtin(desk: &mut Desk, language: Choice, name: &str) {
 	assert!(desk.handle(Command::Pick { index }));
 }
 
+/// Which state of the board the view shows.
+fn edition(desk: &Desk) -> u32 {
+	match desk.view() {
+		View::Evaluation(view) => view.edition,
+		View::Proof(view) => view.edition,
+		View::Entry(_) => panic!("no board on the language choice"),
+	}
+}
+
+/// Type `text` into the open blank or proof line, as the page sends it.
+fn type_in(desk: &mut Desk, text: &str) -> bool {
+	let edition: u32 = edition(desk);
+	desk.handle(Command::Draft {
+		text: text.into(),
+		edition,
+	})
+}
+
 fn answer(desk: &mut Desk, source: &str, value: &str) -> bool {
 	let target: NodeId = node(&evaluation(desk), source);
 	desk.handle(Command::Select { node: target });
-	desk.handle(Command::Draft { text: value.into() });
+	type_in(desk, value);
 	desk.handle(Command::Submit)
 }
 
@@ -142,7 +160,7 @@ fn a_click_opens_the_line_below_with_the_node_blanked_and_a_wrong_answer_keeps_i
 		("3 * 4", Some(multiply), Some(Blank::Input))
 	);
 
-	desk.handle(Command::Draft { text: "13".into() });
+	type_in(&mut desk, "13");
 	assert!(!desk.handle(Command::Submit));
 	let wrong: EvaluationView = evaluation(&desk);
 	assert_eq!(wrong.feedback.tone, Tone::Bad);
@@ -153,7 +171,7 @@ fn a_click_opens_the_line_below_with_the_node_blanked_and_a_wrong_answer_keeps_i
 	assert_eq!(text(&wrong.current), "2 + (3 * 4)");
 
 	// Editing the draft is not judged: the mistake is no longer the last word.
-	desk.handle(Command::Draft { text: "12".into() });
+	type_in(&mut desk, "12");
 	assert_eq!(evaluation(&desk).feedback.tone, Tone::Plain);
 	assert!(desk.handle(Command::Submit));
 	let right: EvaluationView = evaluation(&desk);
@@ -180,7 +198,7 @@ fn a_finished_group_comes_off_at_a_click_and_the_final_pair_opens_its_own_blank(
 	);
 	assert_eq!(draft.input, "");
 
-	desk.handle(Command::Draft { text: "14".into() });
+	type_in(&mut desk, "14");
 	assert!(desk.handle(Command::Submit));
 	let done: EvaluationView = evaluation(&desk);
 	assert_eq!(done.ending.as_deref(), Some("14"));
@@ -199,9 +217,7 @@ fn an_exception_ending_names_the_sub_expression_that_raised_it() {
 	assert!(desk.handle(Command::Select { node: group }));
 	// Only two values and a division are left, so the blank opens by itself.
 	assert!(evaluation(&desk).draft.is_some());
-	desk.handle(Command::Draft {
-		text: "ZeroDivisionError".into(),
-	});
+	type_in(&mut desk, "ZeroDivisionError");
 	assert!(desk.handle(Command::Submit));
 
 	let ended: EvaluationView = evaluation(&desk);
@@ -273,7 +289,7 @@ fn one_answer_fills_every_occurrence_of_a_name_and_undo_is_recorded_as_taken_bac
 		kinds,
 		[("x", Some(Blank::Input)), ("x", Some(Blank::Mirror))]
 	);
-	desk.handle(Command::Draft { text: "2".into() });
+	type_in(&mut desk, "2");
 	assert!(desk.handle(Command::Submit));
 	assert_eq!(text(&evaluation(&desk).current), "2 + y * 2");
 
@@ -353,18 +369,14 @@ fn a_set_walks_in_order_into_a_proof_and_ends_at_its_last_question() {
 	);
 	assert_eq!((proof.open, proof.finished, proof.judged), (0, false, None));
 
-	desk.handle(Command::Draft {
-		text: "R ; mp ; 1,3".into(),
-	});
+	type_in(&mut desk, "R ; mp ; 1,3");
 	assert!(!desk.handle(Command::Submit));
 	let refused: ProofView = proving(&desk);
 	assert_eq!(refused.feedback.tone, Tone::Bad);
 	assert_eq!(refused.input, "R ; mp ; 1,3");
 	assert_eq!(refused.judged, None);
 
-	desk.handle(Command::Draft {
-		text: "Q ; mp ; 1,3".into(),
-	});
+	type_in(&mut desk, "Q ; mp ; 1,3");
 	assert!(desk.handle(Command::Submit));
 	let accepted: ProofView = proving(&desk);
 	assert_eq!(accepted.feedback.tone, Tone::Good);
@@ -435,4 +447,110 @@ fn leaving_and_relaunching_resume_the_unfinished_question_with_its_record() {
 	assert_eq!(resumed.course.title, "先乘后加");
 	assert_eq!(text(&resumed.current), "2 + (12)");
 	assert_eq!(resumed.history, [Written::Expression("2 + (3 * 4)".into())]);
+}
+
+#[test]
+fn enter_with_nothing_pointed_at_judges_nothing_and_the_first_arrow_starts_at_the_whole_expression()
+{
+	let mut desk: Desk = desk(Progress::default());
+	open_builtin(&mut desk, Choice::Python, "precedence");
+	let fresh: EvaluationView = evaluation(&desk);
+	// The session's own selection is the whole expression, which nobody chose.
+	assert!(!desk.handle(Command::Submit));
+	let unmoved: EvaluationView = evaluation(&desk);
+	assert_eq!(unmoved.feedback, fresh.feedback);
+	assert!(unmoved.draft.is_none());
+
+	desk.handle(Command::Step { forward: true });
+	let whole: NodeId = node(&fresh, "2 + (3 * 4)");
+	assert_eq!(evaluation(&desk).selected, Some(whole));
+	desk.handle(Command::Step { forward: true });
+	assert_ne!(evaluation(&desk).selected, Some(whole));
+	desk.handle(Command::Step { forward: false });
+	assert_eq!(evaluation(&desk).selected, Some(whole));
+
+	// After an accepted step the node it answered is gone, and nothing is pointed at again.
+	assert!(answer(&mut desk, "3 * 4", "12"));
+	assert_eq!(evaluation(&desk).selected, None);
+	assert!(!desk.handle(Command::Submit));
+	assert_ne!(evaluation(&desk).feedback.tone, Tone::Bad);
+	assert!(evaluation(&desk).draft.is_none());
+
+	// Nor does Enter on a finished question call anything a mistake.
+	let group: NodeId = node(&evaluation(&desk), "(12)");
+	desk.handle(Command::Select { node: group });
+	type_in(&mut desk, "14");
+	assert!(desk.handle(Command::Submit));
+	assert!(evaluation(&desk).ending.is_some());
+	assert!(!desk.handle(Command::Submit));
+	assert_eq!(evaluation(&desk).feedback.tone, Tone::Good);
+}
+
+#[test]
+fn clicking_the_blank_already_open_judges_nothing() {
+	let mut desk: Desk = desk(Progress::default());
+	open_builtin(&mut desk, Choice::Python, "precedence");
+	let multiply: NodeId = node(&evaluation(&desk), "3 * 4");
+	desk.handle(Command::Select { node: multiply });
+	type_in(&mut desk, "12");
+	desk.handle(Command::Hint);
+	assert_eq!(evaluation(&desk).feedback.tone, Tone::Plain);
+	// The hint's sentence is still the last word; a click on the open blank must not turn
+	// it into a mistake, and must not touch the draft.
+	assert!(!desk.handle(Command::Select { node: multiply }));
+	let clicked: EvaluationView = evaluation(&desk);
+	assert_eq!(clicked.feedback.tone, Tone::Plain);
+	assert_eq!(clicked.draft.map(|draft| draft.input), Some("12".into()));
+}
+
+#[test]
+fn a_draft_typed_for_an_earlier_board_is_dropped_and_only_drafts_keep_the_edition() {
+	let mut desk: Desk = desk(Progress::default());
+	open_builtin(&mut desk, Choice::Python, "precedence");
+	let multiply: NodeId = node(&evaluation(&desk), "3 * 4");
+	desk.handle(Command::Select { node: multiply });
+	let typed_on: u32 = edition(&desk);
+	type_in(&mut desk, "12");
+	assert_eq!(edition(&desk), typed_on);
+	assert!(desk.handle(Command::Submit));
+	let next: u32 = edition(&desk);
+	assert_ne!(next, typed_on);
+
+	// Keys typed into the old blank while the submit was on its way arrive late.
+	let group: NodeId = node(&evaluation(&desk), "(12)");
+	desk.handle(Command::Select { node: group });
+	let pair: EvaluationView = evaluation(&desk);
+	assert_eq!(
+		pair.draft.as_ref().map(|draft| draft.input.as_str()),
+		Some("")
+	);
+	assert!(!desk.handle(Command::Draft {
+		text: "123".into(),
+		edition: typed_on,
+	}));
+	assert_eq!(
+		evaluation(&desk).draft.map(|draft| draft.input),
+		Some(String::new())
+	);
+
+	// Leaving a proof and coming back reopens it with an empty line, as in the terminal: an
+	// unsubmitted line is not saved work. The edition moves on, so the page takes that empty
+	// line instead of keeping what its field still shows.
+	let mut proofs: Desk = desk_with_set();
+	proofs.handle(Command::Choose {
+		language: Choice::Logic,
+	});
+	proofs.handle(Command::Next);
+	type_in(&mut proofs, "Q ; mp");
+	let before: u32 = edition(&proofs);
+	proofs.handle(Command::Previous);
+	proofs.handle(Command::Next);
+	assert_ne!(edition(&proofs), before);
+	assert_eq!(proving(&proofs).input, "");
+}
+
+fn desk_with_set() -> Desk {
+	let mut desk: Desk = desk(Progress::default());
+	desk.load(SET, "desk-walk.toml");
+	desk
 }

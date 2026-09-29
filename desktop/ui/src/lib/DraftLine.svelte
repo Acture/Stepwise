@@ -33,8 +33,9 @@
 
 	// While a blank is open the field holds the draft and Rust mirrors it, one command per
 	// edit, in order; Rust's copy is the one a submit checks. The field takes Rust's value
-	// once, when the blank opens — writing it back on every reply would let a late reply
-	// overwrite fresher typing, or break an IME composition. A new blank is a new line.
+	// once, when this line mounts — writing it back on every reply would let a late reply
+	// overwrite fresher typing, or break an IME composition. Each edition of the board mounts
+	// a new line, and Rust drops a draft typed for an earlier one.
 	$effect(() => {
 		if (!field) return;
 		field.value = untrack(() => input);

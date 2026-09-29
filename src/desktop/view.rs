@@ -170,6 +170,8 @@ pub enum Written {
 )]
 #[serde(rename_all = "camelCase")]
 pub struct EvaluationView {
+	/// Which state of the board this is; see [`Command::Draft`].
+	pub edition: u32,
 	pub course: CourseView,
 	pub catalog: Catalog,
 	pub bindings: Vec<String>,
@@ -211,6 +213,8 @@ pub struct ProofLineView {
 )]
 #[serde(rename_all = "camelCase")]
 pub struct ProofView {
+	/// Which state of the board this is; see [`Command::Draft`].
+	pub edition: u32,
 	pub course: CourseView,
 	pub catalog: Catalog,
 	pub goal: String,
@@ -262,9 +266,12 @@ pub enum Command {
 	Select {
 		node: NodeId,
 	},
-	/// The whole draft as the student has typed it.
+	/// The whole draft as the student has typed it, for the board of the edition it was typed
+	/// on. Every other command moves the board to a new edition, and a draft for an earlier one
+	/// belongs to a blank or a line that is gone, so it is dropped.
 	Draft {
 		text: String,
+		edition: u32,
 	},
 	Submit,
 	Cancel,

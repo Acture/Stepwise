@@ -15,8 +15,11 @@
 	{#each [tools, aside] as group, index (index)}
 		<div class="group">
 			{#each group as tool (tool.label)}
-				<button onclick={tool.onclick} disabled={tool.disabled}
-					>{tool.label}</button
+				<!-- A press keeps the caret where it was: the tray acts around the step being written. -->
+				<button
+					onmousedown={(event) => event.preventDefault()}
+					onclick={tool.onclick}
+					disabled={tool.disabled}>{tool.label}</button
 				>
 			{/each}
 		</div>
