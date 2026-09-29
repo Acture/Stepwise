@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { radiogroup } from "./radiogroup";
 	import { Check, Search } from "@lucide/svelte";
 	import { face, stack, type Role } from "../skins";
 	import type { Font } from "./protocol/Font";
@@ -175,7 +176,13 @@
 		/>
 	</label>
 
-	<div class="list" role="radiogroup" aria-label={label} bind:this={list}>
+	<div
+		class="list"
+		role="radiogroup"
+		aria-label={label}
+		bind:this={list}
+		{@attach radiogroup}
+	>
 		{#snippet choice(option: Option)}
 			<button
 				role="radio"

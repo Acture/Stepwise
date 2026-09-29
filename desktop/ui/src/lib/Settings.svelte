@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { radiogroup } from "./radiogroup";
 	import { FileUp, X } from "@lucide/svelte";
 	import { skins, themed, type Dress } from "../skins";
 	import FacePicker from "./FacePicker.svelte";
@@ -131,7 +132,13 @@
 
 	<section class="part">
 		<h3 class="ink">皮肤</h3>
-		<div class="rack" role="radiogroup" aria-label="皮肤" bind:this={rack}>
+		<div
+			class="rack"
+			role="radiogroup"
+			aria-label="皮肤"
+			bind:this={rack}
+			{@attach radiogroup}
+		>
 			{#each shelves as shelf (shelf.name)}
 				<div class="shelf">
 					<h4>{shelf.name}</h4>
