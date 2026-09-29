@@ -28,7 +28,7 @@ use stepwise::{
 	exercises,
 	progress::Progress,
 };
-use tauri::{AppHandle, Manager, RunEvent, State};
+use tauri::{AppHandle, Manager, RunEvent, State, webview::PageLoadPayload};
 
 #[derive(Parser, Debug)]
 #[command(version, about = "Stepwise 桌面窗口：选择下一步，理解求值与推理。")]
@@ -153,6 +153,12 @@ fn act(command: Command, shell: State<'_, Mutex<Shell>>) -> View {
 	hold(&shell).act(command)
 }
 
+/// A line the page could not show anywhere else: an error that stopped it from drawing.
+#[tauri::command(async)]
+fn report(line: String) {
+	eprintln!("Stepwise 页面：{line}");
+}
+
 #[tauri::command(async)]
 fn load_set(path: String, shell: State<'_, Mutex<Shell>>) -> View {
 	hold(&shell).load_set(&path)
@@ -189,7 +195,12 @@ fn run(shell: Shell) -> tauri::Result<()> {
 	tauri::Builder::default()
 		.plugin(tauri_plugin_dialog::init())
 		.manage(Mutex::new(shell))
-		.invoke_handler(tauri::generate_handler![view, act, load_set])
+		.invoke_handler(tauri::generate_handler![view, act, load_set, report])
+		// Where the page is in loading it, for whoever runs the app from a terminal: a window
+		// that stays blank says here whether its page never started or never finished.
+		.on_page_load(|_, payload: &PageLoadPayload<'_>| {
+			eprintln!("Stepwise：页面 {:?} {}", payload.event(), payload.url());
+		})
 		.build(tauri::generate_context!())?
 		.run(leaving);
 	Ok(())

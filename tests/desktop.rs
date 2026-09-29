@@ -554,3 +554,52 @@ fn desk_with_set() -> Desk {
 	desk.load(SET, "desk-walk.toml");
 	desk
 }
+
+#[test]
+fn a_verdict_stands_until_the_student_does_something_and_a_finished_question_takes_no_step() {
+	let mut desk: Desk = desk(Progress::default());
+	open_builtin(&mut desk, Choice::Python, "precedence");
+	let multiply: NodeId = node(&evaluation(&desk), "3 * 4");
+	desk.handle(Command::Select { node: multiply });
+	type_in(&mut desk, "13");
+	let refused_on: u32 = edition(&desk);
+	assert!(!desk.handle(Command::Submit));
+	assert_eq!(evaluation(&desk).feedback.tone, Tone::Bad);
+	// The refusal leaves the same blank with the same draft, so the page's field stays and a
+	// key typed while the refusal was on its way still reaches the desk.
+	assert_eq!(edition(&desk), refused_on);
+	assert!(!desk.handle(Command::Draft {
+		text: "134".into(),
+		edition: refused_on,
+	}));
+	assert_eq!(
+		evaluation(&desk).draft.map(|draft| draft.input),
+		Some("134".into())
+	);
+	type_in(&mut desk, "13");
+	desk.handle(Command::Submit);
+	// Clicking the open blank to put the caret back changes nothing: the mistake stands.
+	assert!(!desk.handle(Command::Select { node: multiply }));
+	assert_eq!(evaluation(&desk).feedback.tone, Tone::Bad);
+
+	// An undo with nothing to take back keeps what the student pointed at.
+	let mut pointing: Desk = Desk::new(Progress::default(), exercises::builtin().unwrap(), None);
+	open_builtin(&mut pointing, Choice::Python, "precedence");
+	pointing.handle(Command::Step { forward: true });
+	pointing.handle(Command::Step { forward: true });
+	let pointed: Option<NodeId> = evaluation(&pointing).selected;
+	assert!(!pointing.handle(Command::Undo));
+	assert_eq!(evaluation(&pointing).selected, pointed);
+
+	// Once a question has ended, the arrows point at nothing and Enter judges nothing.
+	assert!(answer(&mut desk, "3 * 4", "12"));
+	let group: NodeId = node(&evaluation(&desk), "(12)");
+	desk.handle(Command::Select { node: group });
+	type_in(&mut desk, "14");
+	assert!(desk.handle(Command::Submit));
+	desk.handle(Command::Step { forward: true });
+	assert!(!desk.handle(Command::Submit));
+	let ended: EvaluationView = evaluation(&desk);
+	assert_eq!((ended.selected, ended.feedback.tone), (None, Tone::Good));
+	assert!(ended.draft.is_none());
+}
