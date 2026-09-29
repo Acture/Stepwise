@@ -16,8 +16,9 @@
 		extents: Record<number, [number, number]>;
 		/** Pointed at with the keyboard; ringed. */
 		selected: number | null;
-		/** Being answered on the line below; underlined so the blank is traceable to it. */
-		drafted: number | null;
+		/** Being answered on the line below, every occurrence one answer fills; each is
+		 * underlined on its own so every blank is traceable to its place. */
+		drafted: number[];
 		/** False once the question has ended: nothing is left to pick. */
 		interactive: boolean;
 		onpick: (node: number) => void;
@@ -50,17 +51,13 @@
 						targets: covering(selected),
 					},
 				]),
-		...(drafted === null
-			? []
-			: [
-					{
-						id: `drafted-${drafted}`,
-						shape: "underline" as const,
-						color: "var(--mark-point)",
-						targets: covering(drafted),
-						width: 2,
-					},
-				]),
+		...drafted.map((node: number): Mark => ({
+			id: `drafted-${node}`,
+			shape: "underline",
+			color: "var(--mark-point)",
+			targets: covering(node),
+			width: 2,
+		})),
 	]);
 </script>
 
@@ -80,7 +77,8 @@
 				>{:else}<span
 					class="node"
 					class:lit={within(hovered, index)}
-					class:pointed={within(selected, index) || within(drafted, index)}
+					class:pointed={within(selected, index) ||
+						drafted.some((node: number) => within(node, index))}
 					bind:this={spans[index]}
 					onmouseenter={() => (hovered = run.node)}
 					onclick={() => onpick(run.node!)}
