@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from "svelte";
 	import MarkLayer from "./MarkLayer.svelte";
 	import type { Mark } from "./marks";
 	import Grouped from "./Grouped.svelte";
@@ -13,9 +14,9 @@
 		oncancel,
 	}: {
 		runs: Run[];
-		/** The draft as the Rust side holds it; the field is only written when they differ. */
+		/** The draft as the Rust side held it when this blank opened. */
 		input: string;
-		/** The last answer the rules turned down, while that verdict stands. */
+		/** The rules turned down what is in the blank, and nothing was typed since. */
 		rejected: boolean;
 		ondraft: (text: string) => void;
 		onsubmit: () => void;
@@ -26,23 +27,19 @@
 	let field: HTMLInputElement | undefined = $state();
 	let blanks: HTMLElement[] = $state([]);
 	let typed: string = $state("");
-	/** What was in the blank when it was last submitted: a mistake stays pink only until edited. */
-	let submitted: string | null = $state(null);
-	let composing: boolean = false;
 
-	let wrong: boolean = $derived(rejected && typed === (submitted ?? input));
+	/** A mistake stands until the student edits the draft: the Rust side stops calling it one. */
+	let wrong: boolean = $derived(rejected);
 
-	// Rust owns the draft. Its value reaches the field only when it differs from what the
-	// student typed — a limit or a dropped control character — and never mid-composition.
+	// While a blank is open the field holds the draft and Rust mirrors it, one command per
+	// edit, in order; Rust's copy is the one a submit checks. The field takes Rust's value
+	// once, when the blank opens — writing it back on every reply would let a late reply
+	// overwrite fresher typing, or break an IME composition. A new blank is a new line.
 	$effect(() => {
-		if (field && !composing && field.value !== input) {
-			field.value = input;
-			typed = input;
-		}
-	});
-
-	$effect(() => {
-		field?.focus();
+		if (!field) return;
+		field.value = untrack(() => input);
+		typed = field.value;
+		field.focus();
 	});
 
 	function commit(): void {
@@ -57,7 +54,6 @@
 		if (event.isComposing || event.keyCode === 229) return;
 		if (event.key === "Enter") {
 			event.preventDefault();
-			submitted = typed;
 			onsubmit();
 		} else if (event.key === "Escape") {
 			event.preventDefault();
@@ -106,11 +102,7 @@
 						oninput={(event) => {
 							if (!(event instanceof InputEvent && event.isComposing)) commit();
 						}}
-						oncompositionstart={() => (composing = true)}
-						oncompositionend={() => {
-							composing = false;
-							commit();
-						}}
+						oncompositionend={commit}
 						onkeydown={key}
 					/></span
 				>{:else if run.blank === "mirror"}<span

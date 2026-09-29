@@ -8,7 +8,10 @@ export default defineConfig(({ mode }): UserConfig =>
 	mode === "gallery"
 		? {
 				plugins: [svelte(), viteSingleFile()],
-				build: { outDir: "dist-gallery", rollupOptions: { input: "gallery.html" } },
+				build: {
+					outDir: "dist-gallery",
+					rollupOptions: { input: "gallery.html" },
+				},
 			}
 		: { plugins: [svelte()], build: { outDir: "dist" } },
 );

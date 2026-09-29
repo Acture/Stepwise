@@ -3,10 +3,23 @@
 	import Ledge from "./Ledge.svelte";
 	import MarkLayer from "./MarkLayer.svelte";
 	import type { Mark } from "./marks";
-	import type { Command, Entry } from "./view";
+	import { skins, type Skin } from "../skins";
+	import type { EntryView, Host } from "./view";
 
-	let { view, send }: { view: Entry; send: (command: Command) => void } =
+	let {
+		view,
+		host,
+		skin,
+		onskin,
+	}: { view: EntryView; host: Host; skin: Skin; onskin: (skin: Skin) => void } =
 		$props();
+
+	/** The skin after this one, for the ledge's single switch. */
+	let following: (typeof skins)[number] = $derived(
+		skins[
+			(skins.findIndex((choice) => choice.id === skin) + 1) % skins.length
+		]!,
+	);
 
 	let demo: HTMLElement | undefined = $state();
 	let picked: HTMLElement | undefined = $state();
@@ -79,6 +92,11 @@
 			<MarkLayer host={demo} marks={demoMarks} />
 		</div>
 		<h1 class="ink">点一处子式，在下一行写出这一步的值。</h1>
+		{#if view.set}
+			<p class="opened">
+				题集「{view.set}」已打开：选一种语言，按题集顺序练习。
+			</p>
+		{/if}
 	</section>
 
 	<section class="choices" bind:this={choices}>
@@ -86,7 +104,7 @@
 			<button
 				class="choice"
 				bind:this={boxes[index]}
-				onclick={() => send({ kind: "choose", language: choice.language })}
+				onclick={() => host.send({ kind: "choose", language: choice.language })}
 				onmouseenter={() => (hovered = index)}
 				onmouseleave={() => (hovered = null)}
 				onfocus={() => (hovered = index)}
@@ -109,7 +127,10 @@
 </main>
 
 <Ledge
-	tools={[{ label: "打开题集文件", onclick: () => send({ kind: "open-set" }) }]}
+	tools={[{ label: "打开题集文件", onclick: () => host.openSet() }]}
+	aside={[
+		{ label: `换成${following.name}皮肤`, onclick: () => onskin(following.id) },
+	]}
 />
 
 <style>
@@ -213,6 +234,13 @@
 	.note {
 		font-size: var(--size-small);
 		color: var(--ink-faded);
+	}
+
+	.opened {
+		margin: 14px 0 0;
+		font-size: var(--size-small);
+		color: var(--ink-faded);
+		line-height: 1.6;
 	}
 
 	.message {

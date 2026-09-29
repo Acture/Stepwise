@@ -1,12 +1,30 @@
 <script lang="ts">
+	import { skins, type Skin } from "../skins";
 	import App from "./App.svelte";
 	import { screens } from "./fixtures";
-	import type { Command } from "./view";
+	import type { Command, Host } from "./view";
 
-	function send(command: Command): void {
-		console.info("command", command);
-	}
+	// The review page talks to no Rust side: commands are logged and the frames stay still.
+	const host: Host = {
+		send: (command: Command) => console.info("command", command),
+		openSet: () => console.info("open a set"),
+	};
+
+	let skin: Skin = $state(
+		skins.find((choice) => location.hash === `#${choice.id}`)?.id ??
+			"blackboard",
+	);
 </script>
+
+<nav class="skins">
+	{#each skins as choice (choice.id)}
+		<a
+			href="#{choice.id}"
+			class:chosen={skin === choice.id}
+			onclick={() => (skin = choice.id)}>{choice.name}</a
+		>
+	{/each}
+</nav>
 
 <div class="gallery">
 	{#each screens as screen (screen.name)}
@@ -16,7 +34,12 @@
 				style:width="{screen.width}px"
 				style:height="{screen.height}px"
 			>
-				<App view={screen.view} {send} skin="blackboard" />
+				<App
+					view={screen.view}
+					{host}
+					{skin}
+					onskin={(next: Skin) => (skin = next)}
+				/>
 				<span class="lights" aria-hidden="true"><i></i><i></i><i></i></span>
 			</div>
 			<figcaption>{screen.name} · {screen.width}×{screen.height}</figcaption>
@@ -28,15 +51,31 @@
 	:global(body) {
 		background: #d9d6cf;
 		height: auto;
-		-webkit-user-select: text;
-		user-select: text;
+		font-family: system-ui, sans-serif;
+	}
+
+	.skins {
+		display: flex;
+		gap: 18px;
+		padding: 24px 40px 0;
+		font-size: 15px;
+	}
+
+	.skins a {
+		color: #3d3a35;
+		text-decoration: none;
+	}
+
+	.skins a.chosen {
+		font-weight: 600;
+		text-decoration: underline;
 	}
 
 	.gallery {
 		display: flex;
 		flex-wrap: wrap;
 		gap: 40px;
-		padding: 40px;
+		padding: 24px 40px 40px;
 		align-items: flex-start;
 	}
 

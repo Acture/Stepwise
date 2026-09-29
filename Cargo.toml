@@ -35,5 +35,14 @@ ts-rs = { version = "12", features = ["no-serde-warnings"] }
 lto = "thin"
 strip = true
 
-[lints.rust]
+[lints]
+workspace = true
+
+# The desktop window's shell is a member so both share one lock and one target dir. A bare
+# `cargo` at this root still builds only the `stepwise` package: a root package is the
+# workspace's only default member.
+[workspace]
+members = ["desktop/src-tauri"]
+
+[workspace.lints.rust]
 unsafe_code = "forbid"

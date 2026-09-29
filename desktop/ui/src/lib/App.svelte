@@ -3,17 +3,71 @@
 	import EntryBoard from "./EntryBoard.svelte";
 	import EvaluationBoard from "./EvaluationBoard.svelte";
 	import ProofBoard from "./ProofBoard.svelte";
-	import type { Command, View } from "./view";
+	import Sheet from "./Sheet.svelte";
+	import type { Command, Host, View } from "./view";
 
 	let {
 		view,
-		send,
+		host,
 		skin,
-	}: { view: View; send: (command: Command) => void; skin: Skin } = $props();
+		onskin,
+	}: { view: View; host: Host; skin: Skin; onskin: (skin: Skin) => void } =
+		$props();
+
+	let menu: boolean = $state(false);
+
+	/** The keys an expression question binds when no field has the caret. The same keys as
+	 * the terminal, so a student moving between the two does not relearn them. */
+	const keys: Record<string, Command> = {
+		ArrowDown: { kind: "step", forward: true },
+		j: { kind: "step", forward: true },
+		ArrowUp: { kind: "step", forward: false },
+		k: { kind: "step", forward: false },
+		Enter: { kind: "submit" },
+		Escape: { kind: "cancel" },
+		u: { kind: "undo" },
+		r: { kind: "reset" },
+		n: { kind: "next" },
+		p: { kind: "previous" },
+		h: { kind: "hint" },
+		"?": { kind: "help" },
+	};
+
+	function key(event: KeyboardEvent): void {
+		if (event.isComposing || event.keyCode === 229) return;
+		if (menu) {
+			if (event.key === "Escape") menu = false;
+			return;
+		}
+		// In a proof every letter belongs to the line being written; changing question takes
+		// Ctrl, as in the terminal.
+		if (event.ctrlKey && (event.key === "n" || event.key === "p")) {
+			event.preventDefault();
+			host.send({ kind: event.key === "n" ? "next" : "previous" });
+			return;
+		}
+		const typing: boolean = event.target instanceof HTMLInputElement;
+		if (
+			typing ||
+			view.kind !== "evaluation" ||
+			event.metaKey ||
+			event.ctrlKey ||
+			event.altKey
+		) {
+			return;
+		}
+		const command: Command | undefined = keys[event.key];
+		if (command) {
+			event.preventDefault();
+			host.send(command);
+		}
+	}
 </script>
 
-<!-- Grain a skin may lay over hand-drawn strokes (blackboard does: chalk breaks up at its
-     edges). Streaked along the stroke rather than speckled across it. -->
+<svelte:window onkeydown={key} />
+
+<!-- Grain a skin may lay over hand-drawn strokes (the blackboard does: chalk breaks up at
+     its edges). Streaked along the stroke rather than speckled across it. -->
 <svg class="defs" aria-hidden="true">
 	<filter
 		id="chalk-grain"
@@ -42,11 +96,20 @@
 
 <div class="board" data-skin={skin}>
 	{#if view.kind === "entry"}
-		<EntryBoard {view} {send} />
+		<EntryBoard {view} {host} {skin} {onskin} />
 	{:else if view.kind === "evaluation"}
-		<EvaluationBoard {view} {send} />
+		<EvaluationBoard {view} {host} onmenu={() => (menu = true)} />
 	{:else}
-		<ProofBoard {view} {send} />
+		<ProofBoard {view} {host} onmenu={() => (menu = true)} />
+	{/if}
+	{#if menu && view.kind !== "entry"}
+		<Sheet
+			catalog={view.catalog}
+			{host}
+			{skin}
+			{onskin}
+			onclose={() => (menu = false)}
+		/>
 	{/if}
 </div>
 

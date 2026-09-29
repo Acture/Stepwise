@@ -1,12 +1,16 @@
 <script lang="ts">
+	import { untrack } from "svelte";
 	import Header from "./Header.svelte";
 	import Ledge from "./Ledge.svelte";
 	import MarkLayer from "./MarkLayer.svelte";
 	import type { Mark } from "./marks";
-	import type { Command, Proof } from "./view";
+	import type { Host, ProofView } from "./view";
 
-	let { view, send }: { view: Proof; send: (command: Command) => void } =
-		$props();
+	let {
+		view,
+		host,
+		onmenu,
+	}: { view: ProofView; host: Host; onmenu: () => void } = $props();
 
 	let sheet: HTMLElement | undefined = $state();
 	let slot: HTMLElement | undefined = $state();
@@ -14,22 +18,25 @@
 	/** bars[row][level]: the spacer each scope bar is drawn along; the last row is the draft. */
 	let bars: HTMLElement[][] = $state([]);
 	let formulas: HTMLElement[] = $state([]);
-	let composing: boolean = false;
 
+	// The line being written holds the draft and Rust mirrors it, as in an expression's
+	// blank. The field takes Rust's value once per line: when an accepted or undone line
+	// changes the count, the next row is a new row.
 	$effect(() => {
-		if (field && !composing && field.value !== view.input)
-			field.value = view.input;
+		if (!field) return;
+		field.value = untrack(() => view.input);
+		field.focus();
 	});
 
 	function commit(): void {
-		if (field) send({ kind: "draft", text: field.value });
+		if (field) host.send({ kind: "draft", text: field.value });
 	}
 
 	function key(event: KeyboardEvent): void {
 		if (event.isComposing || event.keyCode === 229) return;
 		if (event.key === "Enter") {
 			event.preventDefault();
-			send({ kind: "submit" });
+			host.send({ kind: "submit" });
 		}
 	}
 
@@ -100,17 +107,15 @@
 		return name === "premise";
 	}
 
-	/** An accepted line carries its verdict: the last line, while the verdict stands. */
-	let judged: number | null = $derived(
-		view.feedback.tone === "good" && view.lines.length > 0
-			? view.lines.length
-			: null,
-	);
+	let judged: number | null = $derived(view.judged);
 </script>
 
-<Header course={view.course} {send} />
+<Header course={view.course} {host} {onmenu} />
 
 <main>
+	{#if view.message}
+		<p class="message">{view.message}</p>
+	{/if}
 	<p class="goal">
 		<span class="label">目标</span>
 		<span class="formula ink">{view.goal}</span>
@@ -145,48 +150,43 @@
 				</li>
 			{/each}
 			{#if !view.finished}
-				<li class="next">
-					<span class="number">{view.lines.length + 1}</span>
-					<span class="bars"
-						>{#each { length: view.open + 1 } as _, level (level)}<i
-								bind:this={
-									() => bars[view.lines.length]?.[level],
-									(bar) => ((bars[view.lines.length] ??= [])[level] = bar)
-								}
-							></i>{/each}</span
-					>
-					<span class="slot" bind:this={slot}>
-						<input
-							bind:this={field}
-							class="formula"
-							spellcheck="false"
-							autocomplete="off"
-							placeholder="公式 ; 规则 ; 引用行"
-							aria-label="下一行"
-							oninput={(event) => {
-								if (!(event instanceof InputEvent && event.isComposing))
-									commit();
-							}}
-							oncompositionstart={() => (composing = true)}
-							oncompositionend={() => {
-								composing = false;
-								commit();
-							}}
-							onkeydown={key}
-						/>
-					</span>
-				</li>
+				{#key view.lines.length}
+					<li class="next">
+						<span class="number">{view.lines.length + 1}</span>
+						<span class="bars"
+							>{#each { length: view.open + 1 } as _, level (level)}<i
+									bind:this={
+										() => bars[view.lines.length]?.[level],
+										(bar) => ((bars[view.lines.length] ??= [])[level] = bar)
+									}
+								></i>{/each}</span
+						>
+						<span class="slot" bind:this={slot}>
+							<input
+								bind:this={field}
+								class="formula"
+								spellcheck="false"
+								autocomplete="off"
+								placeholder="公式 ; 规则 ; 引用行"
+								aria-label="下一行"
+								oninput={(event) => {
+									if (!(event instanceof InputEvent && event.isComposing))
+										commit();
+								}}
+								oncompositionend={commit}
+								onkeydown={key}
+							/>
+						</span>
+					</li>
+				{/key}
 			{/if}
 		</ol>
 		<MarkLayer host={sheet} marks={fitch} />
 	</div>
 
 	<!-- A verdict on an accepted line is about that line, not the one being written: it names
-	     its line, and steps back once the student starts the next. -->
-	<p
-		class="feedback {view.feedback.tone}"
-		class:settled={judged !== null && view.input !== ""}
-	>
+	     its line until the student starts the next, when the Rust side stops calling it one. -->
+	<p class="feedback {view.feedback.tone}">
 		{#if judged !== null}<span class="which">第 {judged} 行</span>{/if}{view
 			.feedback.text}
 	</p>
@@ -198,10 +198,10 @@
 
 <Ledge
 	tools={[
-		{ label: "撤销一行", onclick: () => send({ kind: "undo" }) },
-		{ label: "规则", onclick: () => send({ kind: "rules" }) },
+		{ label: "撤销一行", onclick: () => host.send({ kind: "undo" }) },
+		{ label: "规则", onclick: () => host.send({ kind: "rules" }) },
 	]}
-	aside={[{ label: "帮助", onclick: () => send({ kind: "help" }) }]}
+	aside={[{ label: "帮助", onclick: () => host.send({ kind: "help" }) }]}
 />
 
 <style>
@@ -227,7 +227,7 @@
 	}
 
 	.done {
-		color: var(--mark-point);
+		color: var(--mark-good, var(--mark-point));
 	}
 
 	.goal .formula {
@@ -299,7 +299,13 @@
 
 	.judged .why,
 	.judged .refs {
-		color: var(--mark-point);
+		color: var(--mark-good, var(--mark-point));
+	}
+
+	.message {
+		margin: 0 0 14px;
+		color: var(--mark-wrong);
+		line-height: 1.6;
 	}
 
 	.slot {
@@ -338,12 +344,7 @@
 	}
 
 	.feedback.good {
-		color: var(--mark-point);
-	}
-
-	.feedback.settled {
-		color: var(--ink-faded);
-		opacity: 0.7;
+		color: var(--mark-good, var(--mark-point));
 	}
 
 	.which {

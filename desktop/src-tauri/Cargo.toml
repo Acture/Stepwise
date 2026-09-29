@@ -1,0 +1,36 @@
+[package]
+name = "stepwise-desktop"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.90"
+description = "The Stepwise desktop window: a Tauri shell over the shared app layer"
+license = "AGPL-3.0-only"
+repository = "https://github.com/Acture/Stepwise"
+publish = false
+
+[[bin]]
+name = "stepwise-desktop"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4.5", features = ["derive"] }
+stepwise = { path = "../.." }
+# Paired by minor version with @tauri-apps/api and @tauri-apps/plugin-dialog in ../ui, which
+# `tauri build` checks. Stated here because the workspace root's rust-version would otherwise
+# steer the resolver to older releases.
+tauri = { version = "2.12", features = [] }
+tauri-plugin-dialog = "2.8"
+
+[dev-dependencies]
+serde_json = "1"
+tempfile = "3"
+
+[build-dependencies]
+tauri-build = { version = "2.7", features = [] }
+
+# No `custom-protocol` feature of our own: `tauri build` runs cargo with
+# `--features tauri/custom-protocol`, which embeds ../ui/dist; a plain cargo build loads devUrl.
+# No release profile either: a member's is ignored, and the workspace root's applies.
+
+[lints]
+workspace = true

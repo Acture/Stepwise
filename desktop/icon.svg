@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+	<!-- Stepwise's app icon: a slate in the blackboard skin carrying the line being written,
+	     "2 +" in chalk and a yellow underline for the blank the student fills. The body follows
+	     Apple's 824 grid with continuous corners (radius 185, smoothing 0.6), so it lines up
+	     with its neighbours in the Dock.
+	     Rendered to PNG headlessly, then `tauri icon` makes desktop/src-tauri/icons. -->
+	<defs>
+		<path
+			id="body"
+			d="M628 100c103.61 0 155.41 0 194.99 20.16a185 185 0 0 1 80.85 80.85c20.16 39.57 20.16 91.38 20.16 194.99L924 628c0 103.61 0 155.41 -20.16 194.99a185 185 0 0 1 -80.85 80.85c-39.57 20.16 -91.38 20.16 -194.99 20.16L396 924c-103.61 0 -155.41 0 -194.99 -20.16a185 185 0 0 1 -80.85 -80.85c-20.16 -39.57 -20.16 -91.38 -20.16 -194.99L100 396c0 -103.61 0 -155.41 20.16 -194.99a185 185 0 0 1 80.85 -80.85c39.57 -20.16 91.38 -20.16 194.99 -20.16Z"
+		/>
+		<clipPath id="inside"><use href="#body" /></clipPath>
+
+		<!-- Slate: a faint light from the upper left, as the window's board has. -->
+		<radialGradient id="light" cx="0.3" cy="0.24" r="0.8">
+			<stop offset="0" stop-color="#ffffff" stop-opacity="0.075" />
+			<stop offset="0.65" stop-color="#ffffff" stop-opacity="0" />
+		</radialGradient>
+
+		<!-- Fine grain across the whole slate. -->
+		<filter id="grain" x="0" y="0" width="100%" height="100%">
+			<feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="3" seed="4" stitchTiles="stitch" />
+			<feColorMatrix values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.11 -0.02" />
+		</filter>
+
+		<!-- Long soft eraser wipes: chalk dust left behind, streaked sideways. -->
+		<filter id="wipes" x="0" y="0" width="100%" height="100%">
+			<feTurbulence type="fractalNoise" baseFrequency="0.0024 0.013" numOctaves="3" seed="11" />
+			<feColorMatrix values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.17 -0.075" />
+		</filter>
+
+		<!-- The rim falls into shadow, as a board set into a wall does. -->
+		<filter id="rim" x="-10%" y="-10%" width="120%" height="120%">
+			<feFlood flood-color="#000000" flood-opacity="0.55" />
+			<feComposite in2="SourceAlpha" operator="out" />
+			<feGaussianBlur stdDeviation="34" />
+			<feComposite in2="SourceAlpha" operator="in" />
+		</filter>
+
+		<!-- The shadow Apple's template casts into the margin. -->
+		<filter id="lift" x="-10%" y="-10%" width="120%" height="125%">
+			<feDropShadow dx="0" dy="10" stdDeviation="11" flood-color="#000000" flood-opacity="0.32" />
+		</filter>
+
+		<!-- Chalk: dry edges and the slate's tooth showing through. Coverage falls toward the
+		     edge of a stroke (the blurred alpha), so the tooth eats the rim and only pits the core;
+		     long faint streaks thin it where the stick skipped. -->
+		<filter id="chalk" x="-15%" y="-15%" width="130%" height="130%">
+			<feTurbulence type="fractalNoise" baseFrequency="0.6" numOctaves="2" seed="3" result="fray" />
+			<feDisplacementMap in="SourceGraphic" in2="fray" scale="5" xChannelSelector="R" yChannelSelector="G" result="rough" />
+			<feGaussianBlur in="rough" stdDeviation="6" result="depth" />
+			<feTurbulence type="fractalNoise" baseFrequency="0.42 0.7" numOctaves="3" seed="8" result="tooth" />
+			<feTurbulence type="fractalNoise" baseFrequency="0.011 0.17" numOctaves="2" seed="21" result="streak" />
+			<feComposite in="tooth" in2="streak" operator="arithmetic" k2="1" k3="0.5" k4="-0.25" result="grit" />
+			<feComposite in="depth" in2="grit" operator="arithmetic" k2="1" k3="2.4" k4="-1.2" result="cover" />
+			<feColorMatrix in="cover" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 7 -3.6" result="mask" />
+			<feComposite in="rough" in2="mask" operator="in" />
+		</filter>
+
+		<filter id="dust" x="-20%" y="-20%" width="140%" height="140%">
+			<feGaussianBlur stdDeviation="12" />
+		</filter>
+
+		<g id="line" fill="none" stroke-linecap="round" stroke-linejoin="round">
+			<!-- 2 -->
+			<path
+				stroke="#efeee7"
+				stroke-width="56"
+				d="M222 430C226 377 271 350 316 356C368 363 390 412 368 462C347 510 290 566 230 646C284 638 336 640 388 647"
+			/>
+			<!-- + -->
+			<path stroke="#efeee7" stroke-width="54" d="M478 528L616 522M545 458L549 594" />
+			<!-- the blank: the side of the stick dragged flat, so its ends are square -->
+			<path stroke="#f3d57d" stroke-width="50" stroke-linecap="butt" d="M670 652C724 646 780 648 836 640" />
+		</g>
+	</defs>
+
+	<g filter="url(#lift)"><use href="#body" fill="#23392f" /></g>
+	<g clip-path="url(#inside)">
+		<rect width="1024" height="1024" fill="url(#light)" />
+		<rect width="1024" height="1024" filter="url(#wipes)" />
+		<rect width="1024" height="1024" filter="url(#grain)" />
+		<use href="#line" opacity="0.14" filter="url(#dust)" />
+		<use href="#line" filter="url(#chalk)" />
+		<use href="#body" fill="#000000" filter="url(#rim)" />
+		<use href="#body" fill="none" stroke="#ffffff" stroke-opacity="0.08" stroke-width="5" />
+	</g>
+</svg>
