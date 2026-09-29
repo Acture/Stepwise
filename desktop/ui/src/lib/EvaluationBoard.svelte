@@ -25,9 +25,12 @@
 	let next: HTMLElement | undefined = $state();
 	let nextRow: HTMLElement | undefined = $state();
 
-	/** The node the open blank stands for: its text is underlined in the line above. */
-	let drafted: number | null = $derived(
-		view.draft?.runs.find((run) => run.blank === "input")?.node ?? null,
+	/** The nodes the open blanks stand for — the one clicked and every other occurrence of
+	 * its name — each underlined in the line above. */
+	let drafted: number[] = $derived(
+		(view.draft?.runs ?? [])
+			.filter((run) => run.blank !== null && run.node !== null)
+			.map((run) => run.node!),
 	);
 
 	// What to do next is pointed at, in the chalk of what is pointed at.
