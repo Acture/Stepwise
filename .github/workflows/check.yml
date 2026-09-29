@@ -66,12 +66,16 @@ jobs:
       - run: cargo +stable clippy --locked -p stepwise-desktop --all-targets -- -D warnings
       # A release build embeds the built page; this compiles that path, after `bun run build`.
       - run: cargo +stable check --locked -p stepwise-desktop --features tauri/custom-protocol
-      # The shell's own tests: progress written, refused and left alone. They open no window.
+      # The shell's own tests: progress and appearance written, refused and left alone, themes
+      # read and mapped. Installed faces are enumerated only on macOS. They open no window.
       - run: cargo +stable test --locked -p stepwise-desktop
+      # The desk's types write their declarations from the library's tests, the appearance's
+      # from the shell's.
       - name: The page's protocol matches the Rust types
         if: runner.os == 'Linux'
         run: |
           cargo +stable test --locked --lib desktop
+          cargo +stable test --locked -p stepwise-desktop
           # Untracked counts too: a new exported type whose declaration was never committed.
           drift="$(git status --porcelain -- desktop/ui/src/lib/protocol)"
           if [ -n "$drift" ]; then

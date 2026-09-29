@@ -1,12 +1,18 @@
 <script lang="ts">
-	import { ChevronLeft, ChevronRight, List } from "@lucide/svelte";
+	import { ChevronLeft, ChevronRight, List, Settings } from "@lucide/svelte";
 	import type { Course, Host } from "./view";
 
 	let {
 		course,
 		host,
 		onmenu,
-	}: { course: Course; host: Host; onmenu: () => void } = $props();
+		onsettings,
+	}: {
+		course: Course;
+		host: Host;
+		onmenu: () => void;
+		onsettings: () => void;
+	} = $props();
 </script>
 
 <!-- The title bar is the board's top edge; the window buttons sit at its left. -->
@@ -38,8 +44,11 @@
 		>
 			<ChevronRight size={20} strokeWidth={1.5} />
 		</button>
-		<button onclick={onmenu} title="题目、题集与皮肤">
+		<button onclick={onmenu} title="题目与题集">
 			<List size={19} strokeWidth={1.5} />
+		</button>
+		<button onclick={onsettings} title="设置：皮肤与字体">
+			<Settings size={18} strokeWidth={1.5} />
 		</button>
 	</nav>
 </header>

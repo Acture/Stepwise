@@ -1,19 +1,14 @@
 <script lang="ts">
 	import { X } from "@lucide/svelte";
-	import { skins, type Skin } from "../skins";
 	import type { Catalog, Host } from "./view";
 
 	let {
 		catalog,
 		host,
-		skin,
-		onskin,
 		onclose,
 	}: {
 		catalog: Catalog;
 		host: Host;
-		skin: Skin;
-		onskin: (skin: Skin) => void;
 		onclose: () => void;
 	} = $props();
 
@@ -59,18 +54,6 @@
 			>换一种语言</button
 		>
 	</div>
-
-	<div class="skins" role="radiogroup" aria-label="皮肤">
-		<span class="label">皮肤</span>
-		{#each skins as choice (choice.id)}
-			<button
-				role="radio"
-				aria-checked={skin === choice.id}
-				class:chosen={skin === choice.id}
-				onclick={() => onskin(choice.id)}>{choice.name}</button
-			>
-		{/each}
-	</div>
 </section>
 
 <style>
@@ -78,7 +61,7 @@
 		position: absolute;
 		inset: 0;
 		z-index: 10;
-		background: rgba(0, 0, 0, 0.35);
+		background: var(--scrim);
 	}
 
 	.sheet {
@@ -94,7 +77,7 @@
 		padding: 14px 18px 18px;
 		background: var(--surface);
 		background-size: var(--surface-size, auto);
-		box-shadow: -18px 0 36px rgba(0, 0, 0, 0.45);
+		box-shadow: var(--sheet-shadow);
 		overflow-y: auto;
 	}
 
@@ -165,28 +148,11 @@
 		border-top: 1px solid var(--quiet-mark);
 	}
 
-	.actions button,
-	.skins button {
+	.actions button {
 		color: var(--ink-faded);
 	}
 
-	.actions button:hover,
-	.skins button:hover {
+	.actions button:hover {
 		color: var(--ink);
-	}
-
-	.skins {
-		display: flex;
-		align-items: baseline;
-		gap: 16px;
-	}
-
-	.label {
-		font-size: var(--size-small);
-		color: var(--ink-faded);
-	}
-
-	.skins button.chosen {
-		color: var(--mark-point);
 	}
 </style>

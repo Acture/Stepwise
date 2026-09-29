@@ -3,23 +3,13 @@
 	import Ledge from "./Ledge.svelte";
 	import MarkLayer from "./MarkLayer.svelte";
 	import type { Mark } from "./marks";
-	import { skins, type Skin } from "../skins";
 	import type { EntryView, Host } from "./view";
 
 	let {
 		view,
 		host,
-		skin,
-		onskin,
-	}: { view: EntryView; host: Host; skin: Skin; onskin: (skin: Skin) => void } =
-		$props();
-
-	/** The skin after this one, for the ledge's single switch. */
-	let following: (typeof skins)[number] = $derived(
-		skins[
-			(skins.findIndex((choice) => choice.id === skin) + 1) % skins.length
-		]!,
-	);
+		onsettings,
+	}: { view: EntryView; host: Host; onsettings: () => void } = $props();
 
 	let demo: HTMLElement | undefined = $state();
 	let picked: HTMLElement | undefined = $state();
@@ -128,9 +118,7 @@
 
 <Ledge
 	tools={[{ label: "打开题集文件", onclick: () => host.openSet() }]}
-	aside={[
-		{ label: `换成${following.name}皮肤`, onclick: () => onskin(following.id) },
-	]}
+	aside={[{ label: "设置", onclick: onsettings }]}
 />
 
 <style>

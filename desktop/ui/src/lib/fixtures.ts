@@ -3,6 +3,11 @@
 // belongs to no shipped question set. Node ownership follows node_owners: a literal belongs
 // to the operation around it, and each variable is a node of its own.
 
+import type { Panel } from "./App.svelte";
+import type { Appearance } from "./protocol/Appearance";
+import type { Font } from "./protocol/Font";
+import type { Look } from "./protocol/Look";
+import type { Theme } from "./protocol/Theme";
 import type {
 	Catalog,
 	Course,
@@ -267,11 +272,213 @@ const proof: ProofView = {
 	message: null,
 };
 
+/** A theme as the shell hands it over, its colours already turned into the page's roles. */
+function theme(
+	source: string,
+	name: string,
+	dark: boolean,
+	[surface, ink, faded, bright, write, wrong, point, good, tray]: string[],
+	[quiet, scrollbar, glow]: string[],
+): Theme {
+	return {
+		id: `${source}/${name}`,
+		name,
+		source,
+		dark,
+		tokens: {
+			surface: surface!,
+			ink: ink!,
+			"ink-faded": faded!,
+			"ink-bright": bright!,
+			"mark-write": write!,
+			"mark-wrong": wrong!,
+			"mark-point": point!,
+			"mark-good": good!,
+			tray: tray!,
+			"quiet-mark": quiet!,
+			scrollbar: scrollbar!,
+			"focus-ring": `2px solid ${point}`,
+			"ink-glow": glow!,
+		},
+	};
+}
+
+export const themes: Theme[] = [
+	theme(
+		"VS Code",
+		"Dark Modern",
+		true,
+		[
+			"#1f1f1f",
+			"#cccccc",
+			"#9d9d9d",
+			"#ffffff",
+			"#e2c08d",
+			"#f85149",
+			"#4daafc",
+			"#2ea043",
+			"#181818",
+		],
+		[
+			"rgba(204, 204, 204, 0.2)",
+			"rgba(121, 121, 121, 0.4)",
+			"0 0 8px rgba(77, 170, 252, 0.45)",
+		],
+	),
+	theme(
+		"VS Code",
+		"Light Modern",
+		false,
+		[
+			"#ffffff",
+			"#3b3b3b",
+			"#6e7681",
+			"#000000",
+			"#895503",
+			"#c72e0f",
+			"#005fb8",
+			"#2e7d32",
+			"#f8f8f8",
+		],
+		[
+			"rgba(59, 59, 59, 0.16)",
+			"rgba(100, 100, 100, 0.4)",
+			"0 0 8px rgba(0, 95, 184, 0.3)",
+		],
+	),
+	theme(
+		"VS Code",
+		"Solarized Light",
+		false,
+		[
+			"#fdf6e3",
+			"#586e75",
+			"#839496",
+			"#073642",
+			"#b58900",
+			"#dc322f",
+			"#268bd2",
+			"#859900",
+			"#eee8d5",
+		],
+		[
+			"rgba(88, 110, 117, 0.2)",
+			"rgba(88, 110, 117, 0.3)",
+			"0 0 8px rgba(38, 139, 210, 0.35)",
+		],
+	),
+	theme(
+		"VS Code",
+		"Monokai",
+		true,
+		[
+			"#272822",
+			"#f8f8f2",
+			"#90908a",
+			"#ffffff",
+			"#e6db74",
+			"#f92672",
+			"#66d9ef",
+			"#a6e22e",
+			"#1e1f1c",
+		],
+		[
+			"rgba(248, 248, 242, 0.18)",
+			"rgba(121, 121, 121, 0.4)",
+			"0 0 8px rgba(102, 217, 239, 0.4)",
+		],
+	),
+	theme(
+		"Cursor",
+		"Cursor Dark",
+		true,
+		[
+			"#181818",
+			"#e4e4e4",
+			"#8a8a8a",
+			"#ffffff",
+			"#f1b467",
+			"#f14c4c",
+			"#88c0d0",
+			"#a3be8c",
+			"#141414",
+		],
+		[
+			"rgba(228, 228, 228, 0.16)",
+			"rgba(228, 228, 228, 0.25)",
+			"0 0 8px rgba(136, 192, 208, 0.4)",
+		],
+	),
+	theme(
+		"导入",
+		"Rosé Pine Dawn",
+		false,
+		[
+			"#faf4ed",
+			"#575279",
+			"#797593",
+			"#26233a",
+			"#d7827e",
+			"#b4637a",
+			"#286983",
+			"#56949f",
+			"#f2e9e1",
+		],
+		[
+			"rgba(87, 82, 121, 0.18)",
+			"rgba(87, 82, 121, 0.25)",
+			"0 0 8px rgba(40, 105, 131, 0.35)",
+		],
+	),
+];
+
+function font(family: string, monospace: boolean, logic: boolean | null): Font {
+	return { family, monospace, logic };
+}
+
+/** Families as a Mac lists them. Menlo draws ∧ ∨ → ↔ ¬ but not ⊥, and SF Mono lacks ∧ and ∨
+ * as well; the others were not checked or draw them all. */
+const fonts: Font[] = [
+	font("Avenir Next", false, null),
+	font("Courier New", true, false),
+	font("Fira Code", true, true),
+	font("Helvetica Neue", false, null),
+	font("Hiragino Sans GB", false, null),
+	font("Iosevka", true, true),
+	font("JetBrains Mono", true, true),
+	font("Kaiti SC", false, null),
+	font("LXGW WenKai", false, true),
+	font("Menlo", true, false),
+	font("Monaco", true, false),
+	font("PingFang SC", false, null),
+	font("SF Mono", true, false),
+	font("Songti SC", false, null),
+	font("STIX Two Math", false, true),
+];
+
+export const appearance: Appearance = {
+	look: {
+		skin: "blackboard",
+		prose: { kind: "skin" },
+		formula: { kind: "skin" },
+	},
+	themes,
+	fonts,
+	editorFont: "JetBrains Mono",
+	message: null,
+};
+
 export const screens: {
 	name: string;
 	view: View;
 	width: number;
 	height: number;
+	/** A panel open over the board. */
+	opened?: Panel;
+	/** What the settings have to say in this frame. */
+	said?: string;
+	/** Picks this frame makes over the look chosen for the whole review. */
+	picks?: Partial<Look>;
 }[] = [
 	{
 		name: "入口",
@@ -314,5 +521,21 @@ export const screens: {
 		view: { kind: "proof", ...proof },
 		width: 920,
 		height: 460,
+	},
+	{
+		name: "设置：刚打开",
+		view: { kind: "evaluation", ...python },
+		width: 920,
+		height: 460,
+		opened: "settings",
+	},
+	{
+		name: "设置：整页，公式换成 Menlo",
+		view: { kind: "evaluation", ...python },
+		width: 920,
+		height: 1180,
+		opened: "settings",
+		said: "无法导入主题 ~/Downloads/night-owl.json：第 12 行不是合法的 JSON。",
+		picks: { formula: { kind: "family", family: "Menlo" } },
 	},
 ];

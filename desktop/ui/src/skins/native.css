@@ -1,0 +1,52 @@
+/* 原生: the look of the system's own apps, light or dark as the system is set. System faces,
+ * a flat ground, straight marks and the system's colours, each darkened on light and
+ * lightened on dark until it reads as text. SF Mono (ui-monospace) leads the formula stack;
+ * it has no ∧ or ∨, which come from Menlo behind it, and neither has ⊥, which comes from the
+ * system. Every colour is a light-dark() pair, so the scheme in force picks it. */
+
+[data-skin="native"] {
+	--skin-prose:
+		-apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB",
+		"Segoe UI", "Microsoft YaHei", "Noto Sans CJK SC", system-ui, sans-serif;
+	--skin-formula:
+		ui-monospace, Menlo, "SF Mono", Consolas, "DejaVu Sans Mono", "PingFang SC",
+		"Microsoft YaHei", "Noto Sans CJK SC", monospace;
+	--size-formula: 28px;
+	--size-history: 18px;
+
+	--ink: light-dark(#1d1d1f, #ececef);
+	--ink-faded: light-dark(#6e6e73, #98989f);
+	--ink-bright: light-dark(#000000, #ffffff);
+	--mark-write: light-dark(#b35600, #ff9f0a);
+	--mark-wrong: light-dark(#d70015, #ff6961);
+	--mark-point: light-dark(#0064d2, #409cff);
+	--mark-good: light-dark(#1e7d38, #30d158);
+	--quiet-mark: light-dark(rgba(0, 0, 0, 0.14), rgba(255, 255, 255, 0.16));
+
+	--surface: light-dark(#fbfbfc, #1f1f22);
+	--surface-size: auto;
+	--surface-shadow: none;
+	/* A bottom bar under a hairline, as a window's status bar sits. */
+	--tray: linear-gradient(
+		to bottom,
+		light-dark(rgba(0, 0, 0, 0.1), rgba(255, 255, 255, 0.08)) 0 1px,
+		light-dark(#f2f2f4, #28282b) 1px
+	);
+	--tray-shadow: none;
+
+	--ink-shadow: none;
+	--ink-glow: 0 0 10px
+		light-dark(rgba(0, 122, 255, 0.4), rgba(64, 156, 255, 0.55));
+	--ink-texture: none;
+	--stroke-filter: none;
+	--mark-roughness: 0;
+
+	--focus-ring: 3px solid
+		light-dark(rgba(0, 100, 210, 0.45), rgba(64, 156, 255, 0.55));
+	--scrollbar: light-dark(rgba(0, 0, 0, 0.25), rgba(255, 255, 255, 0.25));
+	--scrim: light-dark(rgba(0, 0, 0, 0.12), rgba(0, 0, 0, 0.4));
+	--sheet-shadow: -12px 0 30px
+		light-dark(rgba(0, 0, 0, 0.12), rgba(0, 0, 0, 0.5));
+
+	color-scheme: light dark;
+}

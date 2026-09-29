@@ -1,20 +1,36 @@
+<script lang="ts" module>
+	/** What may lie over the board: the question list, or the settings. */
+	export type Panel = "questions" | "settings";
+</script>
+
 <script lang="ts">
-	import type { Skin } from "../skins";
+	import { untrack } from "svelte";
+	import { dress, wear, wearDress, type Dress } from "../skins";
 	import EntryBoard from "./EntryBoard.svelte";
 	import EvaluationBoard from "./EvaluationBoard.svelte";
 	import ProofBoard from "./ProofBoard.svelte";
+	import type { Appearance } from "./protocol/Appearance";
+	import Settings from "./Settings.svelte";
 	import Sheet from "./Sheet.svelte";
 	import type { Command, Host, View } from "./view";
 
 	let {
 		view,
 		host,
-		skin,
-		onskin,
-	}: { view: View; host: Host; skin: Skin; onskin: (skin: Skin) => void } =
-		$props();
+		appearance,
+		opened = null,
+	}: {
+		view: View;
+		host: Host;
+		appearance: Appearance;
+		/** A panel open from the start; only the design review asks for one. */
+		opened?: Panel | null;
+	} = $props();
 
-	let menu: boolean = $state(false);
+	// Only where the board starts: a panel is the student's to open and close after that.
+	let panel: Panel | null = $state(untrack(() => opened));
+	let worn: Dress = $derived(dress(appearance));
+	wearDress(() => worn);
 
 	/** The keys an expression question binds when no field has the caret. The same keys as
 	 * the terminal, so a student moving between the two does not relearn them. */
@@ -35,8 +51,8 @@
 
 	function key(event: KeyboardEvent): void {
 		if (event.isComposing || event.keyCode === 229) return;
-		if (menu) {
-			if (event.key === "Escape") menu = false;
+		if (panel) {
+			if (event.key === "Escape") panel = null;
 			return;
 		}
 		// In a proof every letter belongs to the line being written; changing question takes
@@ -108,26 +124,40 @@
 	</filter>
 </svg>
 
-<div class="board" data-skin={skin}>
-	{#if view.kind === "entry"}
-		<EntryBoard {view} {host} {skin} {onskin} />
-	{:else if view.kind === "evaluation"}
-		<EvaluationBoard {view} {host} onmenu={() => (menu = true)} />
-	{:else}
-		<ProofBoard {view} {host} onmenu={() => (menu = true)} />
-	{/if}
-	{#if menu && view.kind !== "entry"}
-		<Sheet
-			catalog={view.catalog}
-			{host}
-			{skin}
-			{onskin}
-			onclose={() => (menu = false)}
-		/>
+<div class="board" data-skin={worn.skin} {@attach wear(worn.properties)}>
+	<!-- While a panel is open the board behind it takes no focus and no keys: a Tab out of
+	     the panel must not land in the open blank, where typing would act on the question. -->
+	<div class="stage" inert={panel !== null}>
+		{#if view.kind === "entry"}
+			<EntryBoard {view} {host} onsettings={() => (panel = "settings")} />
+		{:else if view.kind === "evaluation"}
+			<EvaluationBoard
+				{view}
+				{host}
+				onmenu={() => (panel = "questions")}
+				onsettings={() => (panel = "settings")}
+			/>
+		{:else}
+			<ProofBoard
+				{view}
+				{host}
+				onmenu={() => (panel = "questions")}
+				onsettings={() => (panel = "settings")}
+			/>
+		{/if}
+	</div>
+	{#if panel === "questions" && view.kind !== "entry"}
+		<Sheet catalog={view.catalog} {host} onclose={() => (panel = null)} />
+	{:else if panel === "settings"}
+		<Settings {appearance} {host} onclose={() => (panel = null)} />
 	{/if}
 </div>
 
 <style>
+	.stage {
+		display: contents;
+	}
+
 	.defs {
 		position: absolute;
 		width: 0;
