@@ -84,6 +84,39 @@ const python: EvaluationView = {
 	message: null,
 };
 
+const sameName: EvaluationView = {
+	edition: 0,
+	course: course({ language: "Python", title: "代入同名变量", position: 1 }),
+	catalog: catalog("内置题库", null),
+	bindings: ["x = 2", "y = 3"],
+	history: [],
+	current: runs([
+		["x", 1],
+		[" + ", 0],
+		["y", 3],
+		[" * ", 2],
+		["x", 4],
+	]),
+	extents: { 0: [0, 4], 1: [0, 0], 2: [2, 4], 3: [2, 2], 4: [4, 4] },
+	selected: null,
+	draft: {
+		runs: [
+			{ text: "x", node: 1, blank: "input" },
+			{ text: " + ", node: 0, blank: null },
+			{ text: "y", node: 3, blank: null },
+			{ text: " * ", node: 2, blank: null },
+			{ text: "x", node: 4, blank: "mirror" },
+		],
+		input: "2",
+	},
+	ending: null,
+	feedback: {
+		text: "在空格上写出这一步的值，Enter 检查；Esc 取消。",
+		tone: "plain",
+	},
+	message: null,
+};
+
 const logic: EvaluationView = {
 	edition: 0,
 	course: course({
@@ -450,6 +483,12 @@ export const screens: {
 	{
 		name: "入口",
 		view: { kind: "entry", set: null, message: null },
+		width: 920,
+		height: 460,
+	},
+	{
+		name: "同名变量：两处空格各自一条线",
+		view: { kind: "evaluation", ...sameName },
 		width: 920,
 		height: 460,
 	},
