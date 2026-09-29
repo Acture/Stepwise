@@ -7,10 +7,13 @@
 	import type { Mark } from "./marks";
 	import Grouped from "./Grouped.svelte";
 	import { pieces } from "./typeset";
-	import type { Command, Evaluation } from "./view";
+	import type { EvaluationView, Host } from "./view";
 
-	let { view, send }: { view: Evaluation; send: (command: Command) => void } =
-		$props();
+	let {
+		view,
+		host,
+		onmenu,
+	}: { view: EvaluationView; host: Host; onmenu: () => void } = $props();
 
 	let work: HTMLElement | undefined = $state();
 	let next: HTMLElement | undefined = $state();
@@ -19,6 +22,11 @@
 	/** The node the open blank stands for: its text is underlined in the line above. */
 	let drafted: number | null = $derived(
 		view.draft?.runs.find((run) => run.blank === "input")?.node ?? null,
+	);
+
+	/** Which blank is open: a new one — another node, or the next step's — is a new line. */
+	let blank: string = $derived(
+		`${view.current.map((run) => run.text).join("")}\u0000${drafted}`,
 	);
 
 	// What to do next is pointed at, in the chalk of what is pointed at.
@@ -42,9 +50,12 @@
 	});
 </script>
 
-<Header course={view.course} {send} />
+<Header course={view.course} {host} {onmenu} />
 
 <main bind:this={work}>
+	{#if view.message}
+		<p class="message">{view.message}</p>
+	{/if}
 	{#if view.bindings.length > 0}
 		<p class="bindings">
 			<span class="label">设</span>
@@ -57,11 +68,18 @@
 	{#if view.history.length > 0}
 		<ol class="history formula">
 			{#each view.history as line, index (index)}
-				<li>
-					<Grouped texts={pieces(line)}>
-						{#snippet piece(index: number)}{pieces(line)[index]}{/snippet}
-					</Grouped>
-				</li>
+				{#if line.kind === "expression"}
+					<li>
+						<Grouped texts={pieces(line.text)}>
+							{#snippet piece(index: number)}{pieces(line.text)[
+									index
+								]}{/snippet}
+						</Grouped>
+					</li>
+				{:else}
+					<!-- The record keeps what was taken back and says so. -->
+					<li class="taken-back">{line.text}</li>
+				{/if}
 			{/each}
 		</ol>
 	{/if}
@@ -72,18 +90,20 @@
 		selected={view.draft ? null : view.selected}
 		{drafted}
 		interactive={view.ending === null}
-		onpick={(node) => send({ kind: "select", node })}
+		onpick={(node) => host.send({ kind: "select", node })}
 	/>
 
 	{#if view.draft}
-		<DraftLine
-			runs={view.draft.runs}
-			input={view.draft.input}
-			rejected={view.feedback.tone === "bad"}
-			ondraft={(text) => send({ kind: "draft", text })}
-			onsubmit={() => send({ kind: "submit" })}
-			oncancel={() => send({ kind: "cancel" })}
-		/>
+		{#key blank}
+			<DraftLine
+				runs={view.draft.runs}
+				input={view.draft.input}
+				rejected={view.feedback.tone === "bad"}
+				ondraft={(text) => host.send({ kind: "draft", text })}
+				onsubmit={() => host.send({ kind: "submit" })}
+				oncancel={() => host.send({ kind: "cancel" })}
+			/>
+		{/key}
 	{/if}
 
 	{#if view.ending}
@@ -100,7 +120,7 @@
 			<button
 				class="next ink"
 				bind:this={next}
-				onclick={() => send({ kind: "next" })}>下一题</button
+				onclick={() => host.send({ kind: "next" })}>下一题</button
 			>
 			<MarkLayer host={nextRow} marks={nextMarks} />
 		</div>
@@ -109,15 +129,15 @@
 
 <Ledge
 	tools={[
-		{ label: "撤销", onclick: () => send({ kind: "undo" }) },
-		{ label: "重来", onclick: () => send({ kind: "reset" }) },
+		{ label: "撤销", onclick: () => host.send({ kind: "undo" }) },
+		{ label: "重来", onclick: () => host.send({ kind: "reset" }) },
 		{
 			label: "提示",
-			onclick: () => send({ kind: "hint" }),
+			onclick: () => host.send({ kind: "hint" }),
 			disabled: view.ending !== null,
 		},
 	]}
-	aside={[{ label: "帮助", onclick: () => send({ kind: "help" }) }]}
+	aside={[{ label: "帮助", onclick: () => host.send({ kind: "help" }) }]}
 />
 
 <style>
@@ -170,6 +190,17 @@
 		margin-top: 0.4em;
 	}
 
+	.taken-back {
+		font-family: var(--prose);
+		font-size: var(--size-small);
+	}
+
+	.message {
+		margin: 0 0 14px;
+		color: var(--mark-wrong);
+		line-height: 1.6;
+	}
+
 	.ending {
 		display: flex;
 		align-items: baseline;
@@ -193,7 +224,7 @@
 	}
 
 	.feedback.good {
-		color: var(--mark-point);
+		color: var(--mark-good, var(--mark-point));
 	}
 
 	.next-row {

@@ -1,9 +1,12 @@
 <script lang="ts">
 	import { ChevronLeft, ChevronRight, List } from "@lucide/svelte";
-	import type { Command, Course } from "./view";
+	import type { Course, Host } from "./view";
 
-	let { course, send }: { course: Course; send: (command: Command) => void } =
-		$props();
+	let {
+		course,
+		host,
+		onmenu,
+	}: { course: Course; host: Host; onmenu: () => void } = $props();
 </script>
 
 <!-- The title bar is the board's top edge; the window buttons sit at its left. -->
@@ -21,19 +24,19 @@
 		{/if}
 		<button
 			disabled={!course.back}
-			onclick={() => send({ kind: "previous" })}
+			onclick={() => host.send({ kind: "previous" })}
 			title="上一题"
 		>
 			<ChevronLeft size={20} strokeWidth={1.5} />
 		</button>
 		<button
 			disabled={!course.forward}
-			onclick={() => send({ kind: "next" })}
+			onclick={() => host.send({ kind: "next" })}
 			title="下一题"
 		>
 			<ChevronRight size={20} strokeWidth={1.5} />
 		</button>
-		<button onclick={() => send({ kind: "questions" })} title="题目与题集">
+		<button onclick={onmenu} title="题目、题集与皮肤">
 			<List size={19} strokeWidth={1.5} />
 		</button>
 	</nav>
