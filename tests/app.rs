@@ -4,7 +4,9 @@
 use std::collections::BTreeMap;
 
 use stepwise::{
-	app::{Course, Lesson, Notice, Practice, ProofPractice, Report, Supply, Task, Transcript},
+	app::{
+		Archived, Course, Lesson, Notice, Practice, ProofPractice, Report, Supply, Task, Transcript,
+	},
 	core::{Language, NextStep, NodeId},
 	exercises::{self, Exercise, ProofQuestion, Question, QuestionSet},
 	generate,
@@ -187,8 +189,14 @@ fn a_whole_question_is_selected_answered_undone_and_resumed_without_a_terminal()
 
 	// The archived history is the same lines a window would show.
 	let mut transcript: Transcript = Transcript::default();
-	let lines: Vec<String> = transcript.sync(&resumed);
-	assert_eq!(lines, ["Python 运算练习", "2 + (3 * 4)"]);
+	let lines: Vec<Archived> = transcript.sync(&resumed);
+	assert_eq!(
+		lines,
+		[
+			Archived::Heading("Python 运算练习".into()),
+			Archived::Expression("2 + (3 * 4)".into())
+		]
+	);
 	assert!(transcript.sync(&resumed).is_empty());
 }
 
@@ -595,28 +603,43 @@ fn every_notice_the_app_layer_raises_is_a_reason_and_carries_no_sentence() {
 fn the_archived_marker_says_whether_a_step_was_taken_back_or_the_question_restarted() {
 	let mut walk: Lesson = random_lesson(builtin("precedence"), Progress::default());
 	let mut transcript: Transcript = Transcript::default();
-	assert_eq!(transcript.sync(&walk), ["Python 运算练习"]);
+	assert_eq!(
+		transcript.sync(&walk),
+		[Archived::Heading("Python 运算练习".into())]
+	);
 
 	let multiply: NodeId = at(evaluating(&walk), "3 * 4");
 	let session: &mut Practice = evaluating_mut(&mut walk);
 	session.select(multiply);
 	session.paste("12");
 	assert!(session.submit());
-	assert_eq!(transcript.sync(&walk), ["2 + (3 * 4)"]);
+	assert_eq!(
+		transcript.sync(&walk),
+		[Archived::Expression("2 + (3 * 4)".into())]
+	);
 
 	assert!(evaluating_mut(&mut walk).undo());
 	assert_eq!(walk.report(), &Report::Notice(Notice::Undone));
-	assert_eq!(transcript.sync(&walk), ["↶ 已撤销上一步。"]);
+	assert_eq!(
+		transcript.sync(&walk),
+		[Archived::TakenBack("↶ 已撤销上一步。".into())]
+	);
 
 	// Starting over reaches the same branch and has to be told apart from an undo.
 	let session: &mut Practice = evaluating_mut(&mut walk);
 	session.select(multiply);
 	session.paste("12");
 	assert!(session.submit());
-	assert_eq!(transcript.sync(&walk), ["2 + (3 * 4)"]);
+	assert_eq!(
+		transcript.sync(&walk),
+		[Archived::Expression("2 + (3 * 4)".into())]
+	);
 	assert!(evaluating_mut(&mut walk).reset().unwrap());
 	assert_eq!(walk.report(), &Report::Notice(Notice::Restarted));
-	assert_eq!(transcript.sync(&walk), ["↶ 已重新开始本题。"]);
+	assert_eq!(
+		transcript.sync(&walk),
+		[Archived::TakenBack("↶ 已重新开始本题。".into())]
+	);
 }
 
 #[test]
@@ -624,20 +647,26 @@ fn changing_question_archives_a_new_header_and_the_first_question_has_no_earlier
 	let mut walk: Lesson = random_lesson(builtin("long-arithmetic"), Progress::default());
 	let mut transcript: Transcript = Transcript::default();
 	// Nothing is archived before a step: just the language and this question's valuation.
-	let opening: Vec<String> = transcript.sync(&walk);
+	let opening: Vec<Archived> = transcript.sync(&walk);
 	assert_eq!(opening.len(), 2);
-	assert_eq!(opening[0], "Python 运算练习");
-	assert_eq!(opening[1], evaluating(&walk).question().assignments());
-	assert!(opening[1].contains("a=2"));
+	assert_eq!(opening[0], Archived::Heading("Python 运算练习".into()));
+	assert_eq!(
+		opening[1],
+		Archived::Bindings(evaluating(&walk).question().assignments())
+	);
+	assert!(opening[1].text().contains("a=2"));
 
 	// Moving to a generated question starts a fresh header block below the old state.
 	let previous: String = evaluating(&walk).session().render().into();
 	assert!(walk.next_question().unwrap());
-	let switched: Vec<String> = transcript.sync(&walk);
-	assert_eq!(switched[0], previous);
-	assert_eq!(switched[1], "");
-	assert_eq!(switched[2], "Python 运算练习");
-	assert_eq!(switched[3], evaluating(&walk).question().assignments());
+	let switched: Vec<Archived> = transcript.sync(&walk);
+	assert_eq!(switched[0], Archived::Expression(previous));
+	assert_eq!(switched[1], Archived::Break);
+	assert_eq!(switched[2], Archived::Heading("Python 运算练习".into()));
+	assert_eq!(
+		switched[3],
+		Archived::Bindings(evaluating(&walk).question().assignments())
+	);
 	assert!(transcript.sync(&walk).is_empty());
 
 	// Going back reaches the first question. Going back again goes nowhere, so it changes
@@ -1496,25 +1525,33 @@ fn a_bare_launch_reopens_an_unfinished_built_in_proof_and_replaces_a_finished_on
 /// proof owes nothing when it closes, since each line is archived once as it is accepted.
 #[test]
 fn the_transcript_archives_evaluation_and_proof_blocks_across_one_lesson() {
+	use Archived::{Bindings, Break, Expression, Heading, ProofLine, TakenBack};
+	let owned = |line: &str| -> String { line.into() };
 	let set: QuestionSet = imported(WALK_SET);
 	let mut walk: Lesson = lesson(set.of_language(Language::Logic), 0, Progress::default());
 	let mut transcript: Transcript = Transcript::default();
-	assert_eq!(transcript.sync(&walk), ["命题逻辑", "P=True Q=False"]);
+	assert_eq!(
+		transcript.sync(&walk),
+		[
+			Heading(owned("命题逻辑")),
+			Bindings(owned("P=True Q=False"))
+		]
+	);
 
 	step_once(evaluating_mut(&mut walk));
-	assert_eq!(transcript.sync(&walk), ["P ∧ Q"]);
+	assert_eq!(transcript.sync(&walk), [Expression(owned("P ∧ Q"))]);
 	assert_eq!(evaluating(&walk).session().render(), "True ∧ Q");
 
 	assert!(walk.next_question().unwrap());
 	assert_eq!(
 		transcript.sync(&walk),
 		[
-			"True ∧ Q",
-			"",
-			"自然演绎 · 目标：R",
-			"1 (P → Q) [premise ]",
-			"2 (Q → R) [premise ]",
-			"3 P [premise ]",
+			Expression(owned("True ∧ Q")),
+			Break,
+			Heading(owned("自然演绎 · 目标：R")),
+			ProofLine(owned("1 (P → Q) [premise ]")),
+			ProofLine(owned("2 (Q → R) [premise ]")),
+			ProofLine(owned("3 P [premise ]")),
 		]
 	);
 	assert!(transcript.sync(&walk).is_empty());
@@ -1522,21 +1559,28 @@ fn the_transcript_archives_evaluation_and_proof_blocks_across_one_lesson() {
 	let proof: &mut ProofPractice = proving_mut(&mut walk);
 	proof.paste(CHAIN[0]);
 	assert!(proof.submit());
-	assert_eq!(transcript.sync(&walk), ["4 Q [mp 1,3]"]);
+	assert_eq!(transcript.sync(&walk), [ProofLine(owned("4 Q [mp 1,3]"))]);
 	assert!(transcript.sync(&walk).is_empty());
 	let proof: &mut ProofPractice = proving_mut(&mut walk);
 	proof.paste(CHAIN[1]);
 	assert!(proof.submit());
-	assert_eq!(transcript.sync(&walk), ["5 R [mp 2,4]"]);
+	assert_eq!(transcript.sync(&walk), [ProofLine(owned("5 R [mp 2,4]"))]);
 	assert!(proving_mut(&mut walk).undo());
 	assert_eq!(
 		transcript.sync(&walk),
-		["↶ 撤销第 5 行及其假设作用域变更。"]
+		[TakenBack(owned("↶ 撤销第 5 行及其假设作用域变更。"))]
 	);
 	assert!(transcript.sync(&walk).is_empty());
 
 	assert!(walk.next_question().unwrap());
-	assert_eq!(transcript.sync(&walk), ["", "命题逻辑", "P=False Q=True"]);
+	assert_eq!(
+		transcript.sync(&walk),
+		[
+			Break,
+			Heading(owned("命题逻辑")),
+			Bindings(owned("P=False Q=True"))
+		]
+	);
 	assert_eq!(evaluating(&walk).session().render(), "P ∨ Q");
 
 	// Going back opens each question afresh: the proof with every line it holds, and the
@@ -1545,19 +1589,24 @@ fn the_transcript_archives_evaluation_and_proof_blocks_across_one_lesson() {
 	assert_eq!(
 		transcript.sync(&walk),
 		[
-			"P ∨ Q",
-			"",
-			"自然演绎 · 目标：R",
-			"1 (P → Q) [premise ]",
-			"2 (Q → R) [premise ]",
-			"3 P [premise ]",
-			"4 Q [mp 1,3]",
+			Expression(owned("P ∨ Q")),
+			Break,
+			Heading(owned("自然演绎 · 目标：R")),
+			ProofLine(owned("1 (P → Q) [premise ]")),
+			ProofLine(owned("2 (Q → R) [premise ]")),
+			ProofLine(owned("3 P [premise ]")),
+			ProofLine(owned("4 Q [mp 1,3]")),
 		]
 	);
 	assert!(walk.previous_question().unwrap());
 	assert_eq!(
 		transcript.sync(&walk),
-		["", "命题逻辑", "P=True Q=False", "P ∧ Q"]
+		[
+			Break,
+			Heading(owned("命题逻辑")),
+			Bindings(owned("P=True Q=False")),
+			Expression(owned("P ∧ Q"))
+		]
 	);
 	assert!(transcript.sync(&walk).is_empty());
 }

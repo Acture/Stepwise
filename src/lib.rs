@@ -1,5 +1,6 @@
 pub mod app;
 pub mod core;
+pub mod desktop;
 pub mod exercises;
 pub mod generate;
 pub mod logic;
