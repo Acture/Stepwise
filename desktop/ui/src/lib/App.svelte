@@ -125,23 +125,27 @@
 </svg>
 
 <div class="board" data-skin={worn.skin} {@attach wear(worn.properties)}>
-	{#if view.kind === "entry"}
-		<EntryBoard {view} {host} onsettings={() => (panel = "settings")} />
-	{:else if view.kind === "evaluation"}
-		<EvaluationBoard
-			{view}
-			{host}
-			onmenu={() => (panel = "questions")}
-			onsettings={() => (panel = "settings")}
-		/>
-	{:else}
-		<ProofBoard
-			{view}
-			{host}
-			onmenu={() => (panel = "questions")}
-			onsettings={() => (panel = "settings")}
-		/>
-	{/if}
+	<!-- While a panel is open the board behind it takes no focus and no keys: a Tab out of
+	     the panel must not land in the open blank, where typing would act on the question. -->
+	<div class="stage" inert={panel !== null}>
+		{#if view.kind === "entry"}
+			<EntryBoard {view} {host} onsettings={() => (panel = "settings")} />
+		{:else if view.kind === "evaluation"}
+			<EvaluationBoard
+				{view}
+				{host}
+				onmenu={() => (panel = "questions")}
+				onsettings={() => (panel = "settings")}
+			/>
+		{:else}
+			<ProofBoard
+				{view}
+				{host}
+				onmenu={() => (panel = "questions")}
+				onsettings={() => (panel = "settings")}
+			/>
+		{/if}
+	</div>
 	{#if panel === "questions" && view.kind !== "entry"}
 		<Sheet catalog={view.catalog} {host} onclose={() => (panel = null)} />
 	{:else if panel === "settings"}
@@ -150,6 +154,10 @@
 </div>
 
 <style>
+	.stage {
+		display: contents;
+	}
+
 	.defs {
 		position: absolute;
 		width: 0;

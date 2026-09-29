@@ -6,13 +6,16 @@
 use std::{
 	collections::{BTreeMap, HashMap},
 	ffi::OsStr,
-	fs::{self, DirEntry},
-	io,
+	fs::{self, DirEntry, File, Metadata},
+	io::{self, Read},
 	path::{Path, PathBuf},
 };
 
 use jsonc_parser::ParseOptions;
-use serde::{Deserialize, de::DeserializeOwned};
+use serde::{
+	Deserialize,
+	de::{DeserializeOwned, IgnoredAny},
+};
 
 use super::{
 	Theme,
@@ -23,10 +26,37 @@ use super::{
 /// How many includes a chain may follow; VS Code's own follow three.
 const DEPTH: usize = 8;
 
+/// The largest file read as a theme or a manifest. VS Code's own run to a few hundred KB; a
+/// theme a student downloads may name any path in its `include`, so nothing unbounded is read.
+const LARGEST: u64 = 4 * 1024 * 1024;
+
+/// The text of a regular file of at most [`LARGEST`] bytes, without a leading byte-order mark,
+/// which VS Code's reader strips too. A device or a pipe is refused before it is opened: opening
+/// a pipe with no writer would never return.
+fn bounded(path: &Path) -> Result<String, String> {
+	let metadata: Metadata = fs::metadata(path).map_err(|error: io::Error| error.to_string())?;
+	if !metadata.is_file() {
+		return Err("不是普通文件".into());
+	}
+	let mut text: String = String::new();
+	File::open(path)
+		.and_then(|file: File| file.take(LARGEST + 1).read_to_string(&mut text))
+		.map_err(|error: io::Error| error.to_string())?;
+	if text.len() as u64 > LARGEST {
+		return Err(format!(
+			"超过 {} MB，不像一个主题文件",
+			LARGEST / 1024 / 1024
+		));
+	}
+	Ok(match text.strip_prefix('\u{feff}') {
+		Some(rest) => rest.into(),
+		None => text,
+	})
+}
+
 /// A file as VS Code reads it: JSON with comments and trailing commas.
 pub fn jsonc<T: DeserializeOwned>(path: &Path) -> Result<T, String> {
-	let text: String = fs::read_to_string(path).map_err(|error: io::Error| error.to_string())?;
-	jsonc_parser::parse_to_serde_value(&text, &ParseOptions::default())
+	jsonc_parser::parse_to_serde_value(&bounded(path)?, &ParseOptions::default())
 		.map_err(|error| error.to_string())
 }
 
@@ -40,6 +70,21 @@ struct ThemeFile {
 	/// VS Code's default, as VS Code reads them.
 	#[serde(default)]
 	colors: BTreeMap<String, Option<String>>,
+	/// Syntax colours, which this window does not use; a theme may set nothing else.
+	#[serde(rename = "tokenColors")]
+	token_colors: Option<IgnoredAny>,
+}
+
+impl ThemeFile {
+	/// Whether the file says anything a colour theme says. Any JSON object parses as a
+	/// `ThemeFile`, so an extension's `package.json` picked by mistake would otherwise be worn
+	/// as a theme of nothing but defaults.
+	fn is_theme(&self) -> bool {
+		!self.colors.is_empty()
+			|| self.include.is_some()
+			|| self.token_colors.is_some()
+			|| self.kind.as_deref().and_then(Kind::declared).is_some()
+	}
 }
 
 /// A theme file with its include chain followed.
@@ -70,6 +115,13 @@ fn follow(path: &Path, chain: &mut Vec<PathBuf>) -> Result<Loaded, String> {
 	chain.push(file);
 	let theme: ThemeFile =
 		jsonc(path).map_err(|error: String| format!("{}：{error}", path.display()))?;
+	// The file picked is the one that must be a theme; what it includes is its own affair.
+	if chain.len() == 1 && !theme.is_theme() {
+		return Err(format!(
+			"{} 不是颜色主题：没有 colors、tokenColors、include 或 type",
+			path.display()
+		));
+	}
 	let mut loaded: Loaded = match &theme.include {
 		Some(include) => follow(
 			&path.parent().unwrap_or(Path::new(".")).join(include),
@@ -190,7 +242,7 @@ fn contributions(dir: &Path) -> Vec<(String, String, Kind, PathBuf)> {
 	for extension in extensions {
 		// Most extensions contribute no theme; the text says so before it is parsed.
 		let manifest: PathBuf = extension.join("package.json");
-		let Ok(text) = fs::read_to_string(&manifest) else {
+		let Ok(text) = bounded(&manifest) else {
 			continue;
 		};
 		if !text.contains("\"themes\"") {
@@ -247,6 +299,52 @@ pub(super) mod tests {
 	pub fn write(path: &Path, text: &str) {
 		fs::create_dir_all(path.parent().expect("a folder")).expect("scratch folder");
 		fs::write(path, text).expect("scratch file");
+	}
+
+	#[test]
+	fn only_a_bounded_regular_file_is_read_as_a_theme() {
+		let scratch: TempDir = TempDir::new().expect("scratch");
+		let theme: PathBuf = scratch.path().join("x-color-theme.json");
+		// A downloaded theme may name any path in its include: a device is refused unread.
+		#[cfg(unix)]
+		{
+			write(&theme, r#"{ "include": "/dev/zero", "colors": {} }"#);
+			let refused: String = load(&theme).expect_err("a device is no theme");
+			assert!(refused.contains("不是普通文件"), "{refused}");
+		}
+		let huge: PathBuf = scratch.path().join("huge.json");
+		fs::write(&huge, vec![b' '; (LARGEST + 1) as usize]).expect("scratch file");
+		write(&theme, r#"{ "include": "./huge.json" }"#);
+		assert!(load(&theme).expect_err("too large").contains("MB"));
+
+		// VS Code's reader strips a byte-order mark, so a theme saved with one still loads.
+		write(
+			&theme,
+			"\u{feff}{ \"name\": \"Bom\", \"colors\": { \"editor.background\": \"#101010\" } }",
+		);
+		assert_eq!(
+			load(&theme).expect("a theme with a BOM").name.as_deref(),
+			Some("Bom")
+		);
+	}
+
+	#[test]
+	fn a_json_file_that_says_nothing_a_theme_says_is_not_a_theme() {
+		let scratch: TempDir = TempDir::new().expect("scratch");
+		let manifest: PathBuf = scratch.path().join("package.json");
+		write(
+			&manifest,
+			r#"{ "name": "theme-monokai", "type": "module", "version": "1.0.0" }"#,
+		);
+		assert!(
+			load(&manifest)
+				.expect_err("a manifest")
+				.contains("不是颜色主题")
+		);
+		// A theme that sets only syntax colours is still a theme.
+		let syntax: PathBuf = scratch.path().join("syntax-color-theme.json");
+		write(&syntax, r#"{ "name": "Syntax", "tokenColors": [] }"#);
+		assert!(load(&syntax).is_ok());
 	}
 
 	/// VS Code's default themes as a fork might ship them: a label from `package.nls.json`
