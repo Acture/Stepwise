@@ -35,9 +35,9 @@
 
 	function key(event: KeyboardEvent): void {
 		if (event.isComposing || event.keyCode === 229) return;
-		if (event.key === "Enter") {
+		if (event.key === "Enter" || event.key === "Escape") {
 			event.preventDefault();
-			host.send({ kind: "submit" });
+			host.send({ kind: event.key === "Enter" ? "submit" : "cancel" });
 		}
 	}
 
