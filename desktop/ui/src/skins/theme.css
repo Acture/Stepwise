@@ -1,0 +1,26 @@
+/* A colour theme from the editor ecosystem. The shell turns its colours into the role tokens
+ * and the board wears them as inline properties, with color-scheme from the theme (see
+ * `dress` in index.ts). This rule supplies what a theme has no word for: an editor's faces —
+ * the system's for prose, and Menlo, VS Code's own default, for formulas — and a flat board,
+ * since an editor draws no chalk. */
+
+[data-skin="theme"] {
+	--skin-prose:
+		-apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB",
+		"Segoe UI", "Microsoft YaHei", "Noto Sans CJK SC", system-ui, sans-serif;
+	--skin-formula:
+		Menlo, Monaco, Consolas, "DejaVu Sans Mono", "PingFang SC",
+		"Microsoft YaHei", "Noto Sans CJK SC", monospace;
+
+	--surface-size: auto;
+	--surface-shadow: none;
+	--tray-shadow: none;
+	--ink-shadow: none;
+	--ink-texture: none;
+	--stroke-filter: none;
+	--mark-roughness: 0;
+
+	--scrim: light-dark(rgba(0, 0, 0, 0.14), rgba(0, 0, 0, 0.4));
+	--sheet-shadow: -12px 0 30px
+		light-dark(rgba(0, 0, 0, 0.14), rgba(0, 0, 0, 0.5));
+}

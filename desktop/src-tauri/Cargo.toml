@@ -20,10 +20,20 @@ stepwise = { path = "../.." }
 # steer the resolver to older releases.
 tauri = { version = "2.12", features = [] }
 tauri-plugin-dialog = "2.8"
-
-[dev-dependencies]
+serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tempfile = "3"
+directories = "6"
+# Theme files and editor settings are JSON with comments and trailing commas.
+jsonc-parser = { version = "0.34", features = ["serde"] }
+# The installed families, and whether one draws the logic symbols: fontdb finds the faces,
+# ttf-parser reads a face's character map.
+fontdb = "0.24"
+ttf-parser = { version = "0.25", default-features = false, features = ["std"] }
+
+[dev-dependencies]
+# Writes the appearance protocol's TypeScript declarations when the shell's tests run.
+ts-rs = { version = "12", features = ["no-serde-warnings"] }
 
 [build-dependencies]
 tauri-build = { version = "2.7", features = [] }

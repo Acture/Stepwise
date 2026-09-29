@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { wornDress, type Dress } from "../skins";
 	import { strokes, type Mark, type Stroke } from "./marks";
 
 	/** How long one stroke takes to draw itself in, in milliseconds. */
@@ -6,6 +7,8 @@
 
 	let { host, marks }: { host: HTMLElement | undefined; marks: Mark[] } =
 		$props();
+
+	const worn: () => Dress = wornDress();
 
 	/** When each mark first appeared. A mark draws itself in once, for as long as its own
 	 * stroke takes, however often layout makes the layer redraw meanwhile. */
@@ -34,9 +37,24 @@
 	$effect(() => {
 		if (!host) return;
 		const observer: ResizeObserver = new ResizeObserver(() => tick++);
+		const arrived = (): void => {
+			tick++;
+		};
 		observer.observe(host);
-		void document.fonts.ready.then(() => tick++);
-		return () => observer.disconnect();
+		document.fonts.addEventListener("loadingdone", arrived);
+		void document.fonts.ready.then(arrived);
+		return () => {
+			observer.disconnect();
+			document.fonts.removeEventListener("loadingdone", arrived);
+		};
+	});
+
+	// A new skin or face moves the text without resizing the host, and a skin sets how rough
+	// a stroke is: the marks are drawn again a frame later, once the board wears it.
+	$effect(() => {
+		void worn();
+		const frame: number = requestAnimationFrame(() => tick++);
+		return () => cancelAnimationFrame(frame);
 	});
 </script>
 

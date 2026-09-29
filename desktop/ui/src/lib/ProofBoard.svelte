@@ -10,7 +10,13 @@
 		view,
 		host,
 		onmenu,
-	}: { view: ProofView; host: Host; onmenu: () => void } = $props();
+		onsettings,
+	}: {
+		view: ProofView;
+		host: Host;
+		onmenu: () => void;
+		onsettings: () => void;
+	} = $props();
 
 	let sheet: HTMLElement | undefined = $state();
 	let slot: HTMLElement | undefined = $state();
@@ -111,7 +117,7 @@
 	let judged: number | null = $derived(view.judged);
 </script>
 
-<Header course={view.course} {host} {onmenu} />
+<Header course={view.course} {host} {onmenu} {onsettings} />
 
 <main>
 	{#if view.message}
@@ -228,7 +234,7 @@
 	}
 
 	.done {
-		color: var(--mark-good, var(--mark-point));
+		color: var(--mark-good);
 	}
 
 	.goal .formula {
@@ -300,7 +306,7 @@
 
 	.judged .why,
 	.judged .refs {
-		color: var(--mark-good, var(--mark-point));
+		color: var(--mark-good);
 	}
 
 	.message {
@@ -345,7 +351,7 @@
 	}
 
 	.feedback.good {
-		color: var(--mark-good, var(--mark-point));
+		color: var(--mark-good);
 	}
 
 	.which {

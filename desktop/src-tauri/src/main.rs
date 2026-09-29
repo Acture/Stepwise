@@ -12,16 +12,19 @@
 //! `desktop/ui/src/lib/Window.svelte`).
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod appearance;
+
 use std::{
 	error::Error,
 	ffi::OsString,
 	fs, io,
 	panic::{self, PanicHookInfo},
-	path::PathBuf,
+	path::{Path, PathBuf},
 	process::{self, ExitCode},
 	sync::{Mutex, MutexGuard},
 };
 
+use appearance::{Appearance, Catalog, Look, Wardrobe};
 use clap::Parser;
 use stepwise::{
 	desktop::{Command, Desk, View},
@@ -130,6 +133,16 @@ fn opening(args: Args) -> (Progress, Option<PathBuf>, Option<String>) {
 	}
 }
 
+/// Where the look is kept: beside the progress file both versions use by default, whatever
+/// this launch's flags say about progress — `--no-save` and `--progress-file` are about the
+/// student's work, not the window's looks. Or why it is kept nowhere: the progress error names
+/// those flags, which would not help.
+fn wardrobe_path() -> Result<PathBuf, String> {
+	Progress::default_path()
+		.map(|progress: PathBuf| progress.with_file_name("appearance.json"))
+		.map_err(|_: io::Error| "无法定位保存外观的目录，本次不保存外观。".into())
+}
+
 /// An error as a clause of a sentence that ends it: some already end in a full stop.
 fn reason(error: &io::Error) -> String {
 	error.to_string().trim_end_matches('。').into()
@@ -164,6 +177,22 @@ fn load_set(path: String, shell: State<'_, Mutex<Shell>>) -> View {
 	hold(&shell).load_set(&path)
 }
 
+#[tauri::command(async)]
+fn appearance(wardrobe: State<'_, Wardrobe>) -> Appearance {
+	wardrobe.appearance()
+}
+
+#[tauri::command(async)]
+fn set_look(look: Look, wardrobe: State<'_, Wardrobe>) -> Appearance {
+	wardrobe.set_look(look)
+}
+
+/// Imports the VS Code theme file at `path`, a file the page's dialog picked.
+#[tauri::command(async)]
+fn import_theme(path: String, wardrobe: State<'_, Wardrobe>) -> Appearance {
+	wardrobe.import(Path::new(&path))
+}
+
 /// A panic on the async runtime would end only its own task: nothing answers the page, whose
 /// queue then waits for ever, and every later command finds the shell poisoned. Any panic ends
 /// the process instead, as one on the main thread does.
@@ -191,11 +220,21 @@ fn leaving(app: &AppHandle, event: RunEvent) {
 	}
 }
 
-fn run(shell: Shell) -> tauri::Result<()> {
+fn run(shell: Shell, wardrobe: Wardrobe) -> tauri::Result<()> {
 	tauri::Builder::default()
 		.plugin(tauri_plugin_dialog::init())
 		.manage(Mutex::new(shell))
-		.invoke_handler(tauri::generate_handler![view, act, load_set, report])
+		// Its own state: changing the look never waits on a progress write, nor the reverse.
+		.manage(wardrobe)
+		.invoke_handler(tauri::generate_handler![
+			view,
+			act,
+			load_set,
+			report,
+			appearance,
+			set_look,
+			import_theme
+		])
 		// Where the page is in loading it, for whoever runs the app from a terminal: a window
 		// that stays blank says here whether its page never started or never finished.
 		.on_page_load(|_, payload: &PageLoadPayload<'_>| {
@@ -214,7 +253,8 @@ fn main() -> ExitCode {
 		std::env::args_os()
 			.filter(|argument: &OsString| !argument.to_string_lossy().starts_with("-psn_")),
 	);
-	match Shell::open(args).and_then(|shell: Shell| Ok(run(shell)?)) {
+	let wardrobe: Wardrobe = Wardrobe::open(wardrobe_path(), Catalog::find);
+	match Shell::open(args).and_then(|shell: Shell| Ok(run(shell, wardrobe)?)) {
 		Ok(()) => ExitCode::SUCCESS,
 		Err(error) => {
 			eprintln!("Stepwise: {error}");
