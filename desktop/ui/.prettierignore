@@ -1,0 +1,5 @@
+node_modules
+dist
+dist-gallery
+bun.lock
+src/lib/protocol

@@ -1,0 +1,47 @@
+/* 终端: the terminal version's own screen, in a window. The system's terminal face, flat
+ * dark ground, clean lines and the terminal version's colours — cyan for what is pointed
+ * at, yellow for the blank, green for an accepted step. Menlo leads the stack because it
+ * covers ∧ ∨ → ↔ ¬ (SF Mono does not); ⊥ and Chinese fall back to the system's fonts, as
+ * they do in Terminal. */
+
+.board[data-skin="terminal"] {
+	--prose:
+		Menlo, ui-monospace, "Cascadia Mono", Consolas, "DejaVu Sans Mono",
+		"PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", monospace;
+	--formula: var(--prose);
+	--size-formula: 26px;
+	--size-history: 17px;
+	--size-lead: 18px;
+
+	--ink: #d5d8dd;
+	--ink-faded: #818a94;
+	--ink-bright: #ffffff;
+	--mark-write: #e5c07b;
+	--mark-wrong: #f07b78;
+	--mark-point: #5ec4d6;
+	--mark-good: #88c070;
+	--quiet-mark: rgba(213, 216, 221, 0.22);
+
+	--surface:
+		radial-gradient(
+			120% 90% at 20% 0%,
+			rgba(255, 255, 255, 0.025),
+			transparent 60%
+		),
+		#15171a;
+	--surface-size: auto;
+	--surface-shadow: none;
+	--tray: linear-gradient(to bottom, #2a2f36 0 1px, #101214 1px);
+	--tray-shadow: none;
+
+	--ink-shadow: none;
+	--ink-glow: 0 0 8px rgba(94, 196, 214, 0.35);
+	--ink-texture: none;
+	--stroke-filter: none;
+	--mark-roughness: 0;
+
+	--focus-ring: 1px solid #5ec4d6;
+	--scrollbar: rgba(213, 216, 221, 0.2);
+
+	color-scheme: dark;
+}

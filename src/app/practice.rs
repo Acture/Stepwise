@@ -2,7 +2,7 @@ use std::ops::Range;
 
 use super::{Notice, Report};
 use crate::{
-	core::{ExprKind, Feedback, NodeId, ParseError, RecordedAttempt, Session},
+	core::{EvalError, ExprKind, Feedback, NodeId, ParseError, RecordedAttempt, Session},
 	exercises::Exercise,
 	progress::Progress,
 };
@@ -230,6 +230,20 @@ impl Practice {
 			self.selected = node_id;
 			self.editing = Some(node_id);
 		}
+	}
+
+	/// How an evaluation that ended in an exception is summed up: the sub-expression the
+	/// student computed and what it raised. The exception name alone would read as the
+	/// source's own result, which it need not be once a skippable operand can be computed.
+	/// Worded here once, like an archived line, so every front end sums up an ending alike;
+	/// `None` unless the question ended in an exception.
+	pub fn raised(&self) -> Option<String> {
+		let error: &EvalError = self.session.terminal_error()?;
+		let name: &str = error.name().unwrap_or("异常");
+		Some(match self.session.history().last() {
+			Some(entry) => format!("{} 引发 {name}", entry.selected),
+			None => name.into(),
+		})
 	}
 
 	/// Name the next step to consider, or report that none is left to name.

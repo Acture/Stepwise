@@ -1,0 +1,3 @@
+# Written by tauri-build every time its build script runs (a clean build, or a change to the
+# config or the capabilities). Only the capability file's `$schema` reads it, for editors.
+/gen/schemas

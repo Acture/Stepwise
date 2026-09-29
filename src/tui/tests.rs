@@ -10,7 +10,7 @@ use unicode_width::UnicodeWidthStr;
 
 use super::{inline, keys::Screen, render, say};
 use crate::{
-	app::{Course, Lesson, Notice, Report, Task, Transcript},
+	app::{Archived, Course, Lesson, Notice, Report, Task, Transcript},
 	core::{Language, NodeId, RecordedAttempt},
 	exercises::{self, Exercise, Question, QuestionSet},
 	progress::Progress,
@@ -60,6 +60,11 @@ fn key(code: KeyCode) -> Event {
 fn feedback(app: &Screen) -> String {
 	say::feedback(app.lesson.report()).0
 }
+/// What the terminal prints for archived lines: each kind is one line of its own text.
+fn printed(lines: Vec<Archived>) -> Vec<String> {
+	lines.iter().map(|line| line.text().to_owned()).collect()
+}
+
 fn screen_text(terminal: &Terminal<TestBackend>) -> String {
 	let buffer: &ratatui::buffer::Buffer = terminal.backend().buffer();
 	if buffer.area.width == 0 {
@@ -298,7 +303,11 @@ fn final_pair_auto_blank_survives_resume_undo_and_reset_without_auto_solving() {
 	let mut app: Screen = screen(vec![exercise.clone()], Progress::default(), 0);
 	assert!(app.practice().draft().is_none());
 	let mut transcript: Transcript = Transcript::default();
-	assert!(transcript.sync(&app.lesson).join("\n").contains("x=2"));
+	assert!(
+		printed(transcript.sync(&app.lesson))
+			.join("\n")
+			.contains("x=2")
+	);
 	let terminal: Terminal<TestBackend> = draw(&mut app, 30, 8);
 	click_text(&mut app, &terminal, "x");
 	let text: String = screen_text(&draw(&mut app, 30, 8));
@@ -764,7 +773,7 @@ fn native_history_survives_redraw_and_app_starts_below_shell_output() {
 	let text: String = screen_text(&terminal);
 	assert!(text.contains("2 + (3 * 4)"));
 	assert!(text.contains("2 + (____)"));
-	assert!(transcript.sync(&app.lesson).is_empty());
+	assert!(printed(transcript.sync(&app.lesson)).is_empty());
 	app.handle(Event::Paste("12".into())).unwrap();
 	assert!(app.handle(key(KeyCode::Enter)).unwrap());
 	inline::append(&mut terminal, super::text(transcript.sync(&app.lesson))).unwrap();
@@ -773,7 +782,7 @@ fn native_history_survives_redraw_and_app_starts_below_shell_output() {
 			render::draw(frame, &mut app);
 		})
 		.unwrap();
-	assert!(transcript.sync(&app.lesson).is_empty());
+	assert!(printed(transcript.sync(&app.lesson)).is_empty());
 	let text: String = screen_text(&terminal);
 	assert_eq!(text.matches("2 + (3 * 4)").count(), 1);
 	assert_eq!(text.matches("2 + (12)").count(), 1);
@@ -785,9 +794,9 @@ fn native_history_survives_redraw_and_app_starts_below_shell_output() {
 	click(&mut app, 7, row as u16);
 	assert!(app.practice().draft().is_none());
 	app.handle(key(KeyCode::Char('u'))).unwrap();
-	let marker: Vec<String> = transcript.sync(&app.lesson);
+	let marker: Vec<String> = printed(transcript.sync(&app.lesson));
 	assert!(marker.join("\n").contains("撤销"));
-	assert!(transcript.sync(&app.lesson).is_empty());
+	assert!(printed(transcript.sync(&app.lesson)).is_empty());
 }
 
 #[test]
@@ -813,7 +822,7 @@ fn final_negative_result_finishes_without_another_answer_in_live_and_restored_hi
 			assert!(changed);
 		}
 		assert_eq!(app.practice().session().render(), current);
-		let added: Vec<String> = transcript.sync(&app.lesson);
+		let added: Vec<Archived> = transcript.sync(&app.lesson);
 		inline::append(&mut terminal, super::text(added)).unwrap();
 		terminal
 			.draw(|frame| {
@@ -840,7 +849,7 @@ fn final_negative_result_finishes_without_another_answer_in_live_and_restored_hi
 		app.lesson.progress().clone(),
 	);
 	let mut transcript: Transcript = Transcript::default();
-	let history: Vec<String> = transcript.sync(&restored.lesson);
+	let history: Vec<String> = printed(transcript.sync(&restored.lesson));
 	assert_eq!(history.len(), 3); // Language header, original source, explicit group.
 	assert_eq!(history[1], "-(2 * 5)");
 	assert_eq!(history[2], "-(10)");
@@ -851,8 +860,7 @@ fn final_negative_result_finishes_without_another_answer_in_live_and_restored_hi
 	assert!(restored.handle(key(KeyCode::Char('u'))).unwrap());
 	assert!(!restored.practice().session().is_finished());
 	assert!(
-		transcript
-			.sync(&restored.lesson)
+		printed(transcript.sync(&restored.lesson))
 			.join("\n")
 			.contains("撤销")
 	);
@@ -860,7 +868,7 @@ fn final_negative_result_finishes_without_another_answer_in_live_and_restored_hi
 	let id: NodeId = restored.practice().session().next_step().unwrap().node_id;
 	assert!(restored.practice_mut().select(id));
 	assert!(restored.practice().session().is_finished());
-	assert_eq!(transcript.sync(&restored.lesson), ["-(10)"]);
+	assert_eq!(printed(transcript.sync(&restored.lesson)), ["-(10)"]);
 	let root: NodeId = restored.practice().session().root().id;
 	restored.practice_mut().select(root);
 	assert!(restored.practice().draft().is_none());
@@ -1087,37 +1095,43 @@ fn an_accepted_proof_line_survives_moving_away_and_undo_never_leaves_the_proof()
 fn one_transcript_archives_expression_and_proof_blocks_across_the_lesson() {
 	let mut app: Screen = mixed(0);
 	let mut transcript: Transcript = Transcript::default();
-	assert_eq!(transcript.sync(&app.lesson), ["命题逻辑", "P=True Q=False"]);
+	assert_eq!(
+		printed(transcript.sync(&app.lesson)),
+		["命题逻辑", "P=True Q=False"]
+	);
 	substitute_p(&mut app);
-	assert_eq!(transcript.sync(&app.lesson), ["P & Q"]);
+	assert_eq!(printed(transcript.sync(&app.lesson)), ["P & Q"]);
 	assert!(app.handle(key(KeyCode::Char('n'))).unwrap());
 	assert_eq!(
-		transcript.sync(&app.lesson),
+		printed(transcript.sync(&app.lesson)),
 		["True & Q", "", "自然演绎 · 目标：(P → P)"]
 	);
 	app.handle(Event::Paste("P ; assume".into())).unwrap();
 	assert!(app.handle(key(KeyCode::Enter)).unwrap());
-	assert_eq!(transcript.sync(&app.lesson), ["1 │ P [assume ]"]);
-	assert!(transcript.sync(&app.lesson).is_empty());
+	assert_eq!(printed(transcript.sync(&app.lesson)), ["1 │ P [assume ]"]);
+	assert!(printed(transcript.sync(&app.lesson)).is_empty());
 	app.handle(Event::Paste("P -> P ; imp-intro ; 1,1".into()))
 		.unwrap();
 	assert!(app.handle(key(KeyCode::Enter)).unwrap());
-	assert_eq!(transcript.sync(&app.lesson), ["2 (P → P) [imp-intro 1,1]"]);
-	assert!(transcript.sync(&app.lesson).is_empty());
+	assert_eq!(
+		printed(transcript.sync(&app.lesson)),
+		["2 (P → P) [imp-intro 1,1]"]
+	);
+	assert!(printed(transcript.sync(&app.lesson)).is_empty());
 	assert!(app.handle(control('z')).unwrap());
 	assert_eq!(
-		transcript.sync(&app.lesson),
+		printed(transcript.sync(&app.lesson)),
 		["↶ 撤销第 2 行及其假设作用域变更。"]
 	);
-	assert!(transcript.sync(&app.lesson).is_empty());
+	assert!(printed(transcript.sync(&app.lesson)).is_empty());
 	assert!(app.handle(control('p')).unwrap());
 	assert_eq!(
-		transcript.sync(&app.lesson),
+		printed(transcript.sync(&app.lesson)),
 		["", "命题逻辑", "P=True Q=False", "P & Q"]
 	);
 	assert!(app.handle(key(KeyCode::Char('n'))).unwrap());
 	assert_eq!(
-		transcript.sync(&app.lesson),
+		printed(transcript.sync(&app.lesson)),
 		[
 			"True & Q",
 			"",
@@ -1126,10 +1140,13 @@ fn one_transcript_archives_expression_and_proof_blocks_across_the_lesson() {
 		]
 	);
 	assert!(app.handle(control('n')).unwrap());
-	assert_eq!(transcript.sync(&app.lesson), ["", "命题逻辑", "R=False"]);
+	assert_eq!(
+		printed(transcript.sync(&app.lesson)),
+		["", "命题逻辑", "R=False"]
+	);
 	assert!(app.handle(key(KeyCode::Char('n'))).unwrap());
 	assert_eq!(
-		transcript.sync(&app.lesson),
+		printed(transcript.sync(&app.lesson)),
 		[
 			"~R",
 			"",

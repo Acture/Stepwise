@@ -1,0 +1,87 @@
+@import "lxgw-wenkai-webfont/lxgwwenkai-regular.css";
+@import "./formula-font.css";
+
+/* Layout and type that every skin shares. A skin (src/skins) supplies the tokens below
+ * through `.board[data-skin=…]`; components name roles — the line in hand, the line being
+ * written, a mistake, what is pointed at — and never a colour. */
+
+:root {
+	--size-small: 14px;
+	--size-body: 16px;
+	--size-lead: 19px;
+	--size-formula: 30px;
+	--size-history: 20px;
+}
+
+* {
+	box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+	margin: 0;
+	height: 100%;
+	background: #111;
+}
+
+.board {
+	container: board / inline-size;
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	overflow: hidden;
+	font-family: var(--prose);
+	font-size: var(--size-body);
+	color: var(--ink);
+	background: var(--surface);
+	background-size: var(--surface-size, auto);
+	box-shadow: var(--surface-shadow, none);
+	-webkit-font-smoothing: antialiased;
+	-webkit-user-select: none;
+	user-select: none;
+}
+
+/* Text written on the board rather than printed on it: the skin decides what that means. */
+.ink {
+	text-shadow: var(--ink-shadow, none);
+	-webkit-mask-image: var(--ink-texture, none);
+	mask-image: var(--ink-texture, none);
+}
+
+.formula {
+	font-family: var(--formula);
+	white-space: normal;
+	font-variant-ligatures: none;
+}
+
+button {
+	font: inherit;
+	color: inherit;
+	background: none;
+	border: 0;
+	padding: 0;
+	cursor: pointer;
+}
+
+button:disabled {
+	cursor: default;
+	opacity: 0.35;
+}
+
+:focus-visible {
+	outline: var(--focus-ring);
+	outline-offset: 4px;
+	border-radius: 6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 1ms !important;
+		animation-delay: 0ms !important;
+		transition-duration: 1ms !important;
+	}
+}

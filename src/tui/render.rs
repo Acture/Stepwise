@@ -10,10 +10,7 @@ use ratatui::{
 use unicode_width::UnicodeWidthChar;
 
 use super::{keys::Screen, say};
-use crate::{
-	app::Task,
-	core::{EvalError, NodeId, Session},
-};
+use crate::{app::Task, core::NodeId};
 
 /// Draw whichever view the question in hand needs.
 pub(super) fn draw(frame: &mut Frame<'_>, screen: &mut Screen) -> Option<Position> {
@@ -27,17 +24,6 @@ pub(super) fn draw(frame: &mut Frame<'_>, screen: &mut Screen) -> Option<Positio
 
 /// Each rendered character keeps the node the app layer puts under it. Inline drafts are
 /// drawn from `draft_spans`; nothing here decides what a draft replaces.
-/// How an evaluation that ended in an exception is summed up: the sub-expression the student
-/// computed and what it raised. The exception name alone under the source would read as the
-/// source's own result, which it need not be once a skippable operand can be computed.
-pub(super) fn raised(session: &Session, error: &EvalError) -> String {
-	let name: &str = error.name().unwrap_or("异常");
-	match session.history().last() {
-		Some(entry) => format!("{} 引发 {name}", entry.selected),
-		None => name.into(),
-	}
-}
-
 fn draw_expression(frame: &mut Frame<'_>, screen: &mut Screen, area: Rect) -> Option<Position> {
 	if area.is_empty() {
 		return None;
@@ -86,9 +72,9 @@ fn draw_expression(frame: &mut Frame<'_>, screen: &mut Screen, area: Rect) -> Op
 		cells.push((character, style, node_id));
 		index += character.len_utf8();
 	}
-	if let Some(error) = screen.practice().session().terminal_error() {
+	if let Some(raised) = screen.practice().raised() {
 		cells.extend(
-			format!("\n完成：{}", raised(screen.practice().session(), error))
+			format!("\n完成：{raised}")
 				.chars()
 				.map(|character| (character, Style::default().fg(Color::Green), None)),
 		);
