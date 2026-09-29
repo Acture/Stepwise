@@ -4,6 +4,37 @@
 		<meta charset="UTF-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<title>Stepwise</title>
+		<!-- Dark before any stylesheet arrives, so a window that stays white means the page
+		     itself never showed, and a dark one with a sentence says what stopped it. -->
+		<style>
+			html,
+			body {
+				margin: 0;
+				background: #111;
+				color: #ddd;
+				font:
+					15px/1.6 system-ui,
+					sans-serif;
+			}
+			#fault {
+				padding: 48px 32px;
+				white-space: pre-wrap;
+			}
+		</style>
+		<script>
+			// If the board has not drawn after a few seconds, say so in the window and to the
+			// shell. The module script clears this once it starts.
+			window.__stepwiseWatchdog = setTimeout(function () {
+				var line =
+					"页面没有启动：" + location.href + "\n" + navigator.userAgent;
+				var fault = document.createElement("div");
+				fault.id = "fault";
+				fault.textContent = line;
+				document.body.appendChild(fault);
+				var internals = window.__TAURI_INTERNALS__;
+				if (internals) internals.invoke("report", { line: line });
+			}, 4000);
+		</script>
 	</head>
 	<body>
 		<div id="app"></div>

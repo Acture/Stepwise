@@ -46,14 +46,15 @@
 			host.send({ kind: event.key === "n" ? "next" : "previous" });
 			return;
 		}
-		const typing: boolean = event.target instanceof HTMLInputElement;
-		if (typing || event.metaKey || event.ctrlKey || event.altKey) return;
-		// While a blank or a proof line is open every key belongs to it, as in the terminal:
-		// Enter and Escape still check and cancel, and any other key puts the caret back in
-		// the field instead of acting as a command on work the student is in the middle of.
-		const field: HTMLInputElement | null = document.querySelector(
-			".blank input, .slot input",
-		);
+		// A field takes its own keys, and a focused button or link its own Tab, Space and Enter.
+		const owned: boolean =
+			event.target instanceof HTMLInputElement ||
+			event.target instanceof HTMLButtonElement ||
+			event.target instanceof HTMLAnchorElement;
+		if (owned || event.metaKey || event.ctrlKey || event.altKey) return;
+		// While a blank or a proof line is open every character belongs to it, as in the
+		// terminal: Enter and Escape still check and cancel, and a typed character puts the
+		// caret back in the field instead of acting as a command on the work in hand.
 		if (view.kind === "proof" || (view.kind === "evaluation" && view.draft)) {
 			if (
 				view.kind === "evaluation" &&
@@ -61,8 +62,10 @@
 			) {
 				event.preventDefault();
 				host.send({ kind: event.key === "Enter" ? "submit" : "cancel" });
-			} else {
-				field?.focus();
+			} else if (event.key.length === 1) {
+				document
+					.querySelector<HTMLInputElement>(".blank input, .slot input")
+					?.focus();
 			}
 			return;
 		}

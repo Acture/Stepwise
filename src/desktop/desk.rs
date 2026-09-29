@@ -39,8 +39,8 @@ pub struct Desk {
 	stage: Stage,
 	/// Something the window has to say that no lesson reported, such as a file that failed.
 	message: Option<String>,
-	/// Moves on with every command but a draft, so the page knows when its field no longer
-	/// holds the blank or the line the desk has.
+	/// Moves on whenever a command leaves a different blank or line to write in, or a
+	/// different draft in it, so the page knows its field no longer holds what the desk has.
 	edition: u32,
 }
 
@@ -54,21 +54,29 @@ enum Stage {
 struct Outcome {
 	/// The lesson changed in a way worth saving.
 	changed: bool,
-	/// The teaching rules judged something, so a turned-down report is a mistake.
-	judged: bool,
+	/// Whether the teaching rules judged something, so a turned-down report is a mistake;
+	/// `None` for a command that changed nothing at all, which leaves the last verdict
+	/// standing rather than calling it a mistake or taking that back.
+	judged: Option<bool>,
 }
 
 impl Outcome {
 	fn quiet(changed: bool) -> Self {
 		Self {
 			changed,
-			judged: false,
+			judged: Some(false),
 		}
 	}
 	fn judged(changed: bool) -> Self {
 		Self {
 			changed,
-			judged: true,
+			judged: Some(true),
+		}
+	}
+	fn nothing() -> Self {
+		Self {
+			changed: false,
+			judged: None,
 		}
 	}
 }
@@ -135,7 +143,9 @@ impl Board {
 				Task::Proof(practice) => prove(practice, command, &mut self.rules),
 			},
 		};
-		self.judged = outcome.judged;
+		if let Some(judged) = outcome.judged {
+			self.judged = judged;
+		}
 		self.sync();
 		Ok(outcome.changed)
 	}
@@ -261,9 +271,10 @@ fn evaluate(
 ) -> Result<Outcome, ParseError> {
 	Ok(match command {
 		Command::Select { node } => {
-			// A click on the blank already open changes nothing, so nothing is judged either.
+			// A click on the blank already open changes nothing, and the verdict on what it
+			// holds still stands.
 			if practice.draft() == Some(node) {
-				return Ok(Outcome::quiet(false));
+				return Ok(Outcome::nothing());
 			}
 			let advanced: bool = practice.select(node);
 			// A finished group comes off and its node is gone: nothing is left pointed at.
@@ -281,8 +292,8 @@ fn evaluate(
 			// With no blank open this opens one at the node pointed at, so the keyboard reaches
 			// the node a click does. With nothing pointed at there is nothing to open: the
 			// session's own selection is one nobody chose, and judging it would call it a mistake.
-			if practice.draft().is_none() && !*pointed {
-				return Ok(Outcome::quiet(false));
+			if practice.draft().is_none() && (!*pointed || practice.session().is_finished()) {
+				return Ok(Outcome::nothing());
 			}
 			let accepted: bool = practice.submit();
 			if accepted {
@@ -295,7 +306,8 @@ fn evaluate(
 			Outcome::quiet(false)
 		}
 		Command::Step { forward } => {
-			if practice.draft().is_none() {
+			// A finished question has nothing left to point at.
+			if practice.draft().is_none() && !practice.session().is_finished() {
 				// From nothing pointed at, either arrow starts at the first node in display
 				// order. The session's own selection is then the whole expression or a node
 				// already gone, and stepping back from either lands on that first node.
@@ -309,8 +321,12 @@ fn evaluate(
 			Outcome::quiet(false)
 		}
 		Command::Undo => {
-			*pointed = false;
-			Outcome::quiet(practice.undo())
+			// Only an undo that took a step back returns the selection to the whole expression.
+			let undone: bool = practice.undo();
+			if undone {
+				*pointed = false;
+			}
+			Outcome::quiet(undone)
 		}
 		Command::Reset => {
 			*pointed = false;
@@ -545,18 +561,51 @@ impl Desk {
 	/// One command from the page. True when the progress changed and is worth writing. A
 	/// question that cannot be opened leaves everything as it was and says why.
 	pub fn handle(&mut self, command: Command) -> bool {
-		match &command {
-			Command::Draft { edition, .. } if *edition != self.edition => return false,
-			Command::Draft { .. } => {}
-			_ => self.edition = self.edition.wrapping_add(1),
+		if let Command::Draft { edition, .. } = &command {
+			// A draft typed for a blank or line that has since gone is not this one's.
+			if *edition != self.edition {
+				return false;
+			}
 		}
+		let drafting: bool = matches!(command, Command::Draft { .. });
+		let before: String = self.writing();
 		self.message = None;
-		match self.apply(command) {
+		let changed: bool = match self.apply(command) {
 			Ok(changed) => changed,
 			Err(error) => {
 				self.message = Some(error.to_string());
 				false
 			}
+		};
+		// A refused answer, a hint or a click on the open blank leaves the page's field as it
+		// is, so a key typed while that command was on its way still counts. Anything that
+		// changes the line, the blank or the draft under the field moves the edition on.
+		if !drafting && self.writing() != before {
+			self.edition = self.edition.wrapping_add(1);
+		}
+		changed
+	}
+
+	/// What the page's field is writing in and what it holds: the question, the line in hand,
+	/// the open blank or proof line, and the draft the desk mirrors.
+	fn writing(&self) -> String {
+		let Stage::Lesson(board) = &self.stage else {
+			return String::new();
+		};
+		match board.lesson.task() {
+			Task::Evaluation(practice) => format!(
+				"{}\u{0}{}\u{0}{:?}\u{0}{}",
+				practice.session().progress_key(),
+				practice.session().render(),
+				practice.draft(),
+				practice.input()
+			),
+			Task::Proof(practice) => format!(
+				"{}\u{0}{}\u{0}{}",
+				practice.proof().progress_key(),
+				practice.proof().lines().len(),
+				practice.input()
+			),
 		}
 	}
 
@@ -564,6 +613,7 @@ impl Desk {
 	/// set that fails to load changes nothing, the progress included. On the language choice
 	/// the set waits for a language; in a lesson it replaces the course in the same language.
 	pub fn load(&mut self, text: &str, source: &str) -> bool {
+		// A set replaces the course, and whatever the page's field held goes with it.
 		self.edition = self.edition.wrapping_add(1);
 		self.message = None;
 		let set: QuestionSet = match QuestionSet::import(text) {

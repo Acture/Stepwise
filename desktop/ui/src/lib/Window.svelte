@@ -3,6 +3,7 @@
 	import { open } from "@tauri-apps/plugin-dialog";
 	import { remember, remembered, type Skin } from "../skins";
 	import App from "./App.svelte";
+	import { fault } from "./fault";
 	import type { Command, Host, View } from "./view";
 
 	let view: View | null = $state(null);
@@ -20,7 +21,7 @@
 				if (next) view = next;
 			})
 			.catch((error: unknown) =>
-				console.error("Stepwise: the window lost its bridge", error),
+				fault(`窗口和程序之间的调用失败：${String(error)}`),
 			);
 	}
 
