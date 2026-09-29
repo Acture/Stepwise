@@ -267,8 +267,10 @@ pub enum Command {
 		node: NodeId,
 	},
 	/// The whole draft as the student has typed it, for the board of the edition it was typed
-	/// on. Every other command moves the board to a new edition, and a draft for an earlier one
-	/// belongs to a blank or a line that is gone, so it is dropped.
+	/// on. A command that leaves a different blank or line to write in, or a different draft
+	/// in it, moves the board to a new edition, and a draft for an earlier one belongs to a
+	/// blank or a line that is gone, so it is dropped. A refused answer, a hint or a click on
+	/// the open blank keeps the edition, so keys typed while it was on its way still count.
 	Draft {
 		text: String,
 		edition: u32,

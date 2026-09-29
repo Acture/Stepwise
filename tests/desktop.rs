@@ -603,3 +603,58 @@ fn a_verdict_stands_until_the_student_does_something_and_a_finished_question_tak
 	assert_eq!((ended.selected, ended.feedback.tone), (None, Tone::Good));
 	assert!(ended.draft.is_none());
 }
+
+#[test]
+fn a_command_that_changes_nothing_leaves_the_verdict_and_escape_empties_a_proof_line() {
+	let mut desk: Desk = desk(Progress::default());
+	open_builtin(&mut desk, Choice::Python, "precedence");
+	// A refused choice leaves no blank open, so Escape has nothing to close.
+	let whole: NodeId = node(&evaluation(&desk), "2 + (3 * 4)");
+	assert!(!desk.handle(Command::Select { node: whole }));
+	let refused: EvaluationView = evaluation(&desk);
+	assert_eq!(refused.feedback.tone, Tone::Bad);
+	assert!(!desk.handle(Command::Cancel));
+	assert_eq!(evaluation(&desk), refused);
+
+	// A wrong answer on the only question drawn so far: there is no step to undo and no
+	// question before it, and the arrows stay with the open blank.
+	let multiply: NodeId = node(&evaluation(&desk), "3 * 4");
+	desk.handle(Command::Select { node: multiply });
+	type_in(&mut desk, "13");
+	assert!(!desk.handle(Command::Submit));
+	let wrong: EvaluationView = evaluation(&desk);
+	assert_eq!(wrong.feedback.tone, Tone::Bad);
+	for command in [
+		Command::Undo,
+		Command::Previous,
+		Command::Step { forward: true },
+		Command::Rules,
+	] {
+		assert!(!desk.handle(command.clone()));
+		assert_eq!(evaluation(&desk), wrong, "{command:?} changed the board");
+	}
+
+	// A refused proof line stays refused through an undo with nothing to take back.
+	let mut proofs: Desk = desk_with_set();
+	proofs.handle(Command::Choose {
+		language: Choice::Logic,
+	});
+	proofs.handle(Command::Next);
+	proofs.handle(Command::Rules);
+	type_in(&mut proofs, "R ; mp ; 1,3");
+	assert!(!proofs.handle(Command::Submit));
+	let refused: ProofView = proving(&proofs);
+	assert_eq!(refused.feedback.tone, Tone::Bad);
+	assert!(!proofs.handle(Command::Undo));
+	assert_eq!(proving(&proofs), refused);
+
+	// Escape empties the line, as in the terminal, and the page's field takes the empty line
+	// at the new edition; on an empty line it changes nothing, the edition included.
+	assert!(!proofs.handle(Command::Cancel));
+	let emptied: ProofView = proving(&proofs);
+	assert_eq!(emptied.input, "");
+	assert_ne!(emptied.edition, refused.edition);
+	assert!(emptied.rules.is_some());
+	assert!(!proofs.handle(Command::Cancel));
+	assert_eq!(proving(&proofs), emptied);
+}
