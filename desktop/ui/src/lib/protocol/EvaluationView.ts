@@ -6,7 +6,11 @@ import type { Feedback } from "./Feedback";
 import type { Run } from "./Run";
 import type { Written } from "./Written";
 
-export type EvaluationView = { course: CourseView, catalog: Catalog, bindings: Array<string>, history: Array<Written>, current: Array<Run>, 
+export type EvaluationView = { 
+/**
+ * Which state of the board this is; see [`Command::Draft`].
+ */
+edition: number, course: CourseView, catalog: Catalog, bindings: Array<string>, history: Array<Written>, current: Array<Run>, 
 /**
  * The run indices, first and last, each selectable node covers.
  */

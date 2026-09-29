@@ -50,6 +50,7 @@ function course(
 }
 
 const python: EvaluationView = {
+	edition: 0,
 	course: course({ language: "Python", title: "代入同名变量", position: 3 }),
 	catalog: catalog("内置题库", null),
 	bindings: ["x = 2", "y = 3"],
@@ -79,6 +80,7 @@ const python: EvaluationView = {
 };
 
 const logic: EvaluationView = {
+	edition: 0,
 	course: course({
 		language: "命题逻辑",
 		title: "长公式",
@@ -148,6 +150,7 @@ const logic: EvaluationView = {
 };
 
 const finished: EvaluationView = {
+	edition: 0,
 	course: course({ language: "Python", title: "在哪里停止", position: 4 }),
 	catalog: catalog("内置题库", 3),
 	bindings: [],
@@ -170,6 +173,7 @@ const finished: EvaluationView = {
 };
 
 const proof: ProofView = {
+	edition: 0,
 	course: course({
 		language: "自然演绎",
 		title: "条件证明",

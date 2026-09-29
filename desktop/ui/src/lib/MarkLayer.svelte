@@ -1,18 +1,33 @@
 <script lang="ts">
 	import { strokes, type Mark, type Stroke } from "./marks";
 
+	/** How long one stroke takes to draw itself in, in milliseconds. */
+	const DRAW: number = 380;
+
 	let { host, marks }: { host: HTMLElement | undefined; marks: Mark[] } =
 		$props();
 
-	let drawn: Set<string> = new Set();
+	/** When each mark first appeared. A mark draws itself in once, for as long as its own
+	 * stroke takes, however often layout makes the layer redraw meanwhile. */
+	let born: Map<string, number> = new Map();
 	let lines: Stroke[] = $state([]);
 	let tick: number = $state(0);
 
 	$effect(() => {
 		void tick;
 		if (!host) return;
+		const now: number = performance.now();
+		const present: Set<string> = new Set(marks.map((mark) => mark.id));
+		for (const id of born.keys()) if (!present.has(id)) born.delete(id);
+		for (const mark of marks) if (!born.has(mark.id)) born.set(mark.id, now);
+		const drawn: Set<string> = new Set(
+			marks
+				.filter(
+					(mark) => now - born.get(mark.id)! > (mark.delay ?? 0) + DRAW + 200,
+				)
+				.map((mark) => mark.id),
+		);
 		lines = strokes(host, marks, drawn);
-		drawn = new Set(marks.map((mark) => mark.id));
 	});
 
 	// Text reflows when the window resizes or a font arrives; the marks follow it.
@@ -57,7 +72,7 @@
 	.fresh {
 		stroke-dasharray: 1;
 		stroke-dashoffset: 1;
-		animation: draw 380ms ease-out forwards;
+		animation: draw 380ms ease-out forwards; /* DRAW */
 	}
 
 	@keyframes draw {

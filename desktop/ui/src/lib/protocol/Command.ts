@@ -4,4 +4,4 @@ import type { Choice } from "./Choice";
 /**
  * Every input the page forwards; each maps to one operation of the app layer.
  */
-export type Command = { "kind": "choose", language: Choice, } | { "kind": "leave" } | { "kind": "random" } | { "kind": "pick", index: number, } | { "kind": "select", node: number, } | { "kind": "draft", text: string, } | { "kind": "submit" } | { "kind": "cancel" } | { "kind": "step", forward: boolean, } | { "kind": "undo" } | { "kind": "reset" } | { "kind": "hint" } | { "kind": "help" } | { "kind": "next" } | { "kind": "previous" } | { "kind": "rules" };
+export type Command = { "kind": "choose", language: Choice, } | { "kind": "leave" } | { "kind": "random" } | { "kind": "pick", index: number, } | { "kind": "select", node: number, } | { "kind": "draft", text: string, edition: number, } | { "kind": "submit" } | { "kind": "cancel" } | { "kind": "step", forward: boolean, } | { "kind": "undo" } | { "kind": "reset" } | { "kind": "hint" } | { "kind": "help" } | { "kind": "next" } | { "kind": "previous" } | { "kind": "rules" };

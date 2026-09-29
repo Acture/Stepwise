@@ -24,11 +24,6 @@
 		view.draft?.runs.find((run) => run.blank === "input")?.node ?? null,
 	);
 
-	/** Which blank is open: a new one — another node, or the next step's — is a new line. */
-	let blank: string = $derived(
-		`${view.current.map((run) => run.text).join("")}\u0000${drafted}`,
-	);
-
 	// What to do next is pointed at, in the chalk of what is pointed at.
 	let nextMarks: Mark[] = $derived(
 		next
@@ -94,12 +89,13 @@
 	/>
 
 	{#if view.draft}
-		{#key blank}
+		{#key view.edition}
 			<DraftLine
 				runs={view.draft.runs}
 				input={view.draft.input}
 				rejected={view.feedback.tone === "bad"}
-				ondraft={(text) => host.send({ kind: "draft", text })}
+				ondraft={(text) =>
+					host.send({ kind: "draft", text, edition: view.edition })}
 				onsubmit={() => host.send({ kind: "submit" })}
 				oncancel={() => host.send({ kind: "cancel" })}
 			/>

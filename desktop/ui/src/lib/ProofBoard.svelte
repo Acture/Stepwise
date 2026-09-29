@@ -20,8 +20,8 @@
 	let formulas: HTMLElement[] = $state([]);
 
 	// The line being written holds the draft and Rust mirrors it, as in an expression's
-	// blank. The field takes Rust's value once per line: when an accepted or undone line
-	// changes the count, the next row is a new row.
+	// blank. The field takes Rust's value once per edition of the board: any command but a
+	// draft — an accepted or undone line, another question — makes the next row a new row.
 	$effect(() => {
 		if (!field) return;
 		field.value = untrack(() => view.input);
@@ -29,7 +29,8 @@
 	});
 
 	function commit(): void {
-		if (field) host.send({ kind: "draft", text: field.value });
+		if (field)
+			host.send({ kind: "draft", text: field.value, edition: view.edition });
 	}
 
 	function key(event: KeyboardEvent): void {
@@ -150,7 +151,7 @@
 				</li>
 			{/each}
 			{#if !view.finished}
-				{#key view.lines.length}
+				{#key view.edition}
 					<li class="next">
 						<span class="number">{view.lines.length + 1}</span>
 						<span class="bars"

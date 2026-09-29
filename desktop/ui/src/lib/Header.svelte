@@ -23,6 +23,7 @@
 			>
 		{/if}
 		<button
+			onmousedown={(event) => event.preventDefault()}
 			disabled={!course.back}
 			onclick={() => host.send({ kind: "previous" })}
 			title="上一题"
@@ -30,6 +31,7 @@
 			<ChevronLeft size={20} strokeWidth={1.5} />
 		</button>
 		<button
+			onmousedown={(event) => event.preventDefault()}
 			disabled={!course.forward}
 			onclick={() => host.send({ kind: "next" })}
 			title="下一题"
