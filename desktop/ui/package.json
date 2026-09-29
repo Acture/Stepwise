@@ -1,0 +1,29 @@
+{
+  "name": "stepwise-desktop-ui",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^7.3.1",
+    "@tsconfig/svelte": "^5.0.8",
+    "prettier": "^3.9.9",
+    "prettier-plugin-svelte": "^4.1.1",
+    "svelte": "^5.57.1",
+    "svelte-check": "^4.7.6",
+    "typescript": "5",
+    "vite": "^8.3.1",
+    "vite-plugin-singlefile": "^2.3.3"
+  },
+  "dependencies": {
+    "@lucide/svelte": "^1.48.0",
+    "lxgw-wenkai-webfont": "^1.7.0",
+    "roughjs": "^4.6.6"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "gallery": "vite build --mode gallery",
+    "check": "svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
+    "format": "prettier --write .",
+    "lint": "prettier --check ."
+  }
+}

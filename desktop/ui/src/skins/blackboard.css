@@ -1,0 +1,59 @@
+/* 黑板: a slate board written on in chalk. Five chalks, each with one job — white is the
+ * line in hand, faded white what was already written, yellow the line being written, pink a
+ * mistake, blue what is accepted or pointed at. */
+
+.board[data-skin="blackboard"] {
+	--prose:
+		"LXGW WenKai", "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC",
+		"Microsoft YaHei", sans-serif;
+	--formula: "LXGW WenKai Mono", "LXGW WenKai", "SF Mono", Menlo, monospace;
+
+	--ink: #efeee7;
+	--ink-faded: #9fb2a7;
+	--ink-bright: #ffffff;
+	--mark-write: #f3d57d;
+	--mark-wrong: #f2a3ab;
+	--mark-point: #a3d3ea;
+	--quiet-mark: rgba(239, 238, 231, 0.26);
+
+	/* Slate with a fine grain, long soft eraser wipes, and a darker rim. */
+	--surface:
+		url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='1000' height='800' preserveAspectRatio='none'><filter id='e'><feTurbulence type='fractalNoise' baseFrequency='.0025 .016' numOctaves='3' seed='11'/><feColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .16 -.075'/></filter><rect width='100%' height='100%' filter='url(%23e)'/></svg>"),
+		url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='260' height='260'><filter id='g'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .075 0'/></filter><rect width='100%' height='100%' filter='url(%23g)'/></svg>"),
+		radial-gradient(
+			110% 70% at 22% 18%,
+			rgba(255, 255, 255, 0.05),
+			transparent 62%
+		),
+		#23392f;
+	--surface-size: 100% 100%, 260px 260px, auto;
+	--surface-shadow: inset 0 0 110px rgba(0, 0, 0, 0.4);
+
+	/* The chalk tray under the board. */
+	--tray:
+		radial-gradient(
+			40% 70% at 30% 100%,
+			rgba(239, 238, 231, 0.045),
+			transparent
+		),
+		linear-gradient(
+			to bottom,
+			rgba(0, 0, 0, 0.55) 0 1px,
+			#34503f 1px 3px,
+			#1b2d25 3px,
+			#121f19
+		);
+	--tray-shadow: 0 -8px 16px -10px rgba(0, 0, 0, 0.6);
+
+	/* Chalk has a soft, dusty edge and grain inside every stroke. */
+	--ink-shadow: 0 0 0.6px currentColor, 0 0 10px rgba(239, 238, 231, 0.08);
+	--ink-glow: 0 0 0.6px currentColor, 0 0 9px rgba(239, 238, 231, 0.4);
+	--ink-texture: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='m'><feTurbulence type='fractalNoise' baseFrequency='1.4' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 -1.1 1.45'/></filter><rect width='100%' height='100%' filter='url(%23m)'/></svg>");
+	--stroke-filter: url(#chalk-grain);
+	--mark-roughness: 1.3;
+
+	--focus-ring: 2px solid rgba(163, 211, 234, 0.75);
+	--scrollbar: rgba(239, 238, 231, 0.18);
+
+	color-scheme: dark;
+}
