@@ -130,13 +130,23 @@ impl Board {
 	fn apply(&mut self, command: Command) -> Result<bool, ParseError> {
 		let outcome: Outcome = match command {
 			Command::Next | Command::Previous => {
-				self.pointed = false;
-				self.rules = false;
-				Outcome::quiet(if command == Command::Next {
+				let forward: bool = command == Command::Next;
+				let moved: bool = if forward {
 					self.lesson.next_question()?
 				} else {
 					self.lesson.previous_question()?
-				})
+				};
+				if moved {
+					self.pointed = false;
+					self.rules = false;
+					Outcome::quiet(true)
+				} else if forward {
+					// The end of an ordered set says so in place of the last verdict.
+					Outcome::quiet(false)
+				} else {
+					// The first question stays exactly as it was.
+					Outcome::nothing()
+				}
 			}
 			command => match self.lesson.task_mut() {
 				Task::Evaluation(practice) => evaluate(practice, command, &mut self.pointed)?,
@@ -282,10 +292,11 @@ fn evaluate(
 			Outcome::judged(advanced)
 		}
 		Command::Draft { text, .. } => {
-			if practice.draft().is_some() {
-				practice.clear_input();
-				practice.paste(&text);
+			if practice.draft().is_none() {
+				return Ok(Outcome::nothing());
 			}
+			practice.clear_input();
+			practice.paste(&text);
 			Outcome::quiet(false)
 		}
 		Command::Submit => {
@@ -302,31 +313,37 @@ fn evaluate(
 			Outcome::judged(accepted)
 		}
 		Command::Cancel => {
+			if practice.draft().is_none() {
+				return Ok(Outcome::nothing());
+			}
 			practice.cancel();
 			Outcome::quiet(false)
 		}
 		Command::Step { forward } => {
-			// A finished question has nothing left to point at.
-			if practice.draft().is_none() && !practice.session().is_finished() {
-				// From nothing pointed at, either arrow starts at the first node in display
-				// order. The session's own selection is then the whole expression or a node
-				// already gone, and stepping back from either lands on that first node.
-				if !*pointed || !forward {
-					practice.select_previous();
-				} else {
-					practice.select_next();
-				}
-				*pointed = true;
+			// An open blank keeps the pointer where it is, and a finished question has nothing
+			// left to point at.
+			if practice.draft().is_some() || practice.session().is_finished() {
+				return Ok(Outcome::nothing());
 			}
+			// From nothing pointed at, either arrow starts at the first node in display order.
+			// The session's own selection is then the whole expression or a node already gone,
+			// and stepping back from either lands on that first node.
+			if !*pointed || !forward {
+				practice.select_previous();
+			} else {
+				practice.select_next();
+			}
+			*pointed = true;
 			Outcome::quiet(false)
 		}
 		Command::Undo => {
-			// Only an undo that took a step back returns the selection to the whole expression.
-			let undone: bool = practice.undo();
-			if undone {
-				*pointed = false;
+			// Nothing to take back keeps what the student pointed at and the verdict with it;
+			// an undo that took a step back returns the selection to the whole expression.
+			if !practice.undo() {
+				return Ok(Outcome::nothing());
 			}
-			Outcome::quiet(undone)
+			*pointed = false;
+			Outcome::quiet(true)
 		}
 		Command::Reset => {
 			*pointed = false;
@@ -346,7 +363,7 @@ fn evaluate(
 		| Command::Pick { .. }
 		| Command::Next
 		| Command::Previous
-		| Command::Rules => Outcome::quiet(false),
+		| Command::Rules => Outcome::nothing(),
 	})
 }
 
@@ -359,7 +376,20 @@ fn prove(practice: &mut ProofPractice, command: Command, rules: &mut bool) -> Ou
 			Outcome::quiet(false)
 		}
 		Command::Submit => Outcome::judged(practice.submit()),
-		Command::Undo => Outcome::quiet(practice.undo()),
+		// Escape empties the line being written, as in the terminal.
+		Command::Cancel => {
+			if practice.input().is_empty() {
+				return Outcome::nothing();
+			}
+			practice.clear_input();
+			Outcome::quiet(false)
+		}
+		Command::Undo => {
+			if !practice.undo() {
+				return Outcome::nothing();
+			}
+			Outcome::quiet(true)
+		}
 		Command::Rules => {
 			*rules = !*rules;
 			Outcome::quiet(false)
@@ -373,12 +403,11 @@ fn prove(practice: &mut ProofPractice, command: Command, rules: &mut bool) -> Ou
 		| Command::Random
 		| Command::Pick { .. }
 		| Command::Select { .. }
-		| Command::Cancel
 		| Command::Step { .. }
 		| Command::Reset
 		| Command::Hint
 		| Command::Next
-		| Command::Previous => Outcome::quiet(false),
+		| Command::Previous => Outcome::nothing(),
 	}
 }
 
@@ -716,8 +745,10 @@ impl Desk {
 				let first: Question =
 					Question::Evaluation(generate::generate(language, generate::fresh_seed())?);
 				let progress: Progress = self.taken();
+				let board: Board = Self::practise(first, language, progress)?;
+				// Only a board that opened leaves the set; a failure leaves everything as it was.
 				self.opened = None;
-				Self::practise(first, language, progress)?
+				board
 			}
 			Command::Pick { index } => {
 				let Stage::Lesson(board) = &self.stage else {

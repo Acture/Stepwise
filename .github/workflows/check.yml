@@ -76,7 +76,13 @@ jobs:
         run: |
           cargo +stable test --locked --lib desktop
           cargo +stable test --locked -p stepwise-desktop
-          git diff --exit-code desktop/ui/src/lib/protocol
+          # Untracked counts too: a new exported type whose declaration was never committed.
+          drift="$(git status --porcelain -- desktop/ui/src/lib/protocol)"
+          if [ -n "$drift" ]; then
+            echo "$drift"
+            git diff desktop/ui/src/lib/protocol
+            exit 1
+          fi
 
   binary:
     if: github.event_name == 'workflow_dispatch'
