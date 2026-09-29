@@ -2,11 +2,12 @@
  * line in hand, faded white what was already written, yellow the line being written, pink a
  * mistake, blue what is accepted or pointed at. */
 
-.board[data-skin="blackboard"] {
-	--prose:
+[data-skin="blackboard"] {
+	--skin-prose:
 		"LXGW WenKai", "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC",
 		"Microsoft YaHei", sans-serif;
-	--formula: "LXGW WenKai Mono", "LXGW WenKai", "SF Mono", Menlo, monospace;
+	--skin-formula:
+		"LXGW WenKai Mono", "LXGW WenKai", "SF Mono", Menlo, monospace;
 
 	--ink: #efeee7;
 	--ink-faded: #9fb2a7;
@@ -14,6 +15,7 @@
 	--mark-write: #f3d57d;
 	--mark-wrong: #f2a3ab;
 	--mark-point: #a3d3ea;
+	--mark-good: #a3d3ea;
 	--quiet-mark: rgba(239, 238, 231, 0.26);
 
 	/* Slate with a fine grain, long soft eraser wipes, and a darker rim. */
@@ -54,6 +56,8 @@
 
 	--focus-ring: 2px solid rgba(163, 211, 234, 0.75);
 	--scrollbar: rgba(239, 238, 231, 0.18);
+	--scrim: rgba(0, 0, 0, 0.35);
+	--sheet-shadow: -18px 0 36px rgba(0, 0, 0, 0.45);
 
 	color-scheme: dark;
 }

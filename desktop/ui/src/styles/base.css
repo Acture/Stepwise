@@ -2,8 +2,9 @@
 @import "./formula-font.css";
 
 /* Layout and type that every skin shares. A skin (src/skins) supplies the tokens below
- * through `.board[data-skin=…]`; components name roles — the line in hand, the line being
- * written, a mistake, what is pointed at — and never a colour. */
+ * through `[data-skin=…]`, on the board or on a preview of it in the settings; components
+ * name roles — the line in hand, the line being written, a mistake, what is pointed at — and
+ * never a colour. */
 
 :root {
 	--size-small: 14px;
@@ -15,6 +16,13 @@
 
 * {
 	box-sizing: border-box;
+}
+
+/* A skin names its faces; a face picked in the settings goes in front of them, so a glyph it
+ * lacks still comes from the skin's own. */
+[data-skin] {
+	--prose: var(--chosen-prose, var(--skin-prose));
+	--formula: var(--chosen-formula, var(--skin-formula));
 }
 
 html,

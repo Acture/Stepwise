@@ -21,10 +21,15 @@ export type { View } from "./protocol/View";
 export type { Written } from "./protocol/Written";
 
 import type { Command } from "./protocol/Command";
+import type { Look } from "./protocol/Look";
 
 /** What the page asks of the window around it: a command for the Rust side, or something
  * only the window itself can do, such as showing the file picker. */
 export interface Host {
 	send: (command: Command) => void;
 	openSet: () => void;
+	/** Wears a look; the shell keeps it for the next launch. */
+	setLook: (look: Look) => void;
+	/** Picks a VS Code colour theme file, then wears it. */
+	importTheme: () => void;
 }
