@@ -62,28 +62,33 @@
 		}
 	}
 
-	// A mistake is underlined twice, so it does not rest on hue alone.
-	let marks: Mark[] = $derived([
-		{
-			id: wrong ? "blank-wrong" : "blank",
-			shape: "underline",
-			color: wrong ? "var(--mark-wrong)" : "var(--mark-write)",
-			targets: blanks.filter(Boolean),
-		},
-		...(wrong
-			? [
-					{
-						id: "blank-wrong-twice",
-						shape: "underline" as const,
-						color: "var(--mark-wrong)",
-						targets: blanks.filter(Boolean),
-						offset: 6,
-						width: 2.2,
-						delay: 160,
-					},
-				]
-			: []),
-	]);
+	// Every blank is underlined on its own: one answer fills them all, but each is a place
+	// of its own in the line. A mistake is underlined twice, so it does not rest on hue alone.
+	let marks: Mark[] = $derived(
+		blanks
+			.filter(Boolean)
+			.flatMap((blank: HTMLElement, index: number): Mark[] => [
+				{
+					id: `${wrong ? "blank-wrong" : "blank"}-${index}`,
+					shape: "underline",
+					color: wrong ? "var(--mark-wrong)" : "var(--mark-write)",
+					targets: [blank],
+				},
+				...(wrong
+					? [
+							{
+								id: `blank-wrong-twice-${index}`,
+								shape: "underline" as const,
+								color: "var(--mark-wrong)",
+								targets: [blank],
+								offset: 6,
+								width: 2.2,
+								delay: 160,
+							},
+						]
+					: []),
+			]),
+	);
 </script>
 
 <div class="line formula ink" bind:this={host}>
