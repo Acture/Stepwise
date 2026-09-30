@@ -4,9 +4,6 @@ name: Package
 # commit it was started on after that commit has passed the whole gate.
 on:
   workflow_dispatch:
-  # Temporary, while the file is not yet on the default branch: removed before merging.
-  push:
-    branches: ['acturea/p-767-*']
 
 permissions:
   contents: read
