@@ -251,4 +251,4 @@ ty check tests/python_oracle.py
 
 CPython 对照测试需要开发机器上有 `python3`；程序运行本身不需要它。当前验证证据见 [STATUS.md](STATUS.md)。
 
-本机构建分发文件：`cargo build --release --locked`，输出 `target/release/stepwise`（Windows 为 `.exe`）。[CI 配置](.github/workflows/check.yml) 在 Linux、macOS、Windows 检查；手动触发时额外构建各运行器原生架构的压缩包。尚未运行远程 CI，也未发布预编译包；macOS 签名、公证、Intel 包和 Linux 可移植性需要单独验收。
+本机构建分发文件：`cargo build --release --locked`，输出 `target/release/stepwise`（Windows 为 `.exe`）。[检查](.github/workflows/check.yml)在每次推送和拉取请求上于 Linux、macOS、Windows 运行，结果见 GitHub Actions。分发只走一条管线：[打包工作流](.github/workflows/package.yml)，只在 Actions 页面手动运行。它先跑完整套检查，通过后为四个目标各出一个 CLI 归档：Linux x64（`x86_64-unknown-linux-musl`，静态链接）、macOS arm64 与 macOS x64（各只含一种架构，Intel 版在 Apple Silicon 运行器上交叉编译）、Windows x64（静态链接 C 运行时，不依赖 VCRUNTIME140.dll）。Linux 与 macOS 用 tar.gz，Windows 用 zip，每个都含程序、LICENSE、README.md、THIRD-PARTY-NOTICES.txt 和 RUST-STD-COPYRIGHT.html；另有一份 SHA256SUMS 覆盖本次运行的全部归档。第三方许可声明由 cargo-about 按 `about.toml` 与 `about.hbs` 在 CI 里逐个目标生成，不手写，Linux 版还附上静态链接进去的 musl 的许可证；Rust 标准库的声明取自工具链自带的 `COPYRIGHT-library.html`。新依赖的许可证不在 `about.toml` 接受之列时，打包失败，要先读过那份许可证再加进去。尚未发布预编译包；macOS 签名与公证，以及在各平台上运行这些归档的验收，需要单独完成。

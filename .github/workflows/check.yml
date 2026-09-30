@@ -4,13 +4,18 @@ on:
   push:
   pull_request:
   workflow_dispatch:
+  # package.yml's first job: it packages only a commit that passed all of this.
+  workflow_call:
 
 permissions:
   contents: read
 
+# Called from package.yml this is evaluated in the caller's context, so the workflow in the name
+# keeps a packaging run's gate out of the group a Check run on the same ref takes. A run started by
+# hand queues behind one already running in its group instead of cancelling it.
 concurrency:
-  group: check-${{ github.ref }}
-  cancel-in-progress: true
+  group: check-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
 
 jobs:
   check:
@@ -83,30 +88,3 @@ jobs:
             git diff desktop/ui/src/lib/protocol
             exit 1
           fi
-
-  binary:
-    if: github.event_name == 'workflow_dispatch'
-    needs: check
-    strategy:
-      matrix:
-        include:
-          - os: ubuntu-latest
-            extension: ''
-          - os: macos-latest
-            extension: ''
-          - os: windows-latest
-            extension: '.exe'
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - run: rustup toolchain install stable --profile minimal
-      - run: cargo +stable build --release --locked
-      - run: tar -czf stepwise.tar.gz LICENSE README.md -C target/release stepwise${{ matrix.extension }}
-      - uses: actions/upload-artifact@v4
-        with:
-          name: stepwise-${{ runner.os }}-${{ runner.arch }}
-          path: stepwise.tar.gz
-          if-no-files-found: error
