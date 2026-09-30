@@ -15,10 +15,10 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  # A named release rather than the day's stable, so the archive a user accepts and the archive a
-  # tag ships come from the same compiler; the runner images below are named for the same reason.
-  # Moving either is a commit of its own.
-  RUSTUP_TOOLCHAIN: 1.98.1
+  # The day's stable, the channel the gate in this same run tests with: Stepwise follows the latest
+  # release and leans on nothing a compiler update changes. The runner images below are named
+  # instead, so a move between images is a commit and not a rollout landing mid-run.
+  RUSTUP_TOOLCHAIN: stable
 
 # bash everywhere, Windows included: it stops on a failed command inside a pipeline, and PowerShell
 # reports only the last native exit code.
@@ -68,7 +68,8 @@ jobs:
       # The standard library is compiled into every build; the toolchain carries its notice.
       - name: The standard library's notices
         run: cp "$(rustc --print sysroot)/share/doc/rust/COPYRIGHT-library.html" notices/RUST-STD-COPYRIGHT.html
-      # The Linux build links musl in, and musl's MIT licence travels with it.
+      # The Linux build links musl in, and musl's MIT licence travels with it. A Rust release that
+      # moves to another musl stops here until these two move with it.
       - name: musl's licence
         env:
           MUSL: 1.2.5
