@@ -15,7 +15,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  # The day's stable, the compiler the gate in this same run tests with: Stepwise follows the latest
+  # The day's stable, the channel the gate in this same run tests with: Stepwise follows the latest
   # release and leans on nothing a compiler update changes. The runner images below are named
   # instead, so a move between images is a commit and not a rollout landing mid-run.
   RUSTUP_TOOLCHAIN: stable
