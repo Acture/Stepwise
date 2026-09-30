@@ -1,0 +1,21 @@
+{{!-- cargo-about renders this into THIRD-PARTY-NOTICES.txt. Plain text, so every value is
+written unescaped with triple braces. about.toml accepts AGPL-3.0-only for Stepwise's own crate
+alone, so that group is Stepwise itself, whose licence is LICENSE, and is left out. --}}
+Third-party software in Stepwise
+
+Stepwise is built from the Rust crates listed below. Each group of crates is
+distributed under the licence whose text follows it. The Rust standard library,
+compiled into every build, has its own notices in RUST-STD-COPYRIGHT.html.
+{{#each licenses}}
+{{#unless (eq id "AGPL-3.0-only")}}
+
+================================================================================
+{{{name}}}
+
+{{#each used_by}}
+  {{{crate.name}}} {{{crate.version}}}{{#if crate.repository}} <{{{crate.repository}}}>{{/if}}
+{{/each}}
+
+{{{text}}}
+{{/unless}}
+{{/each}}
