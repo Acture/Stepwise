@@ -1,0 +1,44 @@
+# cargo-about's configuration for the third-party licence notices that `.github/workflows/package.yml`
+# puts in every archive. Only these licences are accepted, in order of preference where a crate
+# offers a choice, so a dependency under any other licence stops the packaging run until someone
+# has read that licence and added it here.
+accepted = [
+	"Apache-2.0",
+	"MIT",
+	"Unicode-3.0",
+	"Unicode-DFS-2016",
+	"Zlib",
+	"MPL-2.0",
+]
+# Build scripts and tests run where the binary is built and are not part of it.
+ignore-build-dependencies = true
+ignore-dev-dependencies = true
+
+# Stepwise's own licence, accepted for its own crate alone: `about.hbs` leaves that group out of
+# the third-party notices, and a dependency under it would stop the run like any other.
+[stepwise]
+accepted = ["AGPL-3.0-only"]
+
+# The RustPython crates are published without a licence file. Their MIT licence, and the copyright
+# line MIT asks to keep, sits at the root of the repository they come from: cargo-about fetches it
+# at each crate's published commit and checks it against this checksum.
+[rustpython-ast.clarify]
+license = "MIT"
+
+[[rustpython-ast.clarify.git]]
+path = "LICENSE"
+checksum = "0dfeb72ba967794c4ea067b6e67798aefde4fd4cdb10f1882fe1163d2652434d"
+
+[rustpython-parser.clarify]
+license = "MIT"
+
+[[rustpython-parser.clarify.git]]
+path = "LICENSE"
+checksum = "0dfeb72ba967794c4ea067b6e67798aefde4fd4cdb10f1882fe1163d2652434d"
+
+[rustpython-parser-core.clarify]
+license = "MIT"
+
+[[rustpython-parser-core.clarify.git]]
+path = "LICENSE"
+checksum = "0dfeb72ba967794c4ea067b6e67798aefde4fd4cdb10f1882fe1163d2652434d"
