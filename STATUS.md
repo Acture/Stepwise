@@ -115,7 +115,7 @@ Rerun `package.yml` by manual dispatch to regenerate the packages and all extrac
 ## Delivery boundary
 
 - Local debug executable: `target/debug/stepwise`. Local desktop development build: `target/release/bundle/macos/Stepwise.app`. Distribution installers are the verified artifacts above; macOS remains ad-hoc signed and not notarized, and Windows installers are unsigned. Developer ID signing and notarization belong to P-769.
-- P-768 implementation is pushed on its task branch; the accepted run packages the exact source commit above. No P-768 pull request, merge, tag or published release has been created. This evidence update changes documentation only.
+- P-768 implementation is pushed on its task branch and awaits merge; the accepted run packages the exact source commit above. No tag or published release has been created. Changes after that run update documentation only.
 - [check.yml](.github/workflows/check.yml) runs the cross-platform checks on every push and pull request. Distribution has one pipeline, [package.yml](.github/workflows/package.yml), started by hand: it runs check.yml as its gate, then independently builds CLI archives and desktop installers, with one SHA256SUMS over the successful families. Packages are extracted and inspected there; no Windows/Linux/Intel macOS runtime acceptance is claimed.
 - No student usability study or classroom acceptance has been performed.
 
