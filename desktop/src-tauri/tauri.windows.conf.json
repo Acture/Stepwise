@@ -1,0 +1,12 @@
+{
+	"$schema": "https://schema.tauri.app/config/2",
+	"bundle": {
+		"targets": ["nsis", "msi"],
+		"licenseFile": "../../LICENSE",
+		"windows": {
+			"wix": {
+				"upgradeCode": "5c829e2d-f2a3-5ef7-8679-ac69f33cd9d3"
+			}
+		}
+	}
+}

@@ -1,0 +1,14 @@
+Stepwise
+Copyright (C) 2026 Acture and the Stepwise contributors
+
+Stepwise is free software: you can redistribute it and/or modify it under
+the terms of the GNU Affero General Public License, version 3 only.
+It is distributed without any warranty; see LICENSE for the full terms.
+
+Source code: https://github.com/Acture/Stepwise
+The packaging run identifies the exact source commit in its GitHub Actions log.
+
+Third-party Rust crates: THIRD-PARTY-NOTICES.txt
+Rust standard library: RUST-STD-COPYRIGHT.html
+Bundled page dependencies: JS-THIRD-PARTY-NOTICES.json
+LXGW WenKai font: LXGW-WenKai-OFL.txt

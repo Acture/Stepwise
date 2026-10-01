@@ -249,4 +249,10 @@ ruff format --check tests/python_oracle.py
 ty check tests/python_oracle.py
 ```
 
-本机构建分发文件：`cargo build --release --locked`，输出 `target/release/stepwise`（Windows 为 `.exe`）。[检查](.github/workflows/check.yml)在每次推送和拉取请求上于 Linux、macOS、Windows 运行，结果见 GitHub Actions。分发只走一条管线：[打包工作流](.github/workflows/package.yml)，只在 Actions 页面手动运行。它先跑完整套检查，通过后为四个目标各出一个 CLI 归档：Linux x64（`x86_64-unknown-linux-musl`，静态链接）、macOS arm64 与 macOS x64（各只含一种架构，Intel 版在 Apple Silicon 运行器上交叉编译）、Windows x64（静态链接 C 运行时，不依赖 VCRUNTIME140.dll）。Linux 与 macOS 用 tar.gz，Windows 用 zip，每个都含程序、LICENSE、README.md、THIRD-PARTY-NOTICES.txt 和 RUST-STD-COPYRIGHT.html；另有一份 SHA256SUMS 覆盖本次运行的全部归档。第三方许可声明由 cargo-about 按 `about.toml` 与 `about.hbs` 在 CI 里逐个目标生成，不手写，Linux 版还附上静态链接进去的 musl 的许可证；Rust 标准库的声明取自工具链自带的 `COPYRIGHT-library.html`。新依赖的许可证不在 `about.toml` 接受之列时，打包失败，要先读过那份许可证再加进去。尚未发布预编译包；macOS 签名与公证，以及在各平台上运行这些归档的验收，需要单独完成。
+本机构建 CLI：`cargo build --release --locked`，输出 `target/release/stepwise`（Windows 为 `.exe`）。[检查](.github/workflows/check.yml)在每次推送和拉取请求上于 Linux、macOS、Windows 运行。分发只走一条管线：[打包工作流](.github/workflows/package.yml)，只在 Actions 页面手动运行，不创建标签或 Release。它先跑完整套检查，所有打包作业都依赖同一次运行的门禁。
+
+CLI 为四个目标各出一个归档：Linux x64（`x86_64-unknown-linux-musl`，静态链接）、macOS arm64 与 macOS x64（各只含一种架构，Intel 版在 Apple Silicon 运行器上交叉编译）、Windows x64（静态链接 C 运行时，不依赖 VCRUNTIME140.dll）。Linux 与 macOS 用 tar.gz，Windows 用 zip，每个都含程序、LICENSE、README.md、THIRD-PARTY-NOTICES.txt 和 RUST-STD-COPYRIGHT.html。
+
+桌面在 `macos-26` 上分别构建 arm64 与 x64 的 dmg，在 `windows-2025` 上构建 NSIS 与 MSI，在 `ubuntu-24.04` 上构建 deb、rpm 与 AppImage。只上传安装包，`.app` 保留在 dmg 内，避免工作流产物丢失可执行位。macOS 仍是 ad-hoc 签名，不弹出挂载前 EULA；应用内随包携带完整许可证。11.0 是 Info.plist 声明的加载下限，不代表系统版本验收。Windows 安装包尚未签名，可能触发 SmartScreen 提示。安装后的 `licenses` 目录包含 AGPL 全文、COPYRIGHT、Rust 依赖声明、标准库声明、页面依赖声明和 WenKai OFL。CI 解包逐字节核对这些文件，在 dmg 内验证签名与架构，并从 Linux 程序和 AppImage 所有 ELF 的未定义动态符号测出 GLIBC 需求；这不是 Linux 运行时兼容性验收。
+
+Rust 声明由 cargo-about 按 `about.toml` 与 `about.hbs` 逐目标生成，CLI 的 Linux 版另附 musl 许可证；标准库声明取自工具链。页面声明由锁定的 Vite 从构建模块生成，`desktop/ui/licenses.ts` 补入预打包 JS 的依赖、CSS/font 包和 Vite 注入的运行时代码，文本读取自锁定的依赖包。未审阅的许可证、缺失正文或占位版权行会使构建失败。桌面打包加载 `tauri.package.conf.json`，将 CI 生成的声明加入资源；`bun run app` 是本机开发构建，不代替这条分发管线。
