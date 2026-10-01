@@ -114,8 +114,10 @@ Rerun `package.yml` by manual dispatch to regenerate the packages and all extrac
 
 ## Delivery boundary
 
+[P-780](https://linear.app/acturea/issue/P-780) adds download-based CLI acceptance to the manual workflow. The exact archive hash and all four licence/document files are checked before execution; `tests/cli_archive.rs` and `tests/terminal.rs` verify `STEPWISE_BINARY_SHA256` before launching `STEPWISE_BINARY`, and refuse unidentified binaries in CI. Linux additionally runs both static test harnesses in Debian 11, Fedora 43 and Alpine 3.22; Intel macOS has native jobs on both macos-15-intel and macos-26-intel. Windows import verification is required; the ConPTY experiment retains its log and exit code. The first run is pending, so this implementation alone establishes no cross-platform runtime acceptance.
+
 - Local debug executable: `target/debug/stepwise`. Local desktop development build: `target/release/bundle/macos/Stepwise.app`. Distribution installers are the verified artifacts above; macOS remains ad-hoc signed and not notarized, and Windows installers are unsigned. Developer ID signing and notarization belong to P-769.
-- P-768 implementation is pushed on its task branch and awaits merge; the accepted run packages the exact source commit above. No tag or published release has been created. Changes after that run update documentation only.
+- P-768 merged through [PR #11](https://github.com/Acture/Stepwise/pull/11); its accepted run packages the exact source commit above. No tag or published release has been created.
 - [check.yml](.github/workflows/check.yml) runs the cross-platform checks on every push and pull request. Distribution has one pipeline, [package.yml](.github/workflows/package.yml), started by hand: it runs check.yml as its gate, then independently builds CLI archives and desktop installers, with one SHA256SUMS over the successful families. Packages are extracted and inspected there; no Windows/Linux/Intel macOS runtime acceptance is claimed.
 - No student usability study or classroom acceptance has been performed.
 

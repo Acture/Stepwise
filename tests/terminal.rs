@@ -13,6 +13,8 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
+mod support;
+
 #[derive(Serialize)]
 struct Run {
 	args: Vec<String>,
@@ -31,6 +33,9 @@ struct Request {
 struct Capture {
 	raw: String,
 	visible: String,
+	exit_code: i32,
+	terminal_before: Option<String>,
+	terminal_after: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -55,20 +60,27 @@ fn squashed(text: &str) -> String {
 
 fn drive(runs: Vec<Run>) -> Vec<Capture> {
 	let request: Request = Request {
-		binary: env!("CARGO_BIN_EXE_stepwise").into(),
+		binary: support::binary().to_string_lossy().into(),
 		columns: 80,
 		rows: 24,
 		runs,
 	};
-	let mut child: std::process::Child = Command::new("python3")
-		.arg(concat!(
-			env!("CARGO_MANIFEST_DIR"),
-			"/tests/terminal_smoke.py"
-		))
-		.stdin(Stdio::piped())
-		.stdout(Stdio::piped())
-		.spawn()
-		.expect("python3 must be installed for the explicit terminal test");
+	let script: &str = if cfg!(windows) {
+		"terminal_conpty.py"
+	} else {
+		"terminal_smoke.py"
+	};
+	let mut child: std::process::Child =
+		Command::new(if cfg!(windows) { "python" } else { "python3" })
+			.arg(
+				std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+					.join("tests")
+					.join(script),
+			)
+			.stdin(Stdio::piped())
+			.stdout(Stdio::piped())
+			.spawn()
+			.expect("python3 must be installed for the explicit terminal test");
 	child
 		.stdin
 		.take()
@@ -81,9 +93,62 @@ fn drive(runs: Vec<Run>) -> Vec<Capture> {
 		"pty driver failed: {:?}",
 		output.status
 	);
-	serde_json::from_slice::<Response>(&output.stdout)
+	let captures: Vec<Capture> = serde_json::from_slice::<Response>(&output.stdout)
 		.expect("driver returns captures")
-		.runs
+		.runs;
+	for capture in &captures {
+		assert_eq!(capture.exit_code, 0, "program failed: {}", capture.visible);
+		if cfg!(unix) {
+			assert!(
+				capture
+					.terminal_before
+					.as_ref()
+					.is_some_and(|settings| !settings.is_empty())
+			);
+			assert_eq!(
+				capture.terminal_after, capture.terminal_before,
+				"stty -g changed after exit"
+			);
+		}
+	}
+	captures
+}
+
+#[test]
+#[ignore = "requires a pty (ConPTY on Windows) and Python"]
+fn unicode_answers_resume_and_no_save_preserves_the_file() {
+	let directory: tempfile::TempDir = tempfile::tempdir().unwrap();
+	let progress: std::path::PathBuf = directory.path().join("中文 进度.json");
+	let path: &str = progress.to_str().unwrap();
+	let captures: Vec<Capture> = drive(vec![run(
+		&["--logic", "True & (False | True)", "--progress-file", path],
+		&["\u{1b}[B", "\u{1b}[B", "\r", "真", "\r", "q"],
+	)]);
+	assert!(squashed(&captures[0].visible).contains("True&(True)"));
+	let before: Vec<u8> = std::fs::read(&progress).unwrap();
+	let reopened: Vec<Capture> = drive(vec![run(
+		&["--logic", "True & (False | True)", "--progress-file", path],
+		&["q"],
+	)]);
+	assert!(
+		squashed(&reopened[0].visible).contains("True&(True)"),
+		"{}",
+		reopened[0].visible
+	);
+	assert!(squashed(&reopened[0].visible).ends_with("True&(True)"));
+	assert_eq!(std::fs::read(&progress).unwrap(), before);
+	let unsaved: Vec<Capture> = drive(vec![run(
+		&[
+			"--logic",
+			"True & False",
+			"--progress-file",
+			path,
+			"--no-save",
+		],
+		&["假", "\r", "q"],
+	)]);
+	assert!(squashed(&unsaved[0].visible).contains("完成"));
+	assert_eq!(std::fs::read(&progress).unwrap(), before);
 }
 
 #[test]
