@@ -97,6 +97,36 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  # Separate from the CLI notice job: a new desktop dependency must not stop CLI delivery.
+  desktop-notices:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: cargo install --locked --features cli cargo-about@0.9.2
+      - name: The desktop's Rust licences, including its embedded-page features
+        run: |
+          for target in x86_64-unknown-linux-gnu aarch64-apple-darwin x86_64-apple-darwin x86_64-pc-windows-msvc; do
+            notice="desktop-notices/$target/THIRD-PARTY-NOTICES.txt"
+            mkdir -p "desktop-notices/$target"
+            cargo about generate --locked --fail -m desktop/src-tauri/Cargo.toml --features tauri/custom-protocol --config about.toml --target "$target" --format json --output-file "$RUNNER_TEMP/$target.json"
+            cargo about generate --locked --fail -m desktop/src-tauri/Cargo.toml --features tauri/custom-protocol --config about.toml --target "$target" --output-file "$notice" about.hbs
+            python scripts/package/check_rust_notices.py "$RUNNER_TEMP/$target.json" "$notice"
+            cp "$(rustc --print sysroot)/share/doc/rust/COPYRIGHT-library.html" "desktop-notices/$target/RUST-STD-COPYRIGHT.html"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-notices
+          path: desktop-notices
+          if-no-files-found: error
+          retention-days: 7
+
   cli:
     name: CLI ${{ matrix.target }}
     needs: [check, notices]
@@ -239,14 +269,102 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  desktop:
+    name: Desktop ${{ matrix.target }}
+    needs: [check, desktop-notices]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            os: macos-26
+          - target: x86_64-apple-darwin
+            os: macos-26
+          - target: x86_64-pc-windows-msvc
+            os: windows-2025
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-24.04
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    env:
+      TARGET: ${{ matrix.target }}
+    steps:
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Rust targets
+        run: |
+          rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal --target "$TARGET"
+          if [ "$RUNNER_OS" = macOS ]; then
+            rustup target add --toolchain "$RUSTUP_TOOLCHAIN" aarch64-apple-darwin x86_64-apple-darwin
+          fi
+      - name: Linux build and extraction tools
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev patchelf xdg-utils libarchive-tools
+      - name: Locked page and Tauri CLI
+        working-directory: desktop/ui
+        run: |
+          bun install --frozen-lockfile
+          bun run tauri --version
+          # Log and compare the installed CLI with the package recorded in bun.lock.
+          bun -e 'const p = require("./node_modules/@tauri-apps/cli/package.json"); const lock = Bun.JSON5.parse(await Bun.file("bun.lock").text()); if (lock.packages["@tauri-apps/cli"][0] !== p.name + "@" + p.version) throw new Error("Tauri CLI differs from bun.lock"); console.log("Locked Tauri CLI:", p.version);'
+      - uses: actions/download-artifact@v4
+        with:
+          name: desktop-notices
+          path: desktop-notices
+      - name: Stage this target's notices
+        run: |
+          mkdir -p target/desktop-notices
+          cp "desktop-notices/$TARGET/"* target/desktop-notices/
+      # The CLI is resolved in ui's node_modules; the action works in src-tauri. Without an
+      # explicit script it may install a global CLI. No tag/release input or write permission.
+      - uses: tauri-apps/tauri-action@v1
+        with:
+          projectPath: desktop/src-tauri
+          tauriScript: bun ../ui/node_modules/@tauri-apps/cli/tauri.js
+          args: --target ${{ matrix.target }} --config tauri.package.conf.json -- --locked
+      - name: Read back every installer, verify licences and measure GLIBC
+        run: python scripts/package/verify.py --target "$TARGET"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installers-${{ matrix.target }}
+          path: dist
+          if-no-files-found: error
+          retention-days: 7
+      - name: GLIBC requirements of every ELF in the AppImage
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-glibc
+          path: target/package-evidence/GLIBC.json
+          if-no-files-found: error
+          retention-days: 7
+
   checksums:
-    needs: cli
+    needs: [cli, desktop]
+    # Each family can be delivered independently. Never describe partial target sets as a
+    # complete family; successful individual jobs still keep their own installer artifacts.
+    if: ${{ !cancelled() && (needs.cli.result == 'success' || needs.desktop.result == 'success') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/download-artifact@v4
+        if: needs.cli.result == 'success'
         with:
           pattern: cli-*
+          merge-multiple: true
+          path: dist
+      - uses: actions/download-artifact@v4
+        if: needs.desktop.result == 'success'
+        with:
+          pattern: installers-*
           merge-multiple: true
           path: dist
       - name: SHA256SUMS
@@ -257,12 +375,14 @@ jobs:
           done > SHA256SUMS
           rm -- *.sha256
           cat SHA256SUMS
-          shasum -a 256 -c SHA256SUMS
-      - name: Every archive holds the licences and the README
+          # A malformed line must fail too; otherwise an uncheckable installer can be skipped.
+          sha256sum --strict --check SHA256SUMS
+      - name: Every CLI archive holds the licences and the README
         working-directory: dist
         run: |
           while read -r _ archive; do
             case "$archive" in
+              stepwise-desktop-*) continue ;; # Each installer was read back by its native job.
               *.zip) name="${archive%.zip}" && unzip -q "$archive" -d "$RUNNER_TEMP" ;;
               *) name="${archive%.tar.gz}" && tar -xzf "$archive" -C "$RUNNER_TEMP" ;;
             esac

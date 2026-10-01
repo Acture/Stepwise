@@ -28,7 +28,8 @@
 	},
 	"bundle": {
 		"active": true,
-		"targets": ["app"],
+		"targets": "all",
+		"copyright": "Copyright (C) 2026 Acture and the Stepwise contributors",
 		"category": "Education",
 		"icon": [
 			"icons/32x32.png",
@@ -37,9 +38,10 @@
 			"icons/icon.icns",
 			"icons/icon.ico"
 		],
-		"resources": ["licenses/LXGW-WenKai-OFL.txt"],
-		"macOS": {
-			"signingIdentity": "-"
+		"resources": {
+			"../../LICENSE": "licenses/LICENSE",
+			"../../COPYRIGHT": "licenses/COPYRIGHT",
+			"licenses/LXGW-WenKai-OFL.txt": "licenses/LXGW-WenKai-OFL.txt"
 		}
 	}
 }

@@ -1,0 +1,10 @@
+{
+	"$schema": "https://schema.tauri.app/config/2",
+	"bundle": {
+		"resources": {
+			"../../target/desktop-notices/THIRD-PARTY-NOTICES.txt": "licenses/THIRD-PARTY-NOTICES.txt",
+			"../../target/desktop-notices/RUST-STD-COPYRIGHT.html": "licenses/RUST-STD-COPYRIGHT.html",
+			"../ui/dist/JS-THIRD-PARTY-NOTICES.json": "licenses/JS-THIRD-PARTY-NOTICES.json"
+		}
+	}
+}
