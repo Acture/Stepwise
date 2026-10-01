@@ -8,10 +8,32 @@ import unittest
 from unittest.mock import patch
 
 from check_rust_notices import check
-from verify import glibc_versions, verify_resources
+from verify import glibc_report, glibc_versions, verify_resources
 
 
 class Gates(unittest.TestCase):
+	def test_glibc_report_keeps_binary_requirement_separate_from_bundled_libraries(
+		self,
+	) -> None:
+		with tempfile.TemporaryDirectory() as temporary:
+			root: Path = Path(temporary)
+			tree: Path = root / "squashfs-root"
+			binary: Path = tree / "usr/bin/stepwise-desktop"
+			library: Path = tree / "usr/lib/libexample.so"
+			for path in (binary, library):
+				path.parent.mkdir(parents=True, exist_ok=True)
+				path.write_bytes(b"\x7fELF")
+
+			def required(path: Path) -> tuple[Path, tuple[int, ...]]:
+				return path, (2, 38) if path == library else (2, 34)
+
+			output: Path = root / "GLIBC.json"
+			with patch("verify.glibc_versions", side_effect=required):
+				glibc_report(tree, binary, root / "program.AppImage", output)
+			report: dict[str, object] = json.loads(output.read_text(encoding="utf-8"))
+			self.assertEqual(report["glibcMinimum"], "2.38")
+			self.assertEqual(report["binaryGlibcMinimum"], "2.34")
+
 	def test_glibc_requirement_ignores_exports_and_orders_versions_numerically(
 		self,
 	) -> None:

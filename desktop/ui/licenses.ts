@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
-import type { Plugin } from "vite";
+import type { Plugin, ResolvedConfig } from "vite";
 
 interface Package {
 	name: string;
@@ -35,7 +35,7 @@ export function pageNotices(): Plugin {
 	return {
 		name: "stepwise-page-notices",
 		apply: "build",
-		configResolved(config): void {
+		configResolved(config: ResolvedConfig): void {
 			root = config.root;
 			output = join(root, config.build.outDir, "JS-THIRD-PARTY-NOTICES.json");
 		},
@@ -43,10 +43,19 @@ export function pageNotices(): Plugin {
 			const notices: Notice[] = JSON.parse(readFileSync(output, "utf8"));
 			const packages: Map<string, Notice> = new Map();
 			const visited: Set<string> = new Set();
-			function include(manifest: string, dependencies: boolean = false): void {
+			function include(
+				manifest: string,
+				dependencies: boolean = false,
+				version?: string,
+			): void {
+				const pkg: Package = JSON.parse(readFileSync(manifest, "utf8"));
+				if (version !== undefined && pkg.version !== version) {
+					throw new Error(
+						`Bundled ${pkg.name}@${version} resolves to ${pkg.version}`,
+					);
+				}
 				if (visited.has(manifest)) return;
 				visited.add(manifest);
-				const pkg: Package = JSON.parse(readFileSync(manifest, "utf8"));
 				const directory: string = dirname(manifest);
 				if (!accepted.has(pkg.license)) {
 					throw new Error(
@@ -81,10 +90,10 @@ export function pageNotices(): Plugin {
 			}
 			const manifest: string = join(root, "package.json");
 			const page: Package = JSON.parse(readFileSync(manifest, "utf8"));
-			for (const name of new Set([
-				...notices.map((notice: Notice): string => notice.name),
-				...Object.keys(page.dependencies ?? {}),
-			])) {
+			for (const notice of notices) {
+				include(resolvePackage(notice.name, manifest), false, notice.version);
+			}
+			for (const name of Object.keys(page.dependencies ?? {})) {
 				include(resolvePackage(name, manifest));
 			}
 			// The module-preload helper is a virtual Vite module, absent from Vite's own report.

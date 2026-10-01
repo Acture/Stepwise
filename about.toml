@@ -10,7 +10,6 @@ accepted = [
 	"Zlib",
 	"MPL-2.0",
 	"BSD-3-Clause",
-	"ISC",
 ]
 # Build scripts and tests run where the binary is built and are not part of it.
 ignore-build-dependencies = true
