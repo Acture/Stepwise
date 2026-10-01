@@ -50,7 +50,19 @@ jobs:
         run: cargo +stable test --locked --test python_oracle -- --ignored --nocapture
       - name: Drive the terminal through a pty
         if: runner.os != 'Windows'
-        run: cargo +stable test --locked --test terminal -- --ignored --nocapture
+        shell: bash
+        run: |
+          # Development regression uses an explicitly identified debug binary; the packaging
+          # acceptance jobs set these two variables to their downloaded archive's binary.
+          cargo +stable build --locked
+          export STEPWISE_BINARY="$PWD/target/debug/stepwise"
+          if command -v sha256sum >/dev/null; then
+            STEPWISE_BINARY_SHA256="$(sha256sum "$STEPWISE_BINARY" | cut -d ' ' -f 1)"
+          else
+            STEPWISE_BINARY_SHA256="$(shasum -a 256 "$STEPWISE_BINARY" | cut -d ' ' -f 1)"
+          fi
+          export STEPWISE_BINARY_SHA256
+          cargo +stable test --locked --test terminal -- --ignored --nocapture
       - run: cargo +stable run --locked -- --logic --proof raa --check-proof tests/fixtures/raa.json
 
   desktop:
