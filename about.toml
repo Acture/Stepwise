@@ -9,6 +9,8 @@ accepted = [
 	"Unicode-DFS-2016",
 	"Zlib",
 	"MPL-2.0",
+	"BSD-3-Clause",
+	"ISC",
 ]
 # Build scripts and tests run where the binary is built and are not part of it.
 ignore-build-dependencies = true
@@ -19,6 +21,59 @@ ignore-dev-dependencies = true
 [stepwise]
 accepted = ["AGPL-3.0-only"]
 
+[stepwise-desktop]
+accepted = ["AGPL-3.0-only"]
+
+# objc2's workspace keeps the shared licence at the repository root.
+[block2.clarify]
+license = "MIT"
+
+[[block2.clarify.git]]
+path = "LICENSE.md"
+checksum = "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54"
+
+[objc2.clarify]
+license = "MIT"
+
+[[objc2.clarify.git]]
+path = "LICENSE.md"
+checksum = "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54"
+
+[objc2-encode.clarify]
+license = "MIT"
+
+[[objc2-encode.clarify.git]]
+path = "LICENSE.md"
+checksum = "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54"
+
+[objc2-foundation.clarify]
+license = "MIT"
+
+[[objc2-foundation.clarify.git]]
+path = "LICENSE.md"
+checksum = "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54"
+
+[webview2-com.clarify]
+license = "MIT"
+
+[[webview2-com.clarify.git]]
+path = "LICENSE"
+checksum = "0dcf41516e608bbcb6cdc5229feb7b86fe4a643b85e7df251133c93408fdac73"
+
+[webview2-com-sys.clarify]
+license = "MIT"
+
+[[webview2-com-sys.clarify.git]]
+path = "LICENSE"
+checksum = "0dcf41516e608bbcb6cdc5229feb7b86fe4a643b85e7df251133c93408fdac73"
+
+[webview2-com-macros.clarify]
+license = "MIT"
+
+[[webview2-com-macros.clarify.git]]
+path = "LICENSE"
+checksum = "0dcf41516e608bbcb6cdc5229feb7b86fe4a643b85e7df251133c93408fdac73"
+
 # The RustPython crates are published without a licence file. Their MIT licence, and the copyright
 # line MIT asks to keep, sits at the root of the repository they come from: cargo-about fetches it
 # at each crate's published commit and checks it against this checksum.
@@ -28,6 +83,50 @@ license = "MIT"
 [[rustpython-ast.clarify.git]]
 path = "LICENSE"
 checksum = "0dfeb72ba967794c4ea067b6e67798aefde4fd4cdb10f1882fe1163d2652434d"
+
+# These workspace crates omit the repository-root licence from their published package.
+[alloc-stdlib.clarify]
+license = "BSD-3-Clause"
+
+[[alloc-stdlib.clarify.git]]
+path = "LICENSE"
+checksum = "c0c56f26d9c051cac4d200c34c84e7ae9aaa853e01a982a1df08b09931e518ae"
+
+[dlopen2.clarify]
+license = "MIT"
+
+[[dlopen2.clarify.git]]
+path = "LICENSE"
+checksum = "39fa265207450e77c62e90c5594a06c085b655d8374c7ced4bf7894b6bd95dd2"
+
+[dlopen2_derive.clarify]
+license = "MIT"
+
+[[dlopen2_derive.clarify.git]]
+path = "LICENSE"
+checksum = "39fa265207450e77c62e90c5594a06c085b655d8374c7ced4bf7894b6bd95dd2"
+
+# The crate offers BSD or MIT, but ships only the BSD text. Choose that branch, with its holder.
+[brotli-decompressor.clarify]
+license = "BSD-3-Clause"
+
+[[brotli-decompressor.clarify.files]]
+path = "LICENSE"
+checksum = "c0c56f26d9c051cac4d200c34c84e7ae9aaa853e01a982a1df08b09931e518ae"
+
+# DPI is Apache AND MIT: its MIT-covered libm code has a separate, nonstandard filename.
+[dpi.clarify]
+license = "Apache-2.0 AND MIT"
+
+[[dpi.clarify.files]]
+path = "LICENSE"
+license = "Apache-2.0"
+checksum = "6dc0e068dcf3a5bc8e054205b85b7720e1d49265bbc64bf515d2cf79197df69a"
+
+[[dpi.clarify.files]]
+path = "LICENSE-LIBM-MIT"
+license = "MIT"
+checksum = "9eff396a99bafd208e7126602420d6864f6066c08b84485a5b032320a9c01997"
 
 [rustpython-parser.clarify]
 license = "MIT"
