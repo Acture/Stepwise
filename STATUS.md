@@ -1,6 +1,6 @@
 # Local implementation and verification
 
-Updated: 2026-09-30. Execution home: [Linear P-630](https://linear.app/acturea/issue/P-630) (core prototype), [P-635](https://linear.app/acturea/issue/P-635) (compact inline interaction), [P-642](https://linear.app/acturea/issue/P-642) (random questions), [P-644](https://linear.app/acturea/issue/P-644) (final negative value), [P-646](https://linear.app/acturea/issue/P-646) (simultaneous substitution), [P-647](https://linear.app/acturea/issue/P-647) (required language and compact headers), [P-648](https://linear.app/acturea/issue/P-648) (local grouping and click-only removal), [P-650](https://linear.app/acturea/issue/P-650) (Python language module boundary), [P-651](https://linear.app/acturea/issue/P-651) (front-end-independent app layer), [P-688](https://linear.app/acturea/issue/P-688) (typed notice reasons), [P-653](https://linear.app/acturea/issue/P-653) (importable versioned TOML question sets), [P-693](https://linear.app/acturea/issue/P-693) (built-in proofs as data), [P-741](https://linear.app/acturea/issue/P-741) (short circuit or continue without a mode), [P-652](https://linear.app/acturea/issue/P-652) (desktop window), [P-761](https://linear.app/acturea/issue/P-761) (desktop appearance settings), [P-767](https://linear.app/acturea/issue/P-767) (portable CLI archives). This file records local evidence, not classroom effectiveness or a published release.
+Updated: 2026-10-02. Execution home: [Linear P-630](https://linear.app/acturea/issue/P-630) (core prototype), [P-635](https://linear.app/acturea/issue/P-635) (compact inline interaction), [P-642](https://linear.app/acturea/issue/P-642) (random questions), [P-644](https://linear.app/acturea/issue/P-644) (final negative value), [P-646](https://linear.app/acturea/issue/P-646) (simultaneous substitution), [P-647](https://linear.app/acturea/issue/P-647) (required language and compact headers), [P-648](https://linear.app/acturea/issue/P-648) (local grouping and click-only removal), [P-650](https://linear.app/acturea/issue/P-650) (Python language module boundary), [P-651](https://linear.app/acturea/issue/P-651) (front-end-independent app layer), [P-688](https://linear.app/acturea/issue/P-688) (typed notice reasons), [P-653](https://linear.app/acturea/issue/P-653) (importable versioned TOML question sets), [P-693](https://linear.app/acturea/issue/P-693) (built-in proofs as data), [P-741](https://linear.app/acturea/issue/P-741) (short circuit or continue without a mode), [P-652](https://linear.app/acturea/issue/P-652) (desktop window), [P-761](https://linear.app/acturea/issue/P-761) (desktop appearance settings), [P-767](https://linear.app/acturea/issue/P-767) (portable CLI archives), [P-768](https://linear.app/acturea/issue/P-768) (desktop installers). This file records implementation and verification evidence, not classroom effectiveness or a published release.
 
 ## Implemented
 
@@ -82,12 +82,40 @@ Environment: macOS Apple Silicon, rustc 1.98.1, CPython 3.14.7.
 
 The CPython oracle covers a deterministic bounded sample, not the full Python language. Fixed expected step-sequence tests complement final-result comparisons. Basic proof-rule tests are not a formal metatheoretic proof of this checker.
 
+## Desktop packaging verification (P-768)
+
+The manual [Package run 36889766991](https://github.com/Acture/Stepwise/actions/runs/36889766991) succeeded at source commit `539e4ceb6b6f406a2cfbabaa12cd41863ab5e1dc` (verified 2026-10-02, Asia/Shanghai). All 18 jobs passed, including the complete reusable `check.yml` gate, the four desktop targets, the four CLI targets and checksum aggregation. Every packaging job depends on that same run's gate. The desktop jobs used `macos-26` for both architectures, `windows-2025` and `ubuntu-24.04`; the logs report `tauri-cli 2.12.0`, matching `desktop/ui/bun.lock`.
+
+The final `stepwise` artifact contains these seven installers alongside the four CLI archives and `SHA256SUMS`:
+
+| Target | Installer filename |
+| --- | --- |
+| macOS arm64 | `stepwise-desktop-0.1.0-aarch64-apple-darwin.dmg` |
+| macOS x64 | `stepwise-desktop-0.1.0-x86_64-apple-darwin.dmg` |
+| Windows x64, NSIS | `stepwise-desktop-0.1.0-x86_64-pc-windows-msvc-setup.exe` |
+| Windows x64, MSI | `stepwise-desktop-0.1.0-x86_64-pc-windows-msvc.msi` |
+| Linux x64, Debian | `stepwise-desktop-0.1.0-x86_64-unknown-linux-gnu.deb` |
+| Linux x64, RPM | `stepwise-desktop-0.1.0-x86_64-unknown-linux-gnu.rpm` |
+| Linux x64, AppImage | `stepwise-desktop-0.1.0-x86_64-unknown-linux-gnu.AppImage` |
+
+[verify.py](scripts/package/verify.py), called by [package.yml](.github/workflows/package.yml), extracted each installer and matched the installed bytes of all six licence resources to their sources: `LICENSE`, `COPYRIGHT`, `THIRD-PARTY-NOTICES.txt` (Rust dependencies), `RUST-STD-COPYRIGHT.html`, `JS-THIRD-PARTY-NOTICES.json` and `LXGW-WenKai-OFL.txt`. Both mounted dmg apps passed `codesign --verify --deep --strict`, contained exactly their named architecture and declared macOS 11.0 as the loading floor. The dmg has no EULA prompt. Windows NSIS and MSI both built and extracted successfully; MSI retains its fixed upgradeCode. This verifies package contents, not installation or application behaviour on those systems.
+
+Linux's measured maximum required GLIBC symbol version is **2.39**, both for `stepwise-desktop` itself and across all ELF files in the extracted AppImage plus its runtime. The `desktop-glibc` artifact's `GLIBC.json` records the per-file requirements. The verifier reads undefined symbols with `objdump -T` and compares versions numerically; this is a binary requirement, not a claim of runtime acceptance on every system with that glibc version.
+
+After downloading the final `stepwise` artifact, `shasum -a 256 -c SHA256SUMS` passed for all 11 shipped files. Recheck the downloaded bytes while the artifacts remain available (seven-day retention):
+
+```fish
+gh run download 36889766991 --repo Acture/Stepwise --name stepwise --dir p768-artifacts
+cd p768-artifacts
+shasum -a 256 -c SHA256SUMS
+```
+
+Rerun `package.yml` by manual dispatch to regenerate the packages and all extraction checks. The five regression tests in `python3 -m unittest discover -s scripts/package -v` cover altered/missing licence bytes, cargo-about fallback notices, GLIBC ordering, tool failures and nested binary requirements. Before the accepted run, `actionlint`, `ruff check scripts/package`, `ruff format --check scripts/package`, `ty check scripts/package`, the page's check/lint/build and `cargo fmt --all --check` also passed locally. Native Rust and desktop gates passed on the CI runners in the accepted run.
+
 ## Delivery boundary
 
-- Desktop packaging (P-768): implemented in `package.yml`, awaiting its manual cross-platform run. `python3 -m unittest discover -s scripts/package -v` verifies that the licence-byte gate rejects altered/missing files and cargo-about boilerplate, and that GLIBC measurement uses required symbols with numeric version ordering. `actionlint`, `ruff check scripts/package`, `ruff format --check scripts/package`, `ty check scripts/package`, the page's check/lint/build and `cargo fmt --all --check` pass locally. This is implementation evidence only; installer filenames, the run link and measured GLIBC requirement will be recorded after extraction checks pass on the runners.
-
-- Local debug executable: `target/debug/stepwise`. Local desktop build: `target/release/bundle/macos/Stepwise.app`, ad-hoc signed and not notarized; signed and notarized packages and other platforms belong to P-632.
-- Source is delivered through pull requests merged into `master`; no published release has been created.
+- Local debug executable: `target/debug/stepwise`. Local desktop development build: `target/release/bundle/macos/Stepwise.app`. Distribution installers are the verified artifacts above; macOS remains ad-hoc signed and not notarized, and Windows installers are unsigned. Developer ID signing and notarization belong to P-769.
+- P-768 implementation is pushed on its task branch; the accepted run packages the exact source commit above. No P-768 pull request, merge, tag or published release has been created. This evidence update changes documentation only.
 - [check.yml](.github/workflows/check.yml) runs the cross-platform checks on every push and pull request. Distribution has one pipeline, [package.yml](.github/workflows/package.yml), started by hand: it runs check.yml as its gate, then independently builds CLI archives and desktop installers, with one SHA256SUMS over the successful families. Packages are extracted and inspected there; no Windows/Linux/Intel macOS runtime acceptance is claimed.
 - No student usability study or classroom acceptance has been performed.
 
