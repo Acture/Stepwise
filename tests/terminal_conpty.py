@@ -38,13 +38,13 @@ class Winpty(Protocol):
 
 def drive(binary: str, run: Run, columns: int, rows: int) -> Capture:
 	winpty: Winpty = cast(Winpty, import_module("winpty"))
+	# spawn reads this from the driver, not the environment passed to its child. Its
+	# `backend or ...` discards integer 0 too, so use the documented environment override.
+	os.environ["PYWINPTY_BACKEND"] = "0"
 	child: Process = winpty.PtyProcess.spawn(
 		[binary] + run["args"],
 		dimensions=(rows, columns),
-		env={
-			**os.environ,
-			"PYWINPTY_BACKEND": "0",
-		},  # Backend.ConPTY in the pinned version.
+		env=dict(os.environ),  # Backend.ConPTY in the pinned version.
 	)
 	out: str = ""
 	eof: bool = False
