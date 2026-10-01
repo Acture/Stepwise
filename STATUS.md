@@ -84,9 +84,11 @@ The CPython oracle covers a deterministic bounded sample, not the full Python la
 
 ## Delivery boundary
 
+- Desktop packaging (P-768): implemented in `package.yml`, awaiting its manual cross-platform run. `python3 -m unittest discover -s scripts/package -v` verifies that the licence-byte gate rejects altered/missing files and cargo-about boilerplate, and that GLIBC measurement uses required symbols with numeric version ordering. `actionlint`, `ruff check scripts/package`, `ruff format --check scripts/package`, `ty check scripts/package`, the page's check/lint/build and `cargo fmt --all --check` pass locally. This is implementation evidence only; installer filenames, the run link and measured GLIBC requirement will be recorded after extraction checks pass on the runners.
+
 - Local debug executable: `target/debug/stepwise`. Local desktop build: `target/release/bundle/macos/Stepwise.app`, ad-hoc signed and not notarized; signed and notarized packages and other platforms belong to P-632.
 - Source is delivered through pull requests merged into `master`; no published release has been created.
-- [check.yml](.github/workflows/check.yml) runs the cross-platform checks on every push and pull request. Distribution has one pipeline, [package.yml](.github/workflows/package.yml), started by hand: it runs check.yml as its gate, then builds the four CLI archives and one SHA256SUMS over them. The archives are built and inspected there, not run; no Windows/Linux/Intel macOS runtime acceptance is claimed.
+- [check.yml](.github/workflows/check.yml) runs the cross-platform checks on every push and pull request. Distribution has one pipeline, [package.yml](.github/workflows/package.yml), started by hand: it runs check.yml as its gate, then independently builds CLI archives and desktop installers, with one SHA256SUMS over the successful families. Packages are extracted and inspected there; no Windows/Linux/Intel macOS runtime acceptance is claimed.
 - No student usability study or classroom acceptance has been performed.
 
 ## Deliberate first-version limits
