@@ -234,7 +234,7 @@ def main() -> None:
 			else:
 				verify_linux(installer, extracted, evidence)
 		installer.with_name(installer.name + ".sha256").write_text(
-			digest(installer) + "\n", encoding="ascii"
+			digest(installer) + "\n", encoding="ascii", newline="\n"
 		)
 		LOG.info(
 			"Verified and hashed %s in %.1fs", installer.name, time.monotonic() - start
