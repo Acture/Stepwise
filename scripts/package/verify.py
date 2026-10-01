@@ -95,11 +95,20 @@ def glibc_report(tree: Path, binary: Path, image: Path, output: Path) -> None:
 			maximum = max(maximum, version)
 			if index % 25 == 0 or index == len(paths):
 				LOG.info("GLIBC symbol inspection: %d/%d ELF files", index, len(paths))
-	if not maximum or not records[binary.name]:
+	binary_key: str = str(binary.relative_to(tree))
+	if not maximum or not records[binary_key]:
 		raise ValueError("No GLIBC requirement found for the desktop binary")
 	floor: str = ".".join(map(str, maximum))
 	output.write_text(
-		json.dumps({"glibcMinimum": floor, "files": records}, indent=2) + "\n",
+		json.dumps(
+			{
+				"glibcMinimum": floor,
+				"binaryGlibcMinimum": records[binary_key],
+				"files": records,
+			},
+			indent=2,
+		)
+		+ "\n",
 		encoding="utf-8",
 	)
 	LOG.info(
