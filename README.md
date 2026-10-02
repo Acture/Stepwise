@@ -260,3 +260,72 @@ CLI 为四个目标各出一个归档：Linux x64（`x86_64-unknown-linux-musl`�
 Rust 声明由 cargo-about 按 `about.toml` 与 `about.hbs` 逐目标生成，CLI 的 Linux 版另附 musl 许可证；标准库声明取自工具链。页面声明由锁定的 Vite 从构建模块生成，`desktop/ui/licenses.ts` 补入预打包 JS 的依赖、CSS/font 包和 Vite 注入的运行时代码，文本读取自锁定的依赖包。未审阅的许可证、缺失正文或占位版权行会使构建失败。桌面打包加载 `tauri.package.conf.json`，将 CI 生成的声明加入资源；`bun run app` 是本机开发构建，不代替这条分发管线。
 
 CLI 与桌面各自保留完整成功的一组产物，任一组失败不阻止另一组下载。汇总产物 `stepwise` 内的 SHA256SUMS 覆盖交付的每个归档和安装包，可在下载后运行 `shasum -a 256 -c SHA256SUMS`；所有工作流产物保留七天。实际运行与交付清单见 [STATUS.md](STATUS.md)。尚未发布 Release；Developer ID 签名、公证与真实安装后的交互验收单独完成。
+
+## 文档与规划笔记
+
+产品、架构、发布和 iOS 的规划笔记在 [notes/stepwise/首页.md](notes/stepwise/首页.md)，由既有私有仓库 [Acture/obsidian-vault 的 project/stepwise 分支](https://github.com/Acture/obsidian-vault/tree/project/stepwise/stepwise) 维护。`notes/` 是整个笔记仓库的 Git submodule；本项目只编辑其中的 `stepwise/`。GitHub 上可通过上面的笔记仓库链接阅读。
+
+本 README 保留使用与开发说明，[CLAUDE.md](CLAUDE.md) 保留代码约定（`AGENTS.md` 指向它），[STATUS.md](STATUS.md) 保留可运行的验证证据；任务与当前状态仍在 [Linear](https://linear.app/acturea/project/stepwise-eda337d1c7f9)。此次整理没有 `doc` 分支可搬移，也未删除原文档或改写其历史；来源与决策沿革见 [迁移记录](notes/stepwise/迁移记录.md)。
+
+### 克隆与初始化
+
+构建、测试和使用程序不需要私有笔记权限，普通克隆即可：
+
+```fish
+git clone https://github.com/Acture/Stepwise.git
+```
+
+已获笔记仓库访问权限的协作者，可以连同笔记克隆；HTTPS 使用自己的 Git/GitHub 凭据，不把 token 写入 URL 或配置文件：
+
+```fish
+git clone --recurse-submodules https://github.com/Acture/Stepwise.git
+```
+
+已有 clone 或新建 worktree 则从 Stepwise 根目录初始化：
+
+```fish
+git submodule update --init --recursive -- notes
+git submodule status -- notes
+```
+
+此命令恢复父仓库固定的笔记提交，可能处于 detached HEAD。`.gitmodules` 中的 `branch = project/stepwise` 只指定主动更新时的来源，不会自动跟进最新笔记。
+
+### 更新与编辑
+
+以下命令都在 Stepwise 根目录执行；先检查 `git status` 和 `git -C notes status`，保存已有修改，不覆盖其他工作。跟随代码版本时，在拉取父仓库后再次运行初始化命令；只想主动跟进笔记项目分支时使用：
+
+```fish
+git submodule update --remote -- notes
+git diff --submodule=log -- notes
+```
+
+编辑前切到可写项目分支并同步。首次初始化没有本地项目分支时，`git switch` 会跟踪同名远端分支创建它：
+
+```fish
+git -C notes fetch origin
+git -C notes switch project/stepwise
+git -C notes merge --ff-only origin/project/stepwise
+git -C notes merge origin/master
+```
+
+最后一条沿用统一 vault 的 master 回流约定；遇到冲突就停止并保留双方内容，按已有流程处理，不能自动选择一侧覆盖。不要删除其他项目目录，也不要修改当前 Obsidian 主 checkout 来代替这里的提交。
+
+编辑 `notes/stepwise/` 后，先审查、提交并推送笔记：
+
+```fish
+git -C notes add -- stepwise/
+git -C notes diff --cached
+git -C notes commit -m 'docs(stepwise): update planning notes'
+git -C notes push origin HEAD:refs/heads/project/stepwise
+```
+
+**只有笔记推送成功，才提交父仓库引用。** 确认 `git -C notes status --short` 没有尚未交付的修改，然后在获授权的代码工作分支执行：
+
+```fish
+git diff --submodule=log -- notes
+git add -- notes
+git commit -m 'docs: update Stepwise planning notes'
+git push
+```
+
+父仓库只记录笔记的 commit，不会替你提交或推送笔记文件。笔记推送失败时不要继续提交引用。Obsidian 的 master 与项目分支仍走原有合并流程，本次接入不新增后台同步；具体说明见 [笔记维护](notes/stepwise/笔记维护.md)。
