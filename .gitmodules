@@ -2,3 +2,4 @@
 	path = notes
 	url = https://github.com/Acture/obsidian-vault.git
 	branch = project/stepwise
+	update = merge

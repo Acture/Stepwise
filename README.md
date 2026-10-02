@@ -275,27 +275,33 @@ CLI 与桌面各自保留完整成功的一组产物，任一组失败不阻止�
 git clone https://github.com/Acture/Stepwise.git
 ```
 
-已获笔记仓库访问权限的协作者，可以连同笔记克隆；HTTPS 使用自己的 Git/GitHub 凭据，不把 token 写入 URL 或配置文件：
+已获笔记仓库访问权限的协作者，默认取 `project/stepwise` 的最新笔记；HTTPS 使用自己的 Git/GitHub 凭据，不把 token 写入 URL 或配置文件：
 
 ```fish
-git clone --recurse-submodules https://github.com/Acture/Stepwise.git
+git clone --recurse-submodules=notes --remote-submodules https://github.com/Acture/Stepwise.git
 ```
 
-已有 clone 或新建 worktree 则从 Stepwise 根目录初始化：
+已有 clone、新建 worktree，以及每次开始阅读或编辑规划前，都从 Stepwise 根目录更新到项目分支最新提交。先检查已初始化的 `notes/`，有未提交或未推送的工作时先保留并处理，不直接切换或覆盖：
 
 ```fish
-git submodule update --init --recursive -- notes
+git submodule update --init --remote --merge -- notes
 git submodule status -- notes
 ```
 
-此命令恢复父仓库固定的笔记提交，可能处于 detached HEAD。`.gitmodules` 中的 `branch = project/stepwise` 只指定主动更新时的来源，不会自动跟进最新笔记。
+这是默认工作流程：`branch = project/stepwise` 指定来源，`--remote` 获取并使用该分支的最新提交，`--merge` 保留当前工作分支。首次初始化仍可能 detached HEAD，编辑前按下文切换。更新后父仓库显示 `M notes` 是正常的，表示笔记比记录的版本新；不要为了清空状态把它退回旧提交。网络或权限失败时需明确处理，不能把缓存版本当成 latest。
+
+Git 的 gitlink 仍记录固定 commit，无法把它存成浮动分支。普通 `git clone --recurse-submodules`、`git pull` 或不带 `--remote` 的 update 不会自动取 latest；日常使用上面的命令。只有需要复现父仓库记录的笔记版本时，才在保存本地工作后显式恢复：
+
+```fish
+git submodule update --init --checkout -- notes
+```
 
 ### 更新与编辑
 
-以下命令都在 Stepwise 根目录执行；先检查 `git status` 和 `git -C notes status`，保存已有修改，不覆盖其他工作。跟随代码版本时，在拉取父仓库后再次运行初始化命令；只想主动跟进笔记项目分支时使用：
+以下命令都在 Stepwise 根目录执行；先检查 `git status` 和 `git -C notes status`，保存已有修改，不覆盖其他工作。拉取代码后仍运行默认更新命令，以项目分支的 latest 阅读规划：
 
 ```fish
-git submodule update --remote -- notes
+git submodule update --init --remote --merge -- notes
 git diff --submodule=log -- notes
 ```
 
@@ -305,10 +311,9 @@ git diff --submodule=log -- notes
 git -C notes fetch origin
 git -C notes switch project/stepwise
 git -C notes merge --ff-only origin/project/stepwise
-git -C notes merge origin/master
 ```
 
-最后一条沿用统一 vault 的 master 回流约定；遇到冲突就停止并保留双方内容，按已有流程处理，不能自动选择一侧覆盖。不要删除其他项目目录，也不要修改当前 Obsidian 主 checkout 来代替这里的提交。
+本项目只跟进 `project/stepwise`。总 vault 当前按项目目录汇总，明确禁止直接把整个 `origin/master` 合回项目分支；主库变更的回流按其 [维护约定](https://github.com/Acture/obsidian-vault/blob/master/README.md) 处理。遇到分歧或冲突就停止并保留双方内容，不强制覆盖，不修改当前 Obsidian 主 checkout 来代替这里的提交。
 
 编辑 `notes/stepwise/` 后，先审查、提交并推送笔记：
 
