@@ -17,8 +17,8 @@ class Capture(TypedDict):
 	raw: str
 	visible: str
 	exit_code: int
-	terminal_before: str | None
-	terminal_after: str | None
+	terminal_before: str
+	terminal_after: str
 
 
 class Request(TypedDict):
@@ -45,7 +45,8 @@ def visible(text: str) -> str:
 
 
 def main(drive: Callable[[str, Run, int, int], Capture]) -> None:
-	request: Request = cast(Request, json.load(sys.stdin))
+	# Rust sends UTF-8 bytes. Windows pipes otherwise use the locale's ANSI code page.
+	request: Request = cast(Request, json.load(sys.stdin.buffer))
 	captures: list[Capture] = [
 		drive(request["binary"], run, request["columns"], request["rows"])
 		for run in request["runs"]
