@@ -112,13 +112,46 @@ shasum -a 256 -c SHA256SUMS
 
 Rerun `package.yml` by manual dispatch to regenerate the packages and all extraction checks. The five regression tests in `python3 -m unittest discover -s scripts/package -v` cover altered/missing licence bytes, cargo-about fallback notices, GLIBC ordering, tool failures and nested binary requirements. Before the accepted run, `actionlint`, `ruff check scripts/package`, `ruff format --check scripts/package`, `ty check scripts/package`, the page's check/lint/build and `cargo fmt --all --check` also passed locally. Native Rust and desktop gates passed on the CI runners in the accepted run.
 
-## Delivery boundary
+## CLI archive acceptance (P-780)
 
-[P-780](https://linear.app/acturea/issue/P-780) adds download-based CLI acceptance to the manual workflow. The exact archive hash and all four licence/document files are checked before execution; `tests/cli_archive.rs` and `tests/terminal.rs` verify `STEPWISE_BINARY_SHA256` before launching `STEPWISE_BINARY`, and refuse unidentified binaries in CI. Linux additionally runs both static test harnesses in Debian 11, Fedora 43 and Alpine 3.22; Intel macOS has native jobs on both macos-15-intel and macos-26-intel. Windows import verification is required; the ConPTY experiment retains its log and exit code. The first run is pending, so this implementation alone establishes no cross-platform runtime acceptance.
+The manual [Package run 37012478300](https://github.com/Acture/Stepwise/actions/runs/37012478300) succeeded at source commit `347e34893c071587e9c4f39568ff727a204f5d87` (verified 2026-10-02, Asia/Shanghai). All 26 jobs passed, including the complete reusable gate, packaging, required CLI acceptance and checksum aggregation. [P-780](https://linear.app/acturea/issue/P-780) accepts the downloaded archives from that same run: [accept_cli.py](scripts/package/accept_cli.py) checks the producer's archive hash, exact members and licence/document bytes, then identifies the extracted executable. [cli_archive.rs](tests/cli_archive.rs) and [terminal.rs](tests/terminal.rs) verify `STEPWISE_BINARY_SHA256` before launching `STEPWISE_BINARY`; CI refuses a missing identity instead of falling back to a debug build. Cargo builds the test harnesses, not the executable they launch.
+
+| Target | Accepted runtime checks |
+| --- | --- |
+| `x86_64-unknown-linux-musl` | Noninteractive and pty tests on `ubuntu-24.04` with Python 3.8, then the same executable and static test harnesses in `debian:11`, `fedora:43` and `alpine:3.22` |
+| `aarch64-apple-darwin` | Noninteractive and pty tests on native `macos-26` |
+| `x86_64-apple-darwin` | Noninteractive and pty tests on native `macos-15-intel` and `macos-26-intel`, both using the same archive |
+| `x86_64-pc-windows-msvc` | Noninteractive tests on `windows-2025` and the extracted executable's import table, with no C runtime import |
+
+The noninteractive tests cover help/version, both languages' lists and traces, random questions, imported sets, equivalence and proof checking, UTF-8 output and exit codes 0/1/2. They check that these commands leave progress untouched and that interactive startup without a terminal fails without creating progress. The required Unix pty tests check normal exit status, Unicode answers, a progress path containing Chinese and spaces, a second run resuming saved work, `--no-save` preserving it byte for byte, and equal `stty -g` settings before and after each run. Containers share the host kernel: this establishes independence from those distributions' dynamic libraries, not acceptance on older Linux kernels. Debian 11 installs its test tools from Debian's signed distribution archive because the former security mirror returned package-download 404s before the tests could start.
+
+The optional headless Windows ConPTY experiment **did not pass**: its retained `conpty.json` records exit code 101, and `conpty.log` records both failed interactive tests. The driver reached the TUI, but the captured Unicode answer contained replacement characters and timed out; the other test failed its mouse-capture escape assertion. Windows acceptance therefore covers the required noninteractive commands and import check only. These synthetic input tests establish neither working Windows IME input nor a defect in an actual Windows Terminal session.
+
+The accepted archive and extracted executable identities are below. The two Intel jobs agree on both hashes, as do Ubuntu and all three Linux containers; each `cli-evidence-*` artifact's `identity.json` also names the source commit, run and runner image.
+
+| Archive filename | Archive SHA256 | Extracted executable SHA256 |
+| --- | --- | --- |
+| `stepwise-0.1.0-x86_64-unknown-linux-musl.tar.gz` | `4ed69e912eee3195ac27ca77323951d90370df9a2f9746d2d7e99af0977cfc4d` | `68df1b6f0ea1a2aaeed40d882062c84d49c9ccca5071482e23b9fa4537a62128` |
+| `stepwise-0.1.0-aarch64-apple-darwin.tar.gz` | `6c5d2e1b19ce0122bf1ba614795b7dd92884e12d81ccfea942ca2e4eb2d99506` | `8f0a905fd189b5d324840f141e6f51dda8007a023d98ac154be7c5775501fd92` |
+| `stepwise-0.1.0-x86_64-apple-darwin.tar.gz` | `8f7b55ef9151109ae843c5d221d8498319cba8b1c648e000a9427d3ee5e4487d` | `81f90e6616229a3a1fab5698f8a7a3df5cdfce4e78736e264ee8a18316977536` |
+| `stepwise-0.1.0-x86_64-pc-windows-msvc.zip` | `65d34047783179888347717791bebcc01b2e483aa613331181f24bf44860bec6` | `82c0ccb2326ec33af9bd89146b04009faa2c0d91711f99d527b8736b05fdfe9a` |
+
+Download the reports and accepted packages while their seven-day artifact retention lasts:
+
+```fish
+gh run download 37012478300 --repo Acture/Stepwise --pattern 'cli-evidence-*' --dir p780-evidence
+gh run download 37012478300 --repo Acture/Stepwise --name stepwise --dir p780-artifacts
+cd p780-artifacts
+shasum -a 256 -c SHA256SUMS
+```
+
+Rerun the manual workflow to regenerate this evidence; it creates no tag or Release. Local checks passed: `cargo fmt --check`, `cargo clippy --locked --all-targets -- -D warnings`, `cargo test --locked`, both ignored acceptance suites with an explicitly identified binary (also with Python 3.8), `actionlint`, Python lint/format/type checks, and the nine packaging regression tests in `python3 -m unittest discover -s scripts/package -v`. The accepted run repeats the native and desktop gates and runs every required archive acceptance job.
+
+## Delivery boundary
 
 - Local debug executable: `target/debug/stepwise`. Local desktop development build: `target/release/bundle/macos/Stepwise.app`. Distribution installers are the verified artifacts above; macOS remains ad-hoc signed and not notarized, and Windows installers are unsigned. Developer ID signing and notarization belong to P-769.
 - P-768 merged through [PR #11](https://github.com/Acture/Stepwise/pull/11); its accepted run packages the exact source commit above. No tag or published release has been created.
-- [check.yml](.github/workflows/check.yml) runs the cross-platform checks on every push and pull request. Distribution has one pipeline, [package.yml](.github/workflows/package.yml), started by hand: it runs check.yml as its gate, then independently builds CLI archives and desktop installers, with one SHA256SUMS over the successful families. Packages are extracted and inspected there; no Windows/Linux/Intel macOS runtime acceptance is claimed.
+- [check.yml](.github/workflows/check.yml) runs the cross-platform checks on every push and pull request. Distribution has one pipeline, [package.yml](.github/workflows/package.yml), started by hand: it runs check.yml as its gate, then independently builds CLI archives and desktop installers, with one SHA256SUMS over the successful families. CLI delivery additionally requires the archive acceptance above. Desktop installers remain verified by extraction and inspection; desktop runtime acceptance is not established by this run.
 - No student usability study or classroom acceptance has been performed.
 
 ## Deliberate first-version limits
