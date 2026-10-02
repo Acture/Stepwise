@@ -34,8 +34,8 @@ struct Capture {
 	raw: String,
 	visible: String,
 	exit_code: i32,
-	terminal_before: Option<String>,
-	terminal_after: Option<String>,
+	terminal_before: String,
+	terminal_after: String,
 }
 
 #[derive(Deserialize)]
@@ -98,18 +98,14 @@ fn drive(runs: Vec<Run>) -> Vec<Capture> {
 		.runs;
 	for capture in &captures {
 		assert_eq!(capture.exit_code, 0, "program failed: {}", capture.visible);
-		if cfg!(unix) {
-			assert!(
-				capture
-					.terminal_before
-					.as_ref()
-					.is_some_and(|settings| !settings.is_empty())
-			);
-			assert_eq!(
-				capture.terminal_after, capture.terminal_before,
-				"stty -g changed after exit"
-			);
-		}
+		assert!(
+			!capture.terminal_before.is_empty(),
+			"terminal mode was measured"
+		);
+		assert_eq!(
+			capture.terminal_after, capture.terminal_before,
+			"terminal input mode changed after exit (stty on Unix, GetConsoleMode on Windows)"
+		);
 	}
 	captures
 }
@@ -282,6 +278,8 @@ fn the_inline_adapter_teaches_and_saves_through_a_real_terminal() {
 		!expression.raw.contains("\u{1b}[2J"),
 		"cleared the whole screen"
 	);
+	// Windows changes mouse input through WinAPI, checked by the mode snapshot above.
+	#[cfg(unix)]
 	assert!(
 		expression.raw.contains("\u{1b}[?1000l") || expression.raw.contains("\u{1b}[?1003l"),
 		"left mouse capture enabled"
