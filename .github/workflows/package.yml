@@ -316,7 +316,7 @@ jobs:
         run: python scripts/package/accept_cli.py --target "$TARGET" --version "$VERSION"
       - run: rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal
       # Cargo builds a test harness, but the process each test launches is STEPWISE_BINARY;
-      # both harnesses refuse a missing path/hash in CI and hash it before every launch.
+      # both harnesses refuse a missing path/hash in CI and verify the supplied binary's hash.
       - name: Noninteractive commands and failure codes
         run: cargo test --locked --test cli_archive -- --ignored --nocapture
       - name: Interactive terminal, Unicode, resume, no-save and stty restoration
