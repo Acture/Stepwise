@@ -112,7 +112,7 @@ def drive(binary: str, run: Run, columns: int, rows: int) -> Capture:
 		)
 		exit_code: int = child.wait(timeout=STEP_TIMEOUT)
 		modes: dict[str, str] = cast(
-			dict[str, str], json.loads(report.read_text(encoding="utf-8"))
+			"dict[str, str]", json.loads(report.read_text(encoding="utf-8"))
 		)
 	finally:
 		if child.poll() is None:
