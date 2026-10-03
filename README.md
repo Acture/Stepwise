@@ -265,9 +265,9 @@ CLI 经归档验收后、桌面经安装包检查后，各自保留完整成功�
 
 ## 文档与规划笔记
 
-产品、架构、发布和 iOS 的规划笔记在 [notes/stepwise/首页.md](notes/stepwise/首页.md)，由既有私有仓库 [Acture/obsidian-vault 的 project/stepwise 分支](https://github.com/Acture/obsidian-vault/tree/project/stepwise/stepwise) 维护。`notes/` 是整个笔记仓库的 Git submodule；本项目只编辑其中的 `stepwise/`。GitHub 上可通过上面的笔记仓库链接阅读。
+产品、架构、发布和 iOS 的规划笔记在 [notes/stepwise/首页.md](notes/stepwise/首页.md)，由既有私有仓库 [Acture/obsidian-vault 的 project/stepwise 分支](https://github.com/Acture/obsidian-vault/tree/project/stepwise/stepwise) 维护。`notes/` 通过 Git submodule 引用该项目分支，当前分支只保留 `stepwise/` 文档。GitHub 上可通过上面的笔记仓库链接阅读。
 
-本 README 保留使用与开发说明，[CLAUDE.md](CLAUDE.md) 保留代码约定（`AGENTS.md` 指向它），[STATUS.md](STATUS.md) 保留可运行的验证证据；任务与当前状态仍在 [Linear](https://linear.app/acturea/project/stepwise-eda337d1c7f9)。此次整理没有 `doc` 分支可搬移，也未删除原文档或改写其历史；来源与决策沿革见 [迁移记录](notes/stepwise/迁移记录.md)。
+本 README 保留使用与开发说明，[CLAUDE.md](CLAUDE.md) 保留代码约定（`AGENTS.md` 指向它），[STATUS.md](STATUS.md) 保留可运行的验证证据；任务与当前状态仍在 [Linear](https://linear.app/acturea/project/stepwise-eda337d1c7f9)。首次接入时没有 `doc` 分支可搬移，代码文档原文及历史保留；来源与决策沿革见 [历史迁移记录](https://github.com/Acture/obsidian-vault/blob/2fe1002101370c99d313c2c32546650507600207/stepwise/迁移记录.md)。
 
 ### 克隆与初始化
 
@@ -317,6 +317,8 @@ git -C notes merge --ff-only origin/project/stepwise
 
 本项目只跟进 `project/stepwise`。总 vault 当前按项目目录汇总，明确禁止直接把整个 `origin/master` 合回项目分支；主库变更的回流按其 [维护约定](https://github.com/Acture/obsidian-vault/blob/master/README.md) 处理。遇到分歧或冲突就停止并保留双方内容，不强制覆盖，不修改当前 Obsidian 主 checkout 来代替这里的提交。
 
+若用户确认远端已清理无关内容并重写历史，先保留本地工作和旧分支、对比 `stepwise/` 的内容，再从新的远端分支建立本地跟踪分支。不要合并旧历史来恢复已清理的内容；完成这次切换后仍使用上面的日常更新命令。
+
 编辑 `notes/stepwise/` 后，先审查、提交并推送笔记：
 
 ```fish
@@ -335,4 +337,4 @@ git commit -m 'docs: update Stepwise planning notes'
 git push
 ```
 
-父仓库只记录笔记的 commit，不会替你提交或推送笔记文件。笔记推送失败时不要继续提交引用。Obsidian 的 master 与项目分支仍走原有合并流程，本次接入不新增后台同步；具体说明见 [笔记维护](notes/stepwise/笔记维护.md)。
+父仓库只记录笔记的 commit，不会替你提交或推送笔记文件。笔记推送失败时不要继续提交引用。Obsidian 的 master 与项目分支按总 vault 的 [维护约定](https://github.com/Acture/obsidian-vault/blob/master/README.md) 汇总，本项目不新增后台同步。
