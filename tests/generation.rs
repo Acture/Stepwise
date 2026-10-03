@@ -236,8 +236,8 @@ fn seeded_random_cli_is_repeatable_and_rejects_conflicting_modes() {
 	}
 }
 
-/// Seeds still draw the questions they drew before optional short circuit. `random-v1-seeds.tsv` was written by
-/// a binary built at c3e2aea — the base commit, where suitability checked the two evaluation
+/// Seeds still draw the questions they drew before optional short circuit. The seed fixture
+/// was written by a binary built at c3e2aea, where suitability checked the two evaluation
 /// modes — from its own `--trace` over seeds 0–127 and `u64::MAX` per language. Suitability now
 /// checks the two reference routes instead; if that ever accepted or refused a draw the modes
 /// did not, a persisted `random-v1-` ID would reopen as another question, and this fails.

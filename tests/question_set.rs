@@ -1418,18 +1418,18 @@ fn assignments_with_no_question_named_skip_the_proof_the_embedded_pointer_names(
 	assert!(!err(&launched).contains("是证明题"), "{}", err(&launched));
 }
 
-/// README documents the format with a whole TOML file. A documented example that no longer
+/// The question-set guide documents the format with a whole TOML file. An example that no longer
 /// loads is worse than none, so the one in the manual goes through the real loader.
 #[test]
-fn the_example_set_printed_in_the_readme_is_one_the_program_accepts() {
-	const README: &str = include_str!("../README.md");
+fn the_example_set_printed_in_the_guide_is_one_the_program_accepts() {
+	const GUIDE: &str = include_str!("../docs/question-sets.md");
 	// A checkout may hand this file either line ending, and so may a teacher: the block is
 	// found and read the same way regardless, and the CRLF form is asserted below.
-	let block: String = README
+	let block: String = GUIDE
 		.split("```toml")
 		.nth(1)
 		.and_then(|rest| rest.split("```").next())
-		.expect("README documents the format with a toml block")
+		.expect("the guide documents the format with a toml block")
 		.replace("\r\n", "\n");
 	let documented: QuestionSet = QuestionSet::import(&block).expect("the documented set loads");
 	assert_eq!(documented.name, "example-set");

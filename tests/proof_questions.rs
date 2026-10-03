@@ -337,21 +337,21 @@ fn the_argument_parser_keeps_each_proof_source_to_itself() {
 	}
 }
 
-/// How to write a proof line is documented, not demonstrated by a worked solution: the README
+/// How to write a proof line is documented, not demonstrated by a worked solution: the reference
 /// and the in-app rule text both give the line format and name the same rules. Each rule is
 /// applied here once, and the rules named at the head of an in-app rule line and in the first
-/// column of the README table must be exactly these — so a rule the checker stops accepting,
+/// column of the reference table must be exactly these — so a rule the checker stops accepting,
 /// one documented that it never accepted, or a documented rule whose line or row goes
 /// missing fails this test. The checker's own match is not visible from here: a rule added
 /// there has to be added to `applied`, which then holds both documents to it.
 #[test]
-fn every_rule_the_checker_accepts_is_documented_in_the_readme_and_the_in_app_rules() {
-	const README: &str = include_str!("../README.md");
-	let manual: &str = README
+fn every_rule_the_checker_accepts_is_documented_in_the_reference_and_the_in_app_rules() {
+	const REFERENCE: &str = include_str!("../docs/reference.md");
+	let manual: &str = REFERENCE
 		.split("## 自然演绎")
 		.nth(1)
 		.and_then(|rest| rest.split("\n## ").next())
-		.expect("README has a natural-deduction section");
+		.expect("the reference has a natural-deduction section");
 	let rules: &str = stepwise::logic::proof::RULES;
 	for text in [manual, rules] {
 		contains(text, "公式 ; 规则 ; 引用行");
@@ -432,14 +432,14 @@ fn every_rule_the_checker_accepts_is_documented_in_the_readme_and_the_in_app_rul
 		})
 		.collect();
 	assert_eq!(in_app, accepted, "the in-app rule lines");
-	// A README table row names its rules in backticks in the first column.
+	// A reference table row names its rules in backticks in the first column.
 	let in_manual: BTreeSet<&str> = manual
 		.lines()
 		.filter_map(|row| row.strip_prefix('|'))
 		.filter_map(|row| row.split('|').next())
 		.flat_map(|cell| cell.split('`').skip(1).step_by(2))
 		.collect();
-	assert_eq!(in_manual, accepted, "the README rule table");
+	assert_eq!(in_manual, accepted, "the reference rule table");
 }
 
 /// The checker explains the line format with an example of its own, in the refusal of a
