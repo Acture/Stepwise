@@ -37,10 +37,15 @@ export function configure(): Setup {
 	};
 }
 
+/** Windows' own tools, by path: the job's PATH puts Git's coreutils, whoami among them, first. */
+function system(tool: string): string {
+	return join(process.env.SystemRoot ?? "C:\\Windows", "System32", tool);
+}
+
 /** The integrity label of this process's own token, which the driver and the app inherit. */
 export function integrity(): string {
 	const groups: string = execFileSync(
-		"whoami",
+		system("whoami.exe"),
 		["/groups", "/fo", "csv", "/nh"],
 		{ encoding: "utf8" },
 	);
@@ -127,30 +132,46 @@ export async function open(
 	return browser;
 }
 
-/** The app's processes still running. */
-function running(): string[] {
+/** The app's processes still running, found by the progress file only this suite hands it. */
+function running(progress: string): string[] {
 	if (process.platform === "win32") {
-		return execFileSync("tasklist", ["/fo", "csv", "/nh"], { encoding: "utf8" })
+		return execFileSync(system("tasklist.exe"), ["/fo", "csv", "/nh"], {
+			encoding: "utf8",
+		})
 			.split(/\r?\n/)
 			.filter((line: string) => /^"stepwise-desktop\.exe"/i.test(line));
 	}
-	return spawnSync("pgrep", ["-a", "-f", "stepwise-desktop"], {
-		encoding: "utf8",
-	})
+	const pattern: string = progress.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+	return spawnSync("pgrep", ["-a", "-f", "--", pattern], { encoding: "utf8" })
 		.stdout.split("\n")
 		.filter(Boolean);
 }
 
-/** Ends a session and waits until the app has quit, so the next session is a relaunch and
- * not a second window over the same progress file. */
-export async function close(browser: WebdriverIO.Browser): Promise<void> {
-	await browser.deleteSession();
-	const deadline: number = Date.now() + 30_000;
-	for (;;) {
-		const left: string[] = running();
-		if (left.length === 0) return;
-		if (Date.now() > deadline)
-			throw new Error(`the app is still running:\n${left.join("\n")}`);
+async function quit(progress: string, timeout: number): Promise<boolean> {
+	const deadline: number = Date.now() + timeout;
+	while (running(progress).length > 0) {
+		if (Date.now() > deadline) return false;
 		await sleep(250);
 	}
+	return true;
+}
+
+/** Ends a session and waits until the app has quit, so the next session is a relaunch and
+ * not a second window over the same progress file. */
+export async function close(
+	browser: WebdriverIO.Browser,
+	progress: string,
+): Promise<void> {
+	await browser.deleteSession();
+	if (await quit(progress, 10_000)) return;
+	// WebKitWebDriver ends the process it started, which for an AppImage is the AppImage's
+	// runtime: the app that runtime started is left running, and is ended here.
+	if (process.platform !== "win32") {
+		for (const line of running(progress)) {
+			console.log(`Ending what the driver left running: ${line}`);
+			process.kill(Number(line.split(" ")[0]), "SIGTERM");
+		}
+		if (await quit(progress, 10_000)) return;
+	}
+	throw new Error(`the app is still running:\n${running(progress).join("\n")}`);
 }

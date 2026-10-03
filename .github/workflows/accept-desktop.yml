@@ -120,7 +120,8 @@ jobs:
           MSYS_NO_PATHCONV: 1
         run: |
           groups="$(cygpath -w "$MEDIUM")\\groups.csv"
-          "$GSUDO" -d -i Medium cmd.exe /d /c "whoami /groups /fo csv /nh > $groups"
+          # Windows' own whoami: Git's coreutils come first on this PATH.
+          "$GSUDO" -d -i Medium cmd.exe /d /c "%SystemRoot%\System32\whoami.exe /groups /fo csv /nh > $groups"
           tr -d '\r' < "$MEDIUM/groups.csv" > evidence/integrity.csv
           grep 'S-1-16-' evidence/integrity.csv
           if ! grep -q 'S-1-16-8192' evidence/integrity.csv; then
@@ -275,7 +276,9 @@ jobs:
     # Another distribution than the one the AppImage was built on, with no WebKitGTK and no GTK.
     # It has what an AppImage expects of any desktop and never carries itself — the X, GL, EGL,
     # font, text-shaping and sound libraries on AppImage's exclude list — and nothing more, so
-    # the window must come up on what the AppImage brings.
+    # the window must come up on what the AppImage brings. libGLESv2 is one more of the GL
+    # dispatch libraries: libepoxy opens it at run time, so the AppImage neither carries it nor
+    # lists it, and without it the app stops before its window.
     container: debian:13
     env:
       INSTALLER: stepwise-desktop-${{ inputs.version }}-x86_64-unknown-linux-gnu.AppImage
@@ -284,7 +287,7 @@ jobs:
       - run: |
           apt-get -o Acquire::Retries=3 update
           apt-get -o Acquire::Retries=3 install -y --no-install-recommends python3 xvfb xauth imagemagick \
-            libegl1 libopengl0 libharfbuzz0b libfribidi0 libwayland-client0 libgpg-error0 libasound2t64 libcom-err2 libusb-1.0-0 libxcb-dri2-0
+            libegl1 libopengl0 libharfbuzz0b libfribidi0 libwayland-client0 libgpg-error0 libasound2t64 libcom-err2 libusb-1.0-0 libxcb-dri2-0 libgles2
       - name: No WebKitGTK and no GTK in this container
         run: |
           if ldconfig -p | grep -i -e webkit -e javascriptcore -e 'libgtk-3'; then
