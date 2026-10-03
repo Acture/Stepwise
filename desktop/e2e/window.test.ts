@@ -134,9 +134,10 @@ async function blank(): Promise<ChainablePromiseElement> {
 	return field;
 }
 
-/** Points at the operation or name whose glyph in the line in hand is `glyph`. */
-async function point(glyph: string): Promise<void> {
-	await (await labelled(`${CURRENT} span.node`, glyph, true)).click();
+/** Points at the operation or name that draws `run` in the line in hand: the line is drawn in
+ * runs, each the text one node owns, so `3 * 4` in `2 + (3 * 4)` is one run. */
+async function point(run: string): Promise<void> {
+	await (await labelled(`${CURRENT} span.node`, run, true)).click();
 }
 
 /** Writes `answer` in the open blank and presses Enter on it. */
@@ -258,7 +259,7 @@ step(
 	"refused",
 	"a click opens a blank, and a Chinese answer is refused and kept",
 	async () => {
-		await point("*");
+		await point("3 * 4");
 		await answer("十二");
 		await feedback("bad");
 		assert.equal(await (await blank()).getValue(), "十二");

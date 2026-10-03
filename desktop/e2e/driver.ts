@@ -120,7 +120,8 @@ export async function open(
 		capabilities: {
 			"tauri:options": {
 				application: setup.app,
-				args: ["--progress-file", progress],
+				// One token: msedgedriver passes the app only what reads as a switch.
+				args: [`--progress-file=${progress}`],
 			},
 		},
 	});
