@@ -35,6 +35,14 @@ function squeeze(text: string): string {
 	return text.replace(/\s+/g, " ").trim();
 }
 
+/** The text an element holds, as the DOM has it, its whitespace runs folded. WebKitWebDriver's
+ * own reading of an element's text gave "" for a header the screenshot showed. */
+async function content(element: {
+	getProperty(name: string): Promise<unknown>;
+}): Promise<string> {
+	return squeeze(String(await element.getProperty("textContent")));
+}
+
 /** Polls `read` until `ok` holds, and says what it last saw when it never does. */
 async function until<T>(
 	what: string,
@@ -73,7 +81,7 @@ async function labelled(
 		async () => {
 			const texts: string[] = [];
 			for (const element of await browser.$$(selector)) {
-				const text: string = squeeze(await element.getText());
+				const text: string = await content(element);
 				texts.push(text);
 				if (exact ? text === label : text.includes(label)) {
 					found = element;
@@ -93,7 +101,7 @@ const CURRENT: string = 'main div.line[role="group"]';
 async function expression(text: string): Promise<void> {
 	await until(
 		`the line in hand does not read ${text}`,
-		async () => squeeze(await browser.$(CURRENT).getText()),
+		async () => await content(browser.$(CURRENT)),
 		(shown: string) => shown === text,
 	);
 }
@@ -101,7 +109,7 @@ async function expression(text: string): Promise<void> {
 async function history(): Promise<string[]> {
 	const lines: string[] = [];
 	for (const line of await browser.$$("main ol.history li"))
-		lines.push(squeeze(await line.getText()));
+		lines.push(await content(line));
 	return lines;
 }
 
@@ -112,7 +120,7 @@ async function feedback(tone: "good" | "bad"): Promise<string> {
 			const shown: ChainablePromiseElement = browser.$("main p.feedback");
 			return {
 				tone: (await shown.getAttribute("class")) ?? "",
-				text: squeeze(await shown.getText()),
+				text: await content(shown),
 			};
 		},
 		(shown: { tone: string; text: string }) =>
@@ -150,7 +158,7 @@ async function pick(title: string): Promise<void> {
 	await (await labelled("section.sheet .questions button", title)).click();
 	await until(
 		`the header does not name ${title}`,
-		async () => squeeze(await browser.$("header .where .title").getText()),
+		async () => await content(browser.$("header .where .title")),
 		(shown: string) => shown === title,
 	);
 }
@@ -163,7 +171,7 @@ async function drawn(): Promise<void> {
 		async () => {
 			const shown: string[] = [];
 			for (const name of await browser.$$(".board button.choice .name"))
-				shown.push(squeeze(await name.getText()));
+				shown.push(await content(name));
 			return shown;
 		},
 		(shown: string[]) => shown.length === 2,
@@ -223,7 +231,7 @@ before(async () => {
 
 after(async () => {
 	try {
-		if (browser) await close(browser);
+		if (browser) await close(browser, progress);
 	} finally {
 		driver?.kill();
 		try {
@@ -369,14 +377,11 @@ step(
 	"resumed",
 	"the app reopened on the same progress returns to the same question",
 	async () => {
-		await close(browser);
+		await close(browser, progress);
 		browser = await open(setup, progress, "session-2");
 		await drawn();
 		await choose("Python 表达式");
-		assert.equal(
-			squeeze(await browser.$("header .where .title").getText()),
-			"先乘后加",
-		);
+		assert.equal(await content(browser.$("header .where .title")), "先乘后加");
 		await expression("2 + (12)");
 		assert.deepEqual(await history(), ["2 + (3 * 4)"]);
 	},
