@@ -1,7 +1,7 @@
 //! What the desktop page is handed and what it hands back. The page draws a [`View`] and
 //! forwards [`Command`]s; it computes no byte offset, decides no step and words no teaching
 //! sentence. Under `cargo test` these types also write their TypeScript declarations into
-//! `desktop/ui/src/lib/protocol`, so the page cannot drift from them unnoticed.
+//! `src/desktop/ui/src/lib/protocol`, so the page cannot drift from them unnoticed.
 
 use std::collections::BTreeMap;
 
@@ -14,7 +14,7 @@ use crate::core::NodeId;
 #[cfg_attr(
 	test,
 	derive(ts_rs::TS),
-	ts(export, export_to = "../desktop/ui/src/lib/protocol/")
+	ts(export, export_to = "../src/desktop/ui/src/lib/protocol/")
 )]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum View {
@@ -28,7 +28,7 @@ pub enum View {
 #[cfg_attr(
 	test,
 	derive(ts_rs::TS),
-	ts(export, export_to = "../desktop/ui/src/lib/protocol/")
+	ts(export, export_to = "../src/desktop/ui/src/lib/protocol/")
 )]
 #[serde(rename_all = "camelCase")]
 pub struct EntryView {
@@ -41,7 +41,7 @@ pub struct EntryView {
 #[cfg_attr(
 	test,
 	derive(ts_rs::TS),
-	ts(export, export_to = "../desktop/ui/src/lib/protocol/")
+	ts(export, export_to = "../src/desktop/ui/src/lib/protocol/")
 )]
 #[serde(rename_all = "lowercase")]
 pub enum Tone {
@@ -57,7 +57,7 @@ pub enum Tone {
 #[cfg_attr(
 	test,
 	derive(ts_rs::TS),
-	ts(export, export_to = "../desktop/ui/src/lib/protocol/")
+	ts(export, export_to = "../src/desktop/ui/src/lib/protocol/")
 )]
 pub struct Feedback {
 	pub text: String,
@@ -69,7 +69,7 @@ pub struct Feedback {
 #[cfg_attr(
 	test,
 	derive(ts_rs::TS),
-	ts(export, export_to = "../desktop/ui/src/lib/protocol/")
+	ts(export, export_to = "../src/desktop/ui/src/lib/protocol/")
 )]
 #[serde(rename_all = "camelCase")]
 pub struct CourseView {
@@ -89,7 +89,7 @@ pub struct CourseView {
 #[cfg_attr(
 	test,
 	derive(ts_rs::TS),
-	ts(export, export_to = "../desktop/ui/src/lib/protocol/")
+	ts(export, export_to = "../src/desktop/ui/src/lib/protocol/")
 )]
 #[serde(rename_all = "camelCase")]
 pub struct Catalog {
@@ -102,7 +102,7 @@ pub struct Catalog {
 #[cfg_attr(
 	test,
 	derive(ts_rs::TS),
-	ts(export, export_to = "../desktop/ui/src/lib/protocol/")
+	ts(export, export_to = "../src/desktop/ui/src/lib/protocol/")
 )]
 pub struct Listed {
 	pub name: String,
@@ -115,7 +115,7 @@ pub struct Listed {
 #[cfg_attr(
 	test,
 	derive(ts_rs::TS),
-	ts(export, export_to = "../desktop/ui/src/lib/protocol/")
+	ts(export, export_to = "../src/desktop/ui/src/lib/protocol/")
 )]
 pub struct Run {
 	pub text: String,
@@ -129,7 +129,7 @@ pub struct Run {
 #[cfg_attr(
 	test,
 	derive(ts_rs::TS),
-	ts(export, export_to = "../desktop/ui/src/lib/protocol/")
+	ts(export, export_to = "../src/desktop/ui/src/lib/protocol/")
 )]
 #[serde(rename_all = "lowercase")]
 pub enum Blank {
@@ -142,7 +142,7 @@ pub enum Blank {
 #[cfg_attr(
 	test,
 	derive(ts_rs::TS),
-	ts(export, export_to = "../desktop/ui/src/lib/protocol/")
+	ts(export, export_to = "../src/desktop/ui/src/lib/protocol/")
 )]
 pub struct Draft {
 	pub runs: Vec<Run>,
@@ -154,7 +154,7 @@ pub struct Draft {
 #[cfg_attr(
 	test,
 	derive(ts_rs::TS),
-	ts(export, export_to = "../desktop/ui/src/lib/protocol/")
+	ts(export, export_to = "../src/desktop/ui/src/lib/protocol/")
 )]
 #[serde(tag = "kind", content = "text", rename_all = "kebab-case")]
 pub enum Written {
@@ -166,7 +166,7 @@ pub enum Written {
 #[cfg_attr(
 	test,
 	derive(ts_rs::TS),
-	ts(export, export_to = "../desktop/ui/src/lib/protocol/")
+	ts(export, export_to = "../src/desktop/ui/src/lib/protocol/")
 )]
 #[serde(rename_all = "camelCase")]
 pub struct EvaluationView {
@@ -193,7 +193,7 @@ pub struct EvaluationView {
 #[cfg_attr(
 	test,
 	derive(ts_rs::TS),
-	ts(export, export_to = "../desktop/ui/src/lib/protocol/")
+	ts(export, export_to = "../src/desktop/ui/src/lib/protocol/")
 )]
 pub struct ProofLineView {
 	pub number: usize,
@@ -209,7 +209,7 @@ pub struct ProofLineView {
 #[cfg_attr(
 	test,
 	derive(ts_rs::TS),
-	ts(export, export_to = "../desktop/ui/src/lib/protocol/")
+	ts(export, export_to = "../src/desktop/ui/src/lib/protocol/")
 )]
 #[serde(rename_all = "camelCase")]
 pub struct ProofView {
@@ -234,7 +234,7 @@ pub struct ProofView {
 #[cfg_attr(
 	test,
 	derive(ts_rs::TS),
-	ts(export, export_to = "../desktop/ui/src/lib/protocol/")
+	ts(export, export_to = "../src/desktop/ui/src/lib/protocol/")
 )]
 #[serde(rename_all = "lowercase")]
 pub enum Choice {
@@ -247,7 +247,7 @@ pub enum Choice {
 #[cfg_attr(
 	test,
 	derive(ts_rs::TS),
-	ts(export, export_to = "../desktop/ui/src/lib/protocol/")
+	ts(export, export_to = "../src/desktop/ui/src/lib/protocol/")
 )]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum Command {

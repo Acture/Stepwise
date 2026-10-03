@@ -87,7 +87,7 @@ jobs:
       # bash, so a failing check stops the step on Windows too: PowerShell carries on past a
       # native command's exit code and would report only the last one.
       - name: The page
-        working-directory: desktop/ui
+        working-directory: src/desktop/ui
         shell: bash
         run: |
           bun install --frozen-lockfile
@@ -96,7 +96,7 @@ jobs:
           bun run build
       # Its types and format only; the package workflow runs it against the installed window.
       - name: The window's acceptance suite
-        working-directory: desktop/e2e
+        working-directory: src/desktop/e2e
         shell: bash
         run: |
           bun install --frozen-lockfile
@@ -117,9 +117,9 @@ jobs:
           cargo +stable test --locked --lib desktop
           cargo +stable test --locked -p stepwise-desktop
           # Untracked counts too: a new exported type whose declaration was never committed.
-          drift="$(git status --porcelain -- desktop/ui/src/lib/protocol)"
+          drift="$(git status --porcelain -- src/desktop/ui/src/lib/protocol)"
           if [ -n "$drift" ]; then
             echo "$drift"
-            git diff desktop/ui/src/lib/protocol
+            git diff src/desktop/ui/src/lib/protocol
             exit 1
           fi

@@ -3,7 +3,7 @@
 	     "2 +" in chalk and a yellow underline for the blank the student fills. The body follows
 	     Apple's 824 grid with continuous corners (radius 185, smoothing 0.6), so it lines up
 	     with its neighbours in the Dock.
-	     Rendered to PNG headlessly, then `tauri icon` makes desktop/src-tauri/icons. -->
+	     Rendered to PNG headlessly, then `tauri icon` makes src/desktop/src-tauri/icons. -->
 	<defs>
 		<path
 			id="body"

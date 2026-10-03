@@ -37,13 +37,14 @@ def verify_resources(directory: Path) -> None:
 	expected: dict[str, Path] = {
 		"LICENSE": ROOT / "LICENSE",
 		"COPYRIGHT": ROOT / "COPYRIGHT",
-		"LXGW-WenKai-OFL.txt": ROOT / "desktop/src-tauri/licenses/LXGW-WenKai-OFL.txt",
+		"LXGW-WenKai-OFL.txt": ROOT
+		/ "src/desktop/src-tauri/licenses/LXGW-WenKai-OFL.txt",
 		"THIRD-PARTY-NOTICES.txt": ROOT
 		/ "target/desktop-notices/THIRD-PARTY-NOTICES.txt",
 		"RUST-STD-COPYRIGHT.html": ROOT
 		/ "target/desktop-notices/RUST-STD-COPYRIGHT.html",
 		"JS-THIRD-PARTY-NOTICES.json": ROOT
-		/ "desktop/ui/dist/JS-THIRD-PARTY-NOTICES.json",
+		/ "src/desktop/ui/dist/JS-THIRD-PARTY-NOTICES.json",
 	}
 	licenses: list[Path] = list(directory.rglob("licenses/LICENSE"))
 	if len(licenses) != 1:
@@ -198,9 +199,9 @@ def main() -> None:
 	parser.add_argument("--target", required=True)
 	args: argparse.Namespace = parser.parse_args()
 	target: str = args.target
-	version: str = tomllib.loads((ROOT / "desktop/src-tauri/Cargo.toml").read_text())[
-		"package"
-	]["version"]
+	version: str = tomllib.loads(
+		(ROOT / "src/desktop/src-tauri/Cargo.toml").read_text()
+	)["package"]["version"]
 	bundle: Path = ROOT / "target" / target / "release/bundle"
 	dist: Path = ROOT / "dist"
 	evidence: Path = ROOT / "target/package-evidence"

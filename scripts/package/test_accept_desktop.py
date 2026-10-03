@@ -137,7 +137,7 @@ class Libraries(unittest.TestCase):
 class Launches(unittest.TestCase):
 	def test_the_settle_outlasts_the_pages_watchdog(self) -> None:
 		page: str = (
-			Path(__file__).resolve().parents[2] / "desktop/ui/index.html"
+			Path(__file__).resolve().parents[2] / "src/desktop/ui/index.html"
 		).read_text(encoding="utf-8")
 		watchdog: list[str] = re.findall(r"\},\s*(\d+)\);\s*</script>", page)
 		self.assertEqual(len(watchdog), 1, "index.html has one watchdog timer")

@@ -139,12 +139,12 @@ jobs:
         with:
           node-version: '24'
       - uses: oven-sh/setup-bun@v2
-      - working-directory: desktop/e2e
+      - working-directory: src/desktop/e2e
         run: bun install --frozen-lockfile
       # The suite, tauri-driver, msedgedriver and the app all run at Medium. Their reports land
       # in files, copied into this job's evidence whatever the outcome.
       - name: Drive the installed window at Medium integrity
-        working-directory: desktop/e2e
+        working-directory: src/desktop/e2e
         env:
           GSUDO: ${{ steps.gsudo.outputs.gsudo }}
           STEPWISE_APP: ${{ steps.install.outputs.app }}
@@ -220,10 +220,10 @@ jobs:
         with:
           node-version: '24'
       - uses: oven-sh/setup-bun@v2
-      - working-directory: desktop/e2e
+      - working-directory: src/desktop/e2e
         run: bun install --frozen-lockfile
       - name: Drive the installed window
-        working-directory: desktop/e2e
+        working-directory: src/desktop/e2e
         env:
           STEPWISE_APP: ${{ steps.install.outputs.app }}
           STEPWISE_EVIDENCE: ${{ github.workspace }}/evidence

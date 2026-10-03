@@ -43,7 +43,7 @@ workspace = true
 # `cargo` at this root still builds only the `stepwise` package: a root package is the
 # workspace's only default member.
 [workspace]
-members = ["desktop/src-tauri"]
+members = ["src/desktop/src-tauri"]
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

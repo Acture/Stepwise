@@ -1,7 +1,7 @@
 //! What the page is told about how the window may look, and what it hands back. Appearance is
 //! a preference of this window, not teaching state: none of it reaches the desk or the view.
 //! Under `cargo test` these types write their TypeScript declarations beside the desk's, in
-//! `desktop/ui/src/lib/protocol`.
+//! `src/desktop/ui/src/lib/protocol`.
 
 use std::collections::BTreeMap;
 

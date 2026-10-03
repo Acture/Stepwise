@@ -26,7 +26,7 @@ from typing import IO
 
 LOG: logging.Logger = logging.getLogger(__name__)
 
-# The shell's page-load line (desktop/src-tauri/src/main.rs, `on_page_load`), and the prefix of
+# The shell's page-load line (src/desktop/src-tauri/src/main.rs, `on_page_load`), and the prefix of
 # the line the page sends when something stopped it drawing (its `report` command).
 LOADED: re.Pattern[str] = re.compile(r"^Stepwise：页面 Finished \S+")
 FAULT: str = "Stepwise 页面："

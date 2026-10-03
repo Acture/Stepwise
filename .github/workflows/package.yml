@@ -127,8 +127,8 @@ jobs:
           for target in x86_64-unknown-linux-gnu aarch64-apple-darwin x86_64-apple-darwin x86_64-pc-windows-msvc; do
             notice="desktop-notices/$target/THIRD-PARTY-NOTICES.txt"
             mkdir -p "desktop-notices/$target"
-            cargo about generate --locked --fail -m desktop/src-tauri/Cargo.toml --features tauri/custom-protocol --config about.toml --target "$target" --format json --output-file "$RUNNER_TEMP/$target.json"
-            cargo about generate --locked --fail -m desktop/src-tauri/Cargo.toml --features tauri/custom-protocol --config about.toml --target "$target" --output-file "$notice" about.hbs
+            cargo about generate --locked --fail -m src/desktop/src-tauri/Cargo.toml --features tauri/custom-protocol --config about.toml --target "$target" --format json --output-file "$RUNNER_TEMP/$target.json"
+            cargo about generate --locked --fail -m src/desktop/src-tauri/Cargo.toml --features tauri/custom-protocol --config about.toml --target "$target" --output-file "$notice" about.hbs
             python scripts/package/check_rust_notices.py "$RUNNER_TEMP/$target.json" "$notice"
             cp "$(rustc --print sysroot)/share/doc/rust/COPYRIGHT-library.html" "desktop-notices/$target/RUST-STD-COPYRIGHT.html"
           done
@@ -473,7 +473,7 @@ jobs:
           sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update
           sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev patchelf xdg-utils libarchive-tools
       - name: Locked page and Tauri CLI
-        working-directory: desktop/ui
+        working-directory: src/desktop/ui
         run: |
           bun install --frozen-lockfile
           bun run tauri --version
@@ -491,7 +491,7 @@ jobs:
       # explicit script it may install a global CLI. No tag/release input or write permission.
       - uses: tauri-apps/tauri-action@v1
         with:
-          projectPath: desktop/src-tauri
+          projectPath: src/desktop/src-tauri
           tauriScript: bun ../ui/node_modules/@tauri-apps/cli/tauri.js
           args: --target ${{ matrix.target }} --config tauri.package.conf.json -- --locked
       - name: Read back every installer, verify licences and measure GLIBC
