@@ -103,6 +103,9 @@ jobs:
 
   # Separate from the CLI notice job: a new desktop dependency must not stop CLI delivery.
   desktop-notices:
+    outputs:
+      # The installers carry the desktop crate's version, not the CLI's.
+      version: ${{ steps.version.outputs.version }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -110,6 +113,11 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal
+      - id: version
+        run: |
+          version="$(cargo metadata --locked --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "stepwise-desktop") | .version')"
+          test -n "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
@@ -503,11 +511,19 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  # Installs or opens every installer this run built and inspected, by its exact name.
+  desktop-acceptance:
+    needs: [desktop, desktop-notices]
+    uses: ./.github/workflows/accept-desktop.yml
+    with:
+      version: ${{ needs.desktop-notices.outputs.version }}
+
   checksums:
-    needs: [cli, cli-acceptance, cli-containers, desktop]
-    # Each family can be delivered independently. Never describe partial target sets as a
-    # complete family; successful individual jobs still keep their own installer artifacts.
-    if: ${{ !cancelled() && ((needs.cli.result == 'success' && needs.cli-acceptance.result == 'success' && needs.cli-containers.result == 'success') || needs.desktop.result == 'success') }}
+    needs: [cli, cli-acceptance, cli-containers, desktop, desktop-acceptance]
+    # Each family can be delivered independently, and only once its acceptance has passed.
+    # Never describe partial target sets as a complete family; successful individual jobs
+    # still keep their own installer artifacts.
+    if: ${{ !cancelled() && ((needs.cli.result == 'success' && needs.cli-acceptance.result == 'success' && needs.cli-containers.result == 'success') || (needs.desktop.result == 'success' && needs.desktop-acceptance.result == 'success')) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -532,7 +548,7 @@ jobs:
           name: cli-x86_64-pc-windows-msvc
           path: dist
       - uses: actions/download-artifact@v4
-        if: needs.desktop.result == 'success'
+        if: needs.desktop.result == 'success' && needs.desktop-acceptance.result == 'success'
         with:
           pattern: installers-*
           merge-multiple: true
