@@ -95,10 +95,10 @@ class Gates(unittest.TestCase):
 			paths: list[str] = [
 				"LICENSE",
 				"COPYRIGHT",
-				"desktop/src-tauri/licenses/LXGW-WenKai-OFL.txt",
+				"src/desktop/src-tauri/licenses/LXGW-WenKai-OFL.txt",
 				"target/desktop-notices/THIRD-PARTY-NOTICES.txt",
 				"target/desktop-notices/RUST-STD-COPYRIGHT.html",
-				"desktop/ui/dist/JS-THIRD-PARTY-NOTICES.json",
+				"src/desktop/ui/dist/JS-THIRD-PARTY-NOTICES.json",
 			]
 			for name in paths:
 				source: Path = root / name

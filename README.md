@@ -8,6 +8,8 @@
 - **命题逻辑求值**：给定命题赋值，逐步计算非、且、或、实质蕴涵、等价。
 - **自然演绎**：提出公式、规则、引用行，检查经典命题逻辑的推理及假设作用域。
 
+[公开文档](docs/README.md) · [开发与架构](docs/development.md) · [分发与验收](docs/distribution.md)
+
 ## 运行
 
 开发环境需要 Rust。已编译的程序可直接运行；首次 Cargo 构建需要下载依赖。运行时必须选择 `--python` 或 `--logic`，不能同时指定；自然演绎属于 `--logic`，`--proof NAME` 按名称打开题集里的证明题。`--help` 和 `--version` 无需选择语言。题目来自当前题集：默认是内置题集，`--set FILE` 换成外部 TOML 题集，格式见下文「题集文件」。
@@ -76,7 +78,7 @@ cargo run --locked -- --logic --exercise long-logic
 构建需要 Rust 和 [bun](https://bun.sh)。在仓库里：
 
 ```fish
-cd desktop/ui
+cd src/desktop/ui
 bun install --frozen-lockfile
 bun run app
 ```
@@ -84,7 +86,7 @@ bun run app
 生成的 `Stepwise.app` 在仓库根目录的 `target/release/bundle/macos/` 下，可以直接打开；本机构建只做了临时签名，签名、公证和安装包见后续发布任务。和命令行一样，`--progress-file PATH` 指定进度文件，`--no-save` 不读写进度：
 
 ```fish
-open ../../target/release/bundle/macos/Stepwise.app --args --progress-file /tmp/stepwise-试用.json
+open ../../../target/release/bundle/macos/Stepwise.app --args --progress-file /tmp/stepwise-试用.json
 ```
 
 窗口先让你选 Python 或命题逻辑（命题逻辑里也有自然演绎证明题）。标题栏右侧的 `‹ ›` 换题，`☰` 打开题目列表：可以点选题集里的任一道题、随机出题、打开 TOML 题集文件、换一种语言。皮肤和字体在齿轮「设置」里换。题集文件打开后按文件里的顺序练习，走到最后一题为止。鼠标和键盘指向同一个节点：没有空格打开时，`↑↓` / `j k` 选一处，`Enter` 打开空格、`Esc` 收起空格，`u` 撤销，`r` 重来，`n`、`p` 换题，`h` 提示，`?` 帮助；证明里每个字母都是输入，`Esc` 清空正在写的一行，换题用 `Ctrl+N` / `Ctrl+P`。中文输入法在空格里正常使用，选字时按的 `Enter` 不会提交答案。
@@ -227,7 +229,7 @@ cargo run --locked -- --logic --proof raa --check-proof 我的证明.json
 cargo run --locked -- --logic --goal 'Q -> P' --premise P --check-proof 我的证明.json
 ```
 
-## 进度、范围与开发
+## 进度与范围
 
 默认在系统本地应用数据目录的 Stepwise 目录保存 `progress.json`。`--progress-file PATH` 指定位置，`--no-save` 禁用读取和保存。正确步骤、撤销和换题后原子写入；重启通过重放步骤恢复历史。求值题的记录按教学规则版本、语言、赋值（包括类型、浮点负零）和表达式分别保存，不记求值策略：一道题只有一份记录，学生短路也好、继续计算也好，走哪条路都存在同一处，换一条路重做就覆盖这一份。自然演绎按解析后的前提与结论隔离：内置证明题搬进题集时前提与结论的原文一字未改，此前保存的证明进度照常重放。进度指针同时记下题集名称与题目名称，题集按名称认身份而不按文件路径；证明题也会移动这个指针，但不碰求值题的记录。教学规则每次改变学生可以提交的步骤，都换一个新的规则版本：统一代入、同优先级任选及最终负号完成如此，短路或继续计算也如此。旧版本的记录原样留在文件里，但不重放进新规则，所以升级后已有的求值题都从头开始；自然演绎进度不变。损坏或无法重放的记录明确报错，不会静默覆盖。首版同一个进度文件只供一个程序实例使用。
 
@@ -236,25 +238,3 @@ cargo run --locked -- --logic --goal 'Q -> P' --premise P --check-proof 我的�
 题集没有改变进度文件的格式，只是在指针旁边多记了题集名称。题集之前写下的进度文件照常读取，答题记录一条不丢；只是那个指针没写题集，等于「手上这道题不属于任何题集」——本版打不开它，于是直接出一道新题，旧记录留在文件里。短路或继续计算改了格式：进度文件现在是版本 3，去掉了记录求值策略的 `mode` 字段。带这个字段的版本 1 文件照常读取，题集刚加入时短暂写过、格式与之相同的版本 2 文件也一样：`mode` 只接受旧版写过的 `short-circuit` 或 `eager`，读后丢掉，其余记录和指针一条不改地保留，下次保存写成版本 3。其中的求值记录属于旧规则版本，不会重放，所以手上那道求值题在新规则下还没有记录：随机题和 `--set` 里的题从头开始；不带 `--set` 启动时，指向题集里某道题的指针不算做过，会出一道新的随机题，用 `--exercise` 可以选回那道题。证明题照常接着做。其他版本号直接拒绝并说明原因，原文件不动。
 
 教学公式最多 2048 字节，Python 教学树（包括分组）最多 128 节点、32 层，整数结果最多 4096 个二进制位；逻辑公式最多 128 个词法单元、32 层解析嵌套，BDD 等价检查最多 12 个命题。证明最多 256 行、16 层假设。超出支持范围不冒充 Python 错误或学生算错。
-
-架构：`src/core` 提供与语言无关的教学机制：稳定节点 ID、树替换与来源映射、可选步骤检查（学生此刻可以提交的全部步骤，以及提示和 `--trace` 所用的短路参考顺序）、按类型的反馈、历史与重放；`src/python` 提供 Python 解析、运算规则、类型语义、优先级、短路规则、解释与出题语法；`src/logic` 提供符号解析、命题语义、BDD 检查、自然演绎与出题语法；`src/generate.rs` 提供共用的种子协议、采样流程与可完成性检查；`src/app` 是与界面无关的应用层，负责题目来源与换题、当前会话的选择与草稿、撤销、重新开始、历史归档与进度快照，不依赖任何终端或窗口库；`src/tui` 只做适配：把终端事件映射为应用层操作并绘制其状态；`src/exercises.rs` 定义题集格式并解析 TOML，内置题集 `questions/builtin.toml` 与 `--set` 导入的文件（例如 `questions/example.toml`）走同一条加载路径；`src/progress.rs` 保存并重放进度。core 只通过 `Language` 与 `Op` 两个小接口调用语言模块，不内联任何一种语言的规则。Ratatui + Crossterm 提供终端界面，rustpython-parser 只负责 Python 解析。
-
-```fish
-cargo fmt --check
-cargo clippy --locked --all-targets -- -D warnings
-cargo test --locked
-cargo test --locked --test python_oracle -- --ignored --nocapture
-ruff check tests/python_oracle.py
-ruff format --check tests/python_oracle.py
-ty check tests/python_oracle.py
-```
-
-本机构建 CLI：`cargo build --release --locked`，输出 `target/release/stepwise`（Windows 为 `.exe`）。[检查](.github/workflows/check.yml)在每次推送和拉取请求上于 Linux、macOS、Windows 运行。分发只走一条管线：[打包工作流](.github/workflows/package.yml)，只在 Actions 页面手动运行，不创建标签或 Release。它先跑完整套检查，所有打包作业都依赖同一次运行的门禁。
-
-CLI 为四个目标各出一个归档：Linux x64（`x86_64-unknown-linux-musl`，静态链接）、macOS arm64 与 macOS x64（各只含一种架构，Intel 版在 Apple Silicon 运行器上交叉编译）、Windows x64（静态链接 C 运行时，不依赖 VCRUNTIME140.dll）。Linux 与 macOS 用 tar.gz，Windows 用 zip，每个都含程序、LICENSE、README.md、THIRD-PARTY-NOTICES.txt 和 RUST-STD-COPYRIGHT.html。
-
-桌面在 `macos-26` 上分别构建 arm64 与 x64 的 dmg，在 `windows-2025` 上构建 NSIS 与 MSI，在 `ubuntu-24.04` 上构建 deb、rpm 与 AppImage。只上传安装包，`.app` 保留在 dmg 内，避免工作流产物丢失可执行位。macOS 仍是 ad-hoc 签名，不弹出挂载前 EULA；应用内随包携带完整许可证。11.0 是 Info.plist 声明的加载下限，不代表系统版本验收。Windows 安装包尚未签名，可能触发 SmartScreen 提示。安装后的 `licenses` 目录包含 AGPL 全文、COPYRIGHT、Rust 依赖声明、标准库声明、页面依赖声明和 WenKai OFL。CI 解包逐字节核对这些文件，在 dmg 内验证签名与架构，并从 Linux 程序和 AppImage 所有 ELF 的未定义动态符号测出 GLIBC 需求；这不是 Linux 运行时兼容性验收。
-
-Rust 声明由 cargo-about 按 `about.toml` 与 `about.hbs` 逐目标生成，CLI 的 Linux 版另附 musl 许可证；标准库声明取自工具链。页面声明由锁定的 Vite 从构建模块生成，`desktop/ui/licenses.ts` 补入预打包 JS 的依赖、CSS/font 包和 Vite 注入的运行时代码，文本读取自锁定的依赖包。未审阅的许可证、缺失正文或占位版权行会使构建失败。桌面打包加载 `tauri.package.conf.json`，将 CI 生成的声明加入资源；`bun run app` 是本机开发构建，不代替这条分发管线。
-
-桌面的验收作业同样按确切文件名下载同次运行的安装包，核对打包作业记下的哈希后，像学生那样安装：NSIS 静默装到 `%LOCALAPPDATA%\Stepwise`，MSI 按机器装到 `%ProgramFiles%\Stepwise`，各用一台 windows-2025；deb 由 apt 连同它依赖的 WebKitGTK 一起装上，AppImage 解包直接运行，都在 ubuntu-24.04 上。这四种由 tauri-driver 驱动装好的窗口（`desktop/e2e`）：找到画出的棋盘，从题目列表选题，点子式，中文答案被拒且留在空格里，用脚本派发的组字事件确认选字时的 Enter 不提交、普通 Enter 会提交，进度写成 `--progress-file` 指定的版本 3 文件，重开同一个已安装的应用回到同一题，再用 `真`、`⊥` 回答命题逻辑题，每一步截图。Windows 上整套测试经 gsudo 以 Medium 完整性运行，与学生平常的运行方式相同，msedgedriver 与机器上的 WebView2 运行时同版本。rpm（fedora:43 容器）、AppImage（没装 WebKitGTK 和 GTK 的 debian:13 容器）和 dmg（macos-26、macos-15-intel、macos-26-intel）做启动测试：等页面加载完成、进程仍在，截屏后结束；dmg 先校验镜像、架构与签名，并按应用当前的 ad-hoc 签名断言 Gatekeeper 拒绝。组字事件只测到守卫代码，不是真实输入法；启动测试只证明窗口起得来、页面加载完成，点击、判题与保存的逻辑各平台相同，由各平台都跑的 Rust 测试覆盖。

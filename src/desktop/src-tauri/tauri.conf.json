@@ -39,8 +39,8 @@
 			"icons/icon.ico"
 		],
 		"resources": {
-			"../../LICENSE": "licenses/LICENSE",
-			"../../COPYRIGHT": "licenses/COPYRIGHT",
+			"../../../LICENSE": "licenses/LICENSE",
+			"../../../COPYRIGHT": "licenses/COPYRIGHT",
 			"licenses/LXGW-WenKai-OFL.txt": "licenses/LXGW-WenKai-OFL.txt"
 		}
 	}

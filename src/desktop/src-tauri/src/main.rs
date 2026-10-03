@@ -9,7 +9,7 @@
 //! The commands run on Tauri's async runtime, not the main thread: a progress write syncs the
 //! file to disk, and the window must keep drawing and taking input meanwhile. They stay in the
 //! student's order because the page sends one only after the last has answered (its queue in
-//! `desktop/ui/src/lib/Window.svelte`).
+//! `src/desktop/ui/src/lib/Window.svelte`).
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod appearance;
