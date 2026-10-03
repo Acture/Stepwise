@@ -112,11 +112,50 @@ shasum -a 256 -c SHA256SUMS
 
 Rerun `package.yml` by manual dispatch to regenerate the packages and all extraction checks. The five regression tests in `python3 -m unittest discover -s scripts/package -v` cover altered/missing licence bytes, cargo-about fallback notices, GLIBC ordering, tool failures and nested binary requirements. Before the accepted run, `actionlint`, `ruff check scripts/package`, `ruff format --check scripts/package`, `ty check scripts/package`, the page's check/lint/build and `cargo fmt --all --check` also passed locally. Native Rust and desktop gates passed on the CI runners in the accepted run.
 
+## CLI archive acceptance (P-780)
+
+The manual [Package run 37018780620](https://github.com/Acture/Stepwise/actions/runs/37018780620) succeeded at source commit `5ff5dcc4a31b3af7df74333e118a1c3b9bd7ea08` (verified 2026-10-02, Asia/Shanghai). All 26 jobs passed, including the complete reusable gate, packaging, required CLI acceptance and checksum aggregation; the optional Windows ConPTY experiment also passed. [P-780](https://linear.app/acturea/issue/P-780) accepts the downloaded archives from that same run: [accept_cli.py](scripts/package/accept_cli.py) checks the producer's archive hash, exact members and licence/document bytes, then identifies the extracted executable. [cli_archive.rs](tests/cli_archive.rs) and [terminal.rs](tests/terminal.rs) verify `STEPWISE_BINARY_SHA256` before launching `STEPWISE_BINARY`; CI refuses a missing identity instead of falling back to a debug build. Cargo builds the test harnesses, not the executable they launch.
+
+| Target | Accepted runtime checks |
+| --- | --- |
+| `x86_64-unknown-linux-musl` | Noninteractive and pty tests on `ubuntu-24.04` with Python 3.8, then the same executable and static test harnesses in `debian:11`, `fedora:43` and `alpine:3.22` |
+| `aarch64-apple-darwin` | Noninteractive and pty tests on native `macos-26` |
+| `x86_64-apple-darwin` | Noninteractive and pty tests on native `macos-15-intel` and `macos-26-intel`, both using the same archive |
+| `x86_64-pc-windows-msvc` | Noninteractive tests on `windows-2025` and the extracted executable's import table, with no C runtime import; both optional ConPTY interactive tests passed, including input-mode restoration |
+
+The noninteractive tests cover help/version, both languages' lists and traces, random questions, imported sets, equivalence and proof checking, UTF-8 output and exit codes 0/1/2. They check that these commands leave progress untouched and that interactive startup without a terminal fails without creating progress. The Unix pty and Windows ConPTY suites check normal exit status, Unicode answers, a progress path containing Chinese and spaces, a second run resuming saved work, `--no-save` preserving it byte for byte, and equal input settings before and after each run: `stty -g` on Unix, `GetConsoleMode` on Windows. Containers share the host kernel: this establishes independence from those distributions' dynamic libraries, not acceptance on older Linux kernels. Debian 11 installs its test tools from Debian's signed distribution archive because the former security mirror returned package-download 404s before the tests could start.
+
+The earlier [run 37012478300](https://github.com/Acture/Stepwise/actions/runs/37012478300), at `347e34893c071587e9c4f39568ff727a204f5d87`, passed the required jobs but its optional ConPTY experiment failed with exit code 101. The driver reached the TUI, but the captured Unicode answer contained replacement characters and timed out; the other test failed its mouse-capture escape assertion.
+
+Follow-up diagnosis found two test-adapter defects. The mouse assertion expected Unix ANSI output even though crossterm uses WinAPI on Windows; [terminal_conpty.py](tests/terminal_conpty.py) now compares `GetConsoleMode` before and after the CLI in the same console, while Unix keeps `stty -g` and its ANSI assertion. The request parser read Rust's UTF-8 JSON through Python's locale-decoded stdin: [test_terminal_protocol.py](tests/test_terminal_protocol.py) guards Unicode executable paths, arguments and answers with ASCII, cp1252, GBK and UTF-8 text wrappers, using the underlying protocol bytes instead. This regression passed locally, including Python 3.8, and in the accepted run's gate.
+
+In the accepted run, the retained `conpty.log` confirms Python's default stdin text encoding was `cp1252`, while the corrected parser read UTF-8 bytes. Both interactive tests passed, and every console input-mode snapshot was `503 -> 503`; `conpty.json` records exit code 0. The archive's Windows binary is compiled for MSVC, but the Rust-to-Python request is a runtime byte protocol whose encoding is independent of that compiler target. These results establish the scripted headless ConPTY interactions above; they do not exercise a real IME composition session or a student's Windows Terminal workflow.
+
+The accepted archive and extracted executable identities are below. The two Intel jobs agree on both hashes, as do Ubuntu and all three Linux containers; each `cli-evidence-*` artifact's `identity.json` also names the source commit, run and runner image.
+
+| Archive filename | Archive SHA256 | Extracted executable SHA256 |
+| --- | --- | --- |
+| `stepwise-0.1.0-x86_64-unknown-linux-musl.tar.gz` | `ec773acc4bbe7b40bb78ca888016255f01dd6583448c13576e6c7d58111f1a75` | `68df1b6f0ea1a2aaeed40d882062c84d49c9ccca5071482e23b9fa4537a62128` |
+| `stepwise-0.1.0-aarch64-apple-darwin.tar.gz` | `7124fa9f26e179a09ee66a0f8212aead224ef5ef0c8275d8649d9dae8413b542` | `8f0a905fd189b5d324840f141e6f51dda8007a023d98ac154be7c5775501fd92` |
+| `stepwise-0.1.0-x86_64-apple-darwin.tar.gz` | `6ea5767345d4ff6f6e7e5fec0f87e2ad3f5a939456c6c7dd49c6f58779cdb4a1` | `81f90e6616229a3a1fab5698f8a7a3df5cdfce4e78736e264ee8a18316977536` |
+| `stepwise-0.1.0-x86_64-pc-windows-msvc.zip` | `8e3bab638ecb61c4800dc645b599c9a09eeaa0218a850aaeba423efccb30fb29` | `e3b6efff5d3050082a3e1d339ed25f5c07b7240535877eea659e02a9d425c0ab` |
+
+Download the reports and accepted packages while their seven-day artifact retention lasts:
+
+```fish
+gh run download 37018780620 --repo Acture/Stepwise --pattern 'cli-evidence-*' --dir p780-evidence
+gh run download 37018780620 --repo Acture/Stepwise --name stepwise --dir p780-artifacts
+cd p780-artifacts
+shasum -a 256 -c SHA256SUMS
+```
+
+Rerun the manual workflow to regenerate this evidence; it creates no tag or Release. Local checks passed: `cargo fmt --check`, `cargo clippy --locked --all-targets -- -D warnings`, `cargo test --locked`, both ignored acceptance suites with an explicitly identified binary (also with Python 3.8), `actionlint`, Python lint/format/type checks, and the nine packaging regression tests in `python3 -m unittest discover -s scripts/package -v`. The accepted run repeats the native and desktop gates and runs every required archive acceptance job.
+
 ## Delivery boundary
 
 - Local debug executable: `target/debug/stepwise`. Local desktop development build: `target/release/bundle/macos/Stepwise.app`. Distribution installers are the verified artifacts above; macOS remains ad-hoc signed and not notarized, and Windows installers are unsigned. Developer ID signing and notarization belong to P-769.
-- P-768 implementation is pushed on its task branch and awaits merge; the accepted run packages the exact source commit above. No tag or published release has been created. Changes after that run update documentation only.
-- [check.yml](.github/workflows/check.yml) runs the cross-platform checks on every push and pull request. Distribution has one pipeline, [package.yml](.github/workflows/package.yml), started by hand: it runs check.yml as its gate, then independently builds CLI archives and desktop installers, with one SHA256SUMS over the successful families. Packages are extracted and inspected there; no Windows/Linux/Intel macOS runtime acceptance is claimed.
+- P-768 merged through [PR #11](https://github.com/Acture/Stepwise/pull/11); its accepted run packages the exact source commit above. No tag or published release has been created.
+- [check.yml](.github/workflows/check.yml) runs the cross-platform checks on every push and pull request. Distribution has one pipeline, [package.yml](.github/workflows/package.yml), started by hand: it runs check.yml as its gate, then independently builds CLI archives and desktop installers, with one SHA256SUMS over the successful families. CLI delivery additionally requires the archive acceptance above. Desktop installers remain verified by extraction and inspection; desktop runtime acceptance is not established by this run.
 - No student usability study or classroom acceptance has been performed.
 
 ## Deliberate first-version limits

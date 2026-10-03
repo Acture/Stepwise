@@ -259,7 +259,9 @@ CLI 为四个目标各出一个归档：Linux x64（`x86_64-unknown-linux-musl`�
 
 Rust 声明由 cargo-about 按 `about.toml` 与 `about.hbs` 逐目标生成，CLI 的 Linux 版另附 musl 许可证；标准库声明取自工具链。页面声明由锁定的 Vite 从构建模块生成，`desktop/ui/licenses.ts` 补入预打包 JS 的依赖、CSS/font 包和 Vite 注入的运行时代码，文本读取自锁定的依赖包。未审阅的许可证、缺失正文或占位版权行会使构建失败。桌面打包加载 `tauri.package.conf.json`，将 CI 生成的声明加入资源；`bun run app` 是本机开发构建，不代替这条分发管线。
 
-CLI 与桌面各自保留完整成功的一组产物，任一组失败不阻止另一组下载。汇总产物 `stepwise` 内的 SHA256SUMS 覆盖交付的每个归档和安装包，可在下载后运行 `shasum -a 256 -c SHA256SUMS`；所有工作流产物保留七天。实际运行与交付清单见 [STATUS.md](STATUS.md)。尚未发布 Release；Developer ID 签名、公证与真实安装后的交互验收单独完成。
+CLI 的验收作业下载同次运行的确切目标归档，校验哈希后运行解包的二进制，覆盖非交互命令、退出码，以及 Unix pty 下的中文答案、进度续做、`--no-save` 和终端设置恢复。目标运行器为 ubuntu-24.04、macos-26（arm64）、macos-15-intel 与 macos-26-intel（x64）、windows-2025；Linux 归档还在 debian:11、fedora:43、alpine:3.22 中运行同一组断言。容器共用运行器内核，这只检查对发行版库的独立性。Windows 导入表检查为门禁，ConPTY 交互实验的实际结果见 [STATUS.md](STATUS.md)。
+
+CLI 经归档验收后、桌面经安装包检查后，各自保留完整成功的一组产物，任一组失败不阻止另一组下载。汇总产物 `stepwise` 内的 SHA256SUMS 覆盖交付的每个归档和安装包，可在下载后运行 `shasum -a 256 -c SHA256SUMS`；所有工作流产物保留七天。实际运行与交付清单见 [STATUS.md](STATUS.md)。尚未发布 Release；Developer ID 签名、公证与真实安装后的交互验收单独完成。
 
 ## 文档与规划笔记
 

@@ -33,6 +33,8 @@ jobs:
   # Beside the gate rather than after it: it writes no part of the program, and cargo-about takes a
   # few minutes to build. Nothing is archived before the gate has passed.
   notices:
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -41,6 +43,8 @@ jobs:
           persist-credentials: false
       # The musl target only to read which musl it links.
       - run: rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal --target x86_64-unknown-linux-musl
+      - id: version
+        run: echo "version=$(cargo metadata --locked --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "stepwise") | .version')" >> "$GITHUB_OUTPUT"
       # Since 0.9 the binary is behind the `cli` feature; without it cargo installs nothing, and succeeds.
       - run: cargo install --locked --features cli cargo-about@0.9.2
       # One file per target: the Windows build links crates the Unix builds do not, and back.
@@ -269,6 +273,158 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  cli-acceptance:
+    name: Accept CLI ${{ matrix.target }} on ${{ matrix.os }}
+    needs: [cli, notices]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-24.04
+          - target: aarch64-apple-darwin
+            os: macos-26
+          - target: x86_64-apple-darwin
+            os: macos-15-intel
+          - target: x86_64-apple-darwin
+            os: macos-26-intel
+          - target: x86_64-pc-windows-msvc
+            os: windows-2025
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    env:
+      TARGET: ${{ matrix.target }}
+      VERSION: ${{ needs.notices.outputs.version }}
+    steps:
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ runner.os == 'Linux' && '3.8' || '3.13' }}
+      # Neither pattern nor merge-multiple: missing this run's exact target is an error.
+      - uses: actions/download-artifact@v4
+        with:
+          name: cli-${{ matrix.target }}
+          path: downloaded
+      - uses: actions/download-artifact@v4
+        with:
+          name: notices
+          path: notices
+      - name: Verify the downloaded archive and identify its binary
+        run: python scripts/package/accept_cli.py --target "$TARGET" --version "$VERSION"
+      - run: rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal
+      # Cargo builds a test harness, but the process each test launches is STEPWISE_BINARY;
+      # both harnesses refuse a missing path/hash in CI and verify the supplied binary's hash.
+      - name: Noninteractive commands and failure codes
+        run: cargo test --locked --test cli_archive -- --ignored --nocapture
+      - name: Interactive terminal, Unicode, resume, no-save and stty restoration
+        if: runner.os != 'Windows'
+        run: cargo test --locked --test terminal -- --ignored --nocapture
+      - uses: astral-sh/setup-uv@v6
+        if: runner.os == 'Windows'
+      - name: Install the pinned ConPTY experiment driver
+        if: runner.os == 'Windows'
+        run: uv pip install --system pywinpty==3.0.2
+      - name: Headless ConPTY experiment (its outcome is evidence, not a required gate)
+        if: runner.os == 'Windows'
+        run: |
+          set +e
+          cargo test --locked --test terminal -- --ignored --nocapture > target/cli-evidence/conpty.log 2>&1
+          status=$?
+          set -e
+          cat target/cli-evidence/conpty.log
+          printf '{"exitCode":%s}\n' "$status" > target/cli-evidence/conpty.json
+          echo "ConPTY experiment exit code: $status (see conpty.log)" >> "$GITHUB_STEP_SUMMARY"
+      - name: Build static test drivers for distribution-library checks
+        if: runner.os == 'Linux'
+        run: |
+          rustup target add x86_64-unknown-linux-musl
+          cargo test --locked --target x86_64-unknown-linux-musl --test cli_archive --test terminal --no-run --message-format=json > target/cli-test-build.json
+          mkdir -p target/cli-tests
+          for test in cli_archive terminal; do
+            executable="$(jq -r --arg test "$test" 'select(.reason == "compiler-artifact" and .target.name == $test and .executable != null) | .executable' target/cli-test-build.json)"
+            test -n "$executable"
+            cp "$executable" "target/cli-tests/$test"
+          done
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'Linux'
+        with:
+          name: cli-linux-tests
+          path: target/cli-tests
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: cli-evidence-${{ matrix.target }}-${{ matrix.os }}
+          path: target/cli-evidence
+          if-no-files-found: error
+          retention-days: 7
+
+  cli-containers:
+    name: Accept musl CLI in ${{ matrix.image }}
+    needs: [cli-acceptance, notices]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: debian:11
+            # Bullseye's old security mirror can retain indexes after removing the packages.
+            # Install the test driver from the signed distribution archive instead.
+            install: |
+              printf 'deb http://archive.debian.org/debian bullseye main\n' > /etc/apt/sources.list
+              apt-get -o Acquire::Check-Valid-Until=false -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update
+              apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 install -y python3
+          - image: fedora:43
+            install: dnf install -y python3 coreutils
+          - image: alpine:3.22
+            install: apk add --no-cache python3
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      VERSION: ${{ needs.notices.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: cli-x86_64-unknown-linux-musl
+          path: downloaded
+      - uses: actions/download-artifact@v4
+        with:
+          name: notices
+          path: notices
+      - uses: actions/download-artifact@v4
+        with:
+          name: cli-linux-tests
+          path: target/cli-tests
+      - name: Verify this job's download
+        run: python3 scripts/package/accept_cli.py --target x86_64-unknown-linux-musl --version "$VERSION"
+      # Static harnesses, not Cargo or a rebuilt CLI, run inside the distribution images.
+      # They share the host kernel: this tests independence from distribution libraries only.
+      - name: Run all CLI and pty assertions inside the distribution
+        env:
+          IMAGE: ${{ matrix.image }}
+          INSTALL: ${{ matrix.install }}
+        run: |
+          chmod +x target/cli-tests/cli_archive target/cli-tests/terminal
+          docker run --rm -v "$PWD:$PWD" -w "$PWD" -e CI=true -e STEPWISE_BINARY -e STEPWISE_BINARY_SHA256 -e INSTALL "$IMAGE" sh -ec '
+            eval "$INSTALL"
+            python3 --version
+            target/cli-tests/cli_archive --ignored --nocapture
+            target/cli-tests/terminal --ignored --nocapture
+          '
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: cli-evidence-${{ strategy.job-index }}-container
+          path: target/cli-evidence
+          if-no-files-found: error
+          retention-days: 7
+
   desktop:
     name: Desktop ${{ matrix.target }}
     needs: [check, desktop-notices]
@@ -348,18 +504,32 @@ jobs:
           retention-days: 7
 
   checksums:
-    needs: [cli, desktop]
+    needs: [cli, cli-acceptance, cli-containers, desktop]
     # Each family can be delivered independently. Never describe partial target sets as a
     # complete family; successful individual jobs still keep their own installer artifacts.
-    if: ${{ !cancelled() && (needs.cli.result == 'success' || needs.desktop.result == 'success') }}
+    if: ${{ !cancelled() && ((needs.cli.result == 'success' && needs.cli-acceptance.result == 'success' && needs.cli-containers.result == 'success') || needs.desktop.result == 'success') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/download-artifact@v4
-        if: needs.cli.result == 'success'
+        if: needs.cli.result == 'success' && needs.cli-acceptance.result == 'success' && needs.cli-containers.result == 'success'
         with:
-          pattern: cli-*
-          merge-multiple: true
+          name: cli-x86_64-unknown-linux-musl
+          path: dist
+      - uses: actions/download-artifact@v4
+        if: needs.cli.result == 'success' && needs.cli-acceptance.result == 'success' && needs.cli-containers.result == 'success'
+        with:
+          name: cli-aarch64-apple-darwin
+          path: dist
+      - uses: actions/download-artifact@v4
+        if: needs.cli.result == 'success' && needs.cli-acceptance.result == 'success' && needs.cli-containers.result == 'success'
+        with:
+          name: cli-x86_64-apple-darwin
+          path: dist
+      - uses: actions/download-artifact@v4
+        if: needs.cli.result == 'success' && needs.cli-acceptance.result == 'success' && needs.cli-containers.result == 'success'
+        with:
+          name: cli-x86_64-pc-windows-msvc
           path: dist
       - uses: actions/download-artifact@v4
         if: needs.desktop.result == 'success'
