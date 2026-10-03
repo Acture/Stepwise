@@ -1,5 +1,6 @@
-// The installed window, driven like a student would: every check reads what the page drew, and
-// the app under test is the one the installer wrote, with no code of its own for testing.
+// The installed window, driven like a student would: every check reads the page's DOM or the
+// progress file the app wrote, and the app under test is the one the installer wrote, with no
+// code of its own for testing.
 
 import assert from "node:assert/strict";
 import type { ChildProcess } from "node:child_process";
@@ -179,7 +180,7 @@ async function drawn(): Promise<void> {
 		60_000,
 	);
 	assert.deepEqual(names, ["Python 表达式", "命题逻辑"]);
-	assert.equal(await browser.$("#fault").isExisting(), false);
+	await unfaulted();
 }
 
 async function shoot(name: string): Promise<void> {
@@ -189,8 +190,16 @@ async function shoot(name: string): Promise<void> {
 	);
 }
 
-/** One step of the walk, in order: a step after a failed one is skipped, and every step ends
- * with a screenshot, a failed one too. */
+/** What the page shows when something stopped it: the release build on Windows has no other
+ * channel, so no step passes while it is there. */
+async function unfaulted(): Promise<void> {
+	const shown: ChainablePromiseElement = browser.$("#fault");
+	if (await shown.isExisting())
+		throw new Error(`the page reports: ${await content(shown)}`);
+}
+
+/** One step of the walk, in order: a step after a failed one is skipped, every step must leave
+ * the page without a fault, and every step ends with a screenshot, a failed one too. */
 function step(name: string, title: string, body: () => Promise<void>): void {
 	test(title, async (t: { skip: (message: string) => void }) => {
 		if (failed) {
@@ -200,6 +209,7 @@ function step(name: string, title: string, body: () => Promise<void>): void {
 		let problem: unknown;
 		try {
 			await body();
+			await unfaulted();
 		} catch (error: unknown) {
 			failed = true;
 			problem = error;
@@ -207,6 +217,7 @@ function step(name: string, title: string, body: () => Promise<void>): void {
 		try {
 			await shoot(problem === undefined ? name : `${name}-failed`);
 		} catch (error: unknown) {
+			failed = true;
 			if (problem === undefined) throw error;
 			throw new AggregateError(
 				[problem, error],

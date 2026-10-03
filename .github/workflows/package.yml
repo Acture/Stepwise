@@ -114,7 +114,10 @@ jobs:
           persist-credentials: false
       - run: rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal
       - id: version
-        run: echo "version=$(cargo metadata --locked --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "stepwise-desktop") | .version')" >> "$GITHUB_OUTPUT"
+        run: |
+          version="$(cargo metadata --locked --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "stepwise-desktop") | .version')"
+          test -n "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'

@@ -125,7 +125,8 @@ export async function open(
 			},
 		},
 	});
-	// What the driver reports of the session: the WebView's own version among it.
+	// What the driver reports of the session: on Windows the WebView2 runtime's version among it;
+	// on Linux the version wry gives its web context, not WebKitGTK's.
 	writeFileSync(
 		join(setup.evidence, `${name}.json`),
 		JSON.stringify(browser.capabilities, null, "\t") + "\n",
@@ -133,7 +134,9 @@ export async function open(
 	return browser;
 }
 
-/** The app's processes still running, found by the progress file only this suite hands it. */
+/** The app's processes still running: on Unix found by the progress file only this suite hands
+ * it, on Windows by image name, since tasklist shows no command line and nothing else on the
+ * runner runs the app. */
 function running(progress: string): string[] {
 	if (process.platform === "win32") {
 		return execFileSync(system("tasklist.exe"), ["/fo", "csv", "/nh"], {

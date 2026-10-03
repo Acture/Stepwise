@@ -4,12 +4,20 @@ page finished loading in an app that stayed up without reporting a fault."""
 import hashlib
 import os
 from pathlib import Path
+import re
 import sys
 import tempfile
 import unittest
 from unittest.mock import patch
 
-from accept_desktop import gatekeeper_accepts, identify, missing_libraries, watch
+from accept_desktop import (
+	SETTLE,
+	gatekeeper_accepts,
+	identify,
+	missing_libraries,
+	uncarried,
+	watch,
+)
 
 LOADED: str = "Stepwise：页面 Finished tauri://localhost"
 
@@ -31,7 +39,10 @@ class Installers(unittest.TestCase):
 		with tempfile.TemporaryDirectory() as temporary:
 			root: Path = Path(temporary)
 			name: str = "stepwise-desktop-0.1.0-x86_64-unknown-linux-gnu.deb"
-			# A glob must never stand in for the exact file.
+			checksum: Path = root / (name + ".sha256")
+			checksum.write_text(hashlib.sha256(b"rpm").hexdigest() + "\n")
+			# A glob must never stand in for the exact file, even one whose bytes the
+			# recorded hash would match.
 			(root / "stepwise-desktop-0.1.0-x86_64-unknown-linux-gnu.rpm").write_bytes(
 				b"rpm"
 			)
@@ -39,7 +50,6 @@ class Installers(unittest.TestCase):
 				identify(root, name)
 			installer: Path = root / name
 			installer.write_bytes(b"changed bytes")
-			checksum: Path = root / (name + ".sha256")
 			checksum.write_text(hashlib.sha256(b"checked bytes").hexdigest() + "\n")
 			with self.assertRaisesRegex(ValueError, "differ"):
 				identify(root, name)
@@ -96,8 +106,43 @@ class Libraries(unittest.TestCase):
 					missing_libraries(tree), {"usr/bin/app": ["libmissing.so.1"]}
 				)
 
+	def test_a_library_is_carried_or_left_to_the_host_by_the_exclude_list(self) -> None:
+		with tempfile.TemporaryDirectory() as temporary:
+			root: Path = Path(temporary)
+			tree: Path = root / "squashfs-root"
+			(tree / "usr/bin").mkdir(parents=True)
+			(tree / "usr/lib").mkdir()
+			(tree / "usr/bin/app").write_bytes(b"\x7fELF app")
+			(tree / "usr/lib/libcarried.so.1").write_bytes(b"\x7fELF carried")
+			# A stand-in for objdump: the app names a carried library, two the host is
+			# trusted with, and one nobody carries; the carried library names nothing.
+			fake: Path = root / "bin"
+			fake.mkdir()
+			(fake / "objdump").write_text(
+				"#!/bin/sh\n"
+				'case "$2" in *app) printf "  NEEDED               %s\\n" '
+				"libcarried.so.1 libc.so.6 libEGL.so.1 libglib-2.0.so.0 ;; esac\n"
+			)
+			(fake / "objdump").chmod(0o755)
+			with patch.dict(os.environ, {"PATH": f"{fake}:{os.environ['PATH']}"}):
+				self.assertEqual(
+					uncarried(tree),
+					(
+						{"usr/bin/app": ["libglib-2.0.so.0"]},
+						{"libc.so.6", "libEGL.so.1"},
+					),
+				)
+
 
 class Launches(unittest.TestCase):
+	def test_the_settle_outlasts_the_pages_watchdog(self) -> None:
+		page: str = (
+			Path(__file__).resolve().parents[2] / "desktop/ui/index.html"
+		).read_text(encoding="utf-8")
+		watchdog: list[str] = re.findall(r"\},\s*(\d+)\);\s*</script>", page)
+		self.assertEqual(len(watchdog), 1, "index.html has one watchdog timer")
+		self.assertGreater(SETTLE * 1000, int(watchdog[0]) + 1000)
+
 	def launch(self, command: list[str], timeout: float = 20) -> list[str]:
 		checked: list[str] = []
 		with tempfile.TemporaryDirectory() as temporary:

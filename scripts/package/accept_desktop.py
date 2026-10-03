@@ -13,6 +13,7 @@ import json
 import logging
 import os
 from pathlib import Path
+import platform
 import queue
 import re
 import signal
@@ -123,9 +124,9 @@ def install(installer: Path, evidence: Path) -> dict[str, str]:
 def unpack_dmg(dmg: Path, destination: Path, target: str) -> dict[str, str]:
 	"""Verifies the dmg, copies its app out and checks the copy's architecture, signature and
 	Gatekeeper's verdict on it; returns where the copy's executable is."""
-	run("hdiutil", "verify", str(dmg))
+	show("hdiutil", "verify", str(dmg))
 	mount: Path = Path(tempfile.mkdtemp(prefix="stepwise-dmg-"))
-	run(
+	show(
 		"hdiutil",
 		"attach",
 		"-readonly",
@@ -135,21 +136,23 @@ def unpack_dmg(dmg: Path, destination: Path, target: str) -> dict[str, str]:
 		str(dmg),
 	)
 	try:
-		run("ditto", str(mount / "Stepwise.app"), str(destination / "Stepwise.app"))
+		show("ditto", str(mount / "Stepwise.app"), str(destination / "Stepwise.app"))
 	finally:
-		run("hdiutil", "detach", str(mount))
+		show("hdiutil", "detach", str(mount))
 	app: Path = destination / "Stepwise.app"
 	binary: Path = app / "Contents/MacOS/stepwise-desktop"
 	wanted: str = "arm64" if target.startswith("aarch64-") else "x86_64"
 	architecture: str = run("lipo", "-archs", str(binary)).stdout.strip()
 	if architecture != wanted:
 		raise ValueError(f"{dmg.name}: expected {wanted} alone, got {architecture}")
-	run("codesign", "--verify", "--deep", "--strict", "--verbose=2", str(app))
+	show("codesign", "--verify", "--deep", "--strict", "--verbose=2", str(app))
 	# codesign describes a signature on stderr.
 	signature: str = run("codesign", "-dv", "--verbose=4", str(app)).stderr
 	accepts: bool = gatekeeper_accepts(signature)
-	# Whether assessments are enabled at all: a Mac that disabled them accepts anything.
+	# A Mac that assesses nothing accepts anything, so its verdict says nothing either way.
 	assessments: str = run("spctl", "--status").stdout.strip()
+	if assessments != "assessments enabled":
+		raise ValueError(f"Gatekeeper is not assessing on this Mac: {assessments}")
 	assessment: subprocess.CompletedProcess[str] = subprocess.run(
 		["spctl", "--assess", "--type", "execute", "-vv", str(app)],
 		capture_output=True,
@@ -162,7 +165,7 @@ def unpack_dmg(dmg: Path, destination: Path, target: str) -> dict[str, str]:
 	if assessment.returncode not in (0, 3) or (assessment.returncode == 0) != accepts:
 		raise ValueError(
 			f"{dmg.name}: Gatekeeper should {'accept' if accepts else 'reject'} this signature, "
-			f"and spctl ({assessments}) exited {assessment.returncode}: {verdict}"
+			f"and spctl exited {assessment.returncode}: {verdict}"
 		)
 	return {
 		"app": str(binary),
@@ -171,6 +174,108 @@ def unpack_dmg(dmg: Path, destination: Path, target: str) -> dict[str, str]:
 		"gatekeeper": verdict,
 		"assessments": assessments,
 	}
+
+
+# AppImage's exclude list, as linuxdeploy carries it: what every desktop has, so no AppImage
+# carries it. From https://github.com/probonopd/AppImages/blob/master/excludelist.
+HOST: frozenset[str] = frozenset(
+	{
+		"ld-linux.so.2",
+		"ld-linux-x86-64.so.2",
+		"libanl.so.1",
+		"libBrokenLocale.so.1",
+		"libcidn.so.1",
+		"libc.so.6",
+		"libdl.so.2",
+		"libm.so.6",
+		"libmvec.so.1",
+		"libnss_compat.so.2",
+		"libnss_dns.so.2",
+		"libnss_files.so.2",
+		"libnss_hesiod.so.2",
+		"libnss_nisplus.so.2",
+		"libnss_nis.so.2",
+		"libpthread.so.0",
+		"libresolv.so.2",
+		"librt.so.1",
+		"libthread_db.so.1",
+		"libutil.so.1",
+		"libstdc++.so.6",
+		"libGL.so.1",
+		"libEGL.so.1",
+		"libGLdispatch.so.0",
+		"libGLX.so.0",
+		"libOpenGL.so.0",
+		"libdrm.so.2",
+		"libglapi.so.0",
+		"libgbm.so.1",
+		"libxcb.so.1",
+		"libX11.so.6",
+		"libX11-xcb.so.1",
+		"libwayland-client.so.0",
+		"libasound.so.2",
+		"libfontconfig.so.1",
+		"libfreetype.so.6",
+		"libharfbuzz.so.0",
+		"libcom_err.so.2",
+		"libexpat.so.1",
+		"libgcc_s.so.1",
+		"libgpg-error.so.0",
+		"libICE.so.6",
+		"libSM.so.6",
+		"libusb-1.0.so.0",
+		"libuuid.so.1",
+		"libz.so.1",
+		"libjack.so.0",
+		"libpipewire-0.3.so.0",
+		"libxcb-dri3.so.0",
+		"libxcb-dri2.so.0",
+		"libfribidi.so.0",
+		"libgmp.so.10",
+	}
+)
+
+
+def elf_files(root: Path) -> list[Path]:
+	elfs: list[Path] = []
+	for path in sorted(root.rglob("*")):
+		if path.is_file() and not path.is_symlink():
+			with path.open("rb") as stream:
+				if stream.read(4) == b"\x7fELF":
+					elfs.append(path)
+	if not elfs:
+		raise ValueError(f"{root} holds no ELF file")
+	return elfs
+
+
+def needed(path: Path) -> list[str]:
+	"""The libraries an ELF file names in its dynamic section."""
+	return [
+		line.split()[1]
+		for line in run("objdump", "-p", str(path)).stdout.splitlines()
+		if line.split()[:1] == ["NEEDED"]
+	]
+
+
+def uncarried(root: Path) -> tuple[dict[str, list[str]], set[str]]:
+	"""Every ELF file under an extracted AppImage that names a library the AppImage neither
+	carries nor may leave to the host, with those libraries; and what it does leave to the
+	host. It reads each file's own dynamic section, so what this system happens to have
+	cannot stand in for a library the AppImage stopped carrying."""
+	carried: set[str] = {path.name for path in root.rglob("*")}
+	elfs: list[Path] = elf_files(root)
+	LOG.info("Reading the dynamic sections of %d ELF files", len(elfs))
+	with ThreadPoolExecutor(max_workers=8) as executor:
+		names: list[list[str]] = list(executor.map(needed, elfs))
+	gaps: dict[str, list[str]] = {}
+	host: set[str] = set()
+	for path, libraries in zip(elfs, names, strict=True):
+		host.update(name for name in libraries if name in HOST and name not in carried)
+		if lack := [
+			name for name in libraries if name not in carried and name not in HOST
+		]:
+			gaps[str(path.relative_to(root))] = lack
+	return gaps, host
 
 
 def lacking(path: Path, environment: dict[str, str]) -> list[str]:
@@ -182,25 +287,20 @@ def lacking(path: Path, environment: dict[str, str]) -> list[str]:
 	return [line.split()[0] for line in listed.splitlines() if "=> not found" in line]
 
 
-def missing_libraries(root: Path) -> dict[str, list[str]]:
-	"""Every ELF file under an extracted AppImage that loads a library neither the AppImage
-	nor this system has, with what it lacks. The AppImage's own library directories are on
-	the search path, as its AppRun puts them."""
+def bundled(root: Path) -> dict[str, str]:
+	"""The AppImage's own library directories first on the search path, as its AppRun puts
+	them."""
 	directories: list[str] = sorted(
 		{str(path.parent) for path in root.rglob("*.so*") if path.is_file()}
 	)
-	environment: dict[str, str] = {
-		**os.environ,
-		"LD_LIBRARY_PATH": ":".join(directories),
-	}
-	elfs: list[Path] = []
-	for path in sorted(root.rglob("*")):
-		if path.is_file() and not path.is_symlink():
-			with path.open("rb") as stream:
-				if stream.read(4) == b"\x7fELF":
-					elfs.append(path)
-	if not elfs:
-		raise ValueError(f"{root} holds no ELF file")
+	return {**os.environ, "LD_LIBRARY_PATH": ":".join(directories)}
+
+
+def missing_libraries(root: Path) -> dict[str, list[str]]:
+	"""Every ELF file under an extracted AppImage that loads a library neither the AppImage
+	nor this system has, with what it lacks: what this system must still provide."""
+	environment: dict[str, str] = bundled(root)
+	elfs: list[Path] = elf_files(root)
 	LOG.info("Resolving the libraries of %d ELF files", len(elfs))
 	with ThreadPoolExecutor(max_workers=8) as executor:
 		found: list[list[str]] = list(
@@ -213,8 +313,29 @@ def missing_libraries(root: Path) -> dict[str, list[str]]:
 	}
 
 
+def webkit_version(root: Path) -> str:
+	"""The version of the WebKitGTK the AppImage carries and renders with, from the library
+	itself."""
+	libraries: list[Path] = list(root.rglob("libwebkit2gtk-4.1.so.0"))
+	if len(libraries) != 1:
+		raise ValueError(f"expected one libwebkit2gtk-4.1.so.0, got {libraries}")
+	ask: str = (
+		"import ctypes, sys; library = ctypes.CDLL(sys.argv[1]); "
+		"print('.'.join(str(getattr(library, f'webkit_get_{part}_version')()) "
+		"for part in ('major', 'minor', 'micro')))"
+	)
+	return subprocess.run(
+		[sys.executable, "-c", ask, str(libraries[0])],
+		env=bundled(root),
+		check=True,
+		stdout=subprocess.PIPE,
+		text=True,
+	).stdout.strip()
+
+
 def appimage_libraries(appimage: Path) -> dict[str, object]:
-	"""Extracts the AppImage and fails, naming them all, if anything it loads is missing."""
+	"""Extracts the AppImage and fails, naming them all, if a library it loads is neither
+	carried nor one an AppImage may leave to the host, or is nowhere on this system."""
 	extracted: Path = Path(tempfile.mkdtemp(prefix="stepwise-appimage-"))
 	environment: dict[str, str] = {
 		key: value
@@ -228,7 +349,14 @@ def appimage_libraries(appimage: Path) -> dict[str, object]:
 		check=True,
 		stdout=subprocess.DEVNULL,
 	)
-	missing: dict[str, list[str]] = missing_libraries(extracted / "squashfs-root")
+	root: Path = extracted / "squashfs-root"
+	gaps, host = uncarried(root)
+	if gaps:
+		raise ValueError(
+			"libraries the AppImage neither carries nor may leave to the host:\n"
+			+ "\n".join(f"{file}: {', '.join(names)}" for file, names in gaps.items())
+		)
+	missing: dict[str, list[str]] = missing_libraries(root)
 	if missing:
 		raise ValueError(
 			"libraries neither the AppImage nor this system has:\n"
@@ -236,7 +364,11 @@ def appimage_libraries(appimage: Path) -> dict[str, object]:
 				f"{file}: {', '.join(names)}" for file, names in missing.items()
 			)
 		)
-	return {"appimage": str(appimage), "missing": missing}
+	return {
+		"appimage": str(appimage),
+		"webkitgtk": webkit_version(root),
+		"leftToHost": sorted(host),
+	}
 
 
 @dataclass(frozen=True)
@@ -342,9 +474,9 @@ def screenshot(path: Path) -> None:
 	"""The whole screen, from outside the app: the macOS session the runner logs in, or the
 	X display the job started."""
 	if sys.platform == "darwin":
-		run("screencapture", "-x", str(path))
+		show("screencapture", "-x", str(path))
 	else:
-		run("import", "-window", "root", str(path))
+		show("import", "-window", "root", str(path))
 	with path.open("rb") as image:
 		if image.read(8) != b"\x89PNG\r\n\x1a\n":
 			raise ValueError(f"{path} is not a PNG")
@@ -411,6 +543,9 @@ def main() -> None:
 			for key in ("GITHUB_SHA", "GITHUB_RUN_ID", "ImageOS", "ImageVersion")
 		}
 	)
+	# A job container has no runner image variables; it names its own system instead.
+	if Path("/etc/os-release").is_file():
+		report["os"] = platform.freedesktop_os_release()["PRETTY_NAME"]
 	text: str = json.dumps(report, indent=2, ensure_ascii=False)
 	(args.evidence / f"{args.command}.json").write_text(text + "\n", encoding="utf-8")
 	print(text)
