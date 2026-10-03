@@ -94,6 +94,14 @@ jobs:
           bun run check
           bun run lint
           bun run build
+      # Its types and format only; the package workflow runs it against the installed window.
+      - name: The window's acceptance suite
+        working-directory: desktop/e2e
+        shell: bash
+        run: |
+          bun install --frozen-lockfile
+          bun run check
+          bun run lint
       - run: cargo +stable fmt --all --check
       - run: cargo +stable clippy --locked -p stepwise-desktop --all-targets -- -D warnings
       # A release build embeds the built page; this compiles that path, after `bun run build`.
