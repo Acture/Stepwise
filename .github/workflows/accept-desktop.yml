@@ -23,6 +23,11 @@ on:
       macos-x64:
         type: string
         default: installers-x86_64-apple-darwin
+      # What every job's evidence artifact is named after: a second call in the same run needs
+      # names of its own.
+      evidence-prefix:
+        type: string
+        default: desktop-evidence
 
 permissions:
   contents: read
@@ -163,7 +168,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
         with:
-          name: desktop-evidence-windows-${{ matrix.format }}
+          name: ${{ inputs.evidence-prefix }}-windows-${{ matrix.format }}
           path: evidence
           if-no-files-found: error
           retention-days: 7
@@ -202,7 +207,9 @@ jobs:
       - name: Install
         id: install
         run: python scripts/package/accept_desktop.py --evidence evidence install --installer "downloaded/$INSTALLER"
-      # From the same source package as libwebkit2gtk-4.1, so the driver speaks its version.
+      # From the same source package as libwebkit2gtk-4.1, so the driver speaks its version. The
+      # deb renders with that library; the AppImage with the one it carries, which the job
+      # without WebKitGTK records.
       - name: WebKitGTK's WebDriver and an X server
         run: |
           sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y webkit2gtk-driver xvfb
@@ -227,7 +234,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
         with:
-          name: desktop-evidence-linux-${{ matrix.format }}
+          name: ${{ inputs.evidence-prefix }}-linux-${{ matrix.format }}
           path: evidence
           if-no-files-found: error
           retention-days: 7
@@ -264,7 +271,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
         with:
-          name: desktop-evidence-linux-rpm-fedora
+          name: ${{ inputs.evidence-prefix }}-linux-rpm-fedora
           path: evidence
           if-no-files-found: error
           retention-days: 7
@@ -275,10 +282,11 @@ jobs:
     timeout-minutes: 20
     # Another distribution than the one the AppImage was built on, with no WebKitGTK and no GTK.
     # It has what an AppImage expects of any desktop and never carries itself — the X, GL, EGL,
-    # font, text-shaping and sound libraries on AppImage's exclude list — and nothing more, so
-    # the window must come up on what the AppImage brings. libGLESv2 is one more of the GL
-    # dispatch libraries: libepoxy opens it at run time, so the AppImage neither carries it nor
-    # lists it, and without it the app stops before its window.
+    # font, text-shaping and sound libraries on AppImage's exclude list — and libGLESv2, one
+    # more GL dispatch library, which libepoxy opens at run time, so the AppImage neither
+    # carries it nor names it, and without it the app stops before its window. What the tools
+    # here bring with them (glib, libxml2, image libraries) could stand in for a library the
+    # AppImage stopped carrying, so the libraries step reads each of its ELF files' own list.
     container: debian:13
     env:
       INSTALLER: stepwise-desktop-${{ inputs.version }}-x86_64-unknown-linux-gnu.AppImage
@@ -286,11 +294,14 @@ jobs:
     steps:
       - run: |
           apt-get -o Acquire::Retries=3 update
-          apt-get -o Acquire::Retries=3 install -y --no-install-recommends python3 xvfb xauth imagemagick \
+          apt-get -o Acquire::Retries=3 install -y --no-install-recommends python3 binutils xvfb xauth imagemagick \
             libegl1 libopengl0 libharfbuzz0b libfribidi0 libwayland-client0 libgpg-error0 libasound2t64 libcom-err2 libusb-1.0-0 libxcb-dri2-0 libgles2
       - name: No WebKitGTK and no GTK in this container
         run: |
-          if ldconfig -p | grep -i -e webkit -e javascriptcore -e 'libgtk-3'; then
+          cache="$(ldconfig -p)"
+          # The same reading finds the C library, so an empty one cannot pass for no WebKitGTK.
+          grep -q 'libc\.so\.6' <<<"$cache"
+          if grep -i -e webkit -e javascriptcore -e 'libgtk-3' <<<"$cache"; then
             echo "::error::the container has WebKitGTK or GTK; this would not test what the AppImage carries"
             exit 1
           fi
@@ -306,8 +317,10 @@ jobs:
       - name: Install
         id: install
         run: python3 scripts/package/accept_desktop.py --evidence evidence install --installer "downloaded/$INSTALLER"
-      # Every library any program or library in the AppImage loads, found among its own or the
-      # container's: all of them at once, where a launch would stop at the first.
+      # Every library each ELF file in the AppImage names is one it carries or one AppImage's
+      # exclude list leaves to the host, and this container has the latter: all at once, where a
+      # launch would stop at the first. Libraries opened at run time, such as libGLESv2, only the
+      # launch exercises. It also reads the version of the WebKitGTK the AppImage carries.
       - name: Nothing the AppImage loads is missing
         env:
           APP: ${{ steps.install.outputs.app }}
@@ -319,7 +332,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
         with:
-          name: desktop-evidence-linux-appimage-debian
+          name: ${{ inputs.evidence-prefix }}-linux-appimage-debian
           path: evidence
           if-no-files-found: error
           retention-days: 7
@@ -371,7 +384,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
         with:
-          name: desktop-evidence-${{ matrix.target }}-${{ matrix.os }}
+          name: ${{ inputs.evidence-prefix }}-${{ matrix.target }}-${{ matrix.os }}
           path: evidence
           if-no-files-found: error
           retention-days: 7
