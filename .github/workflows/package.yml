@@ -494,6 +494,13 @@ jobs:
           projectPath: src/desktop/src-tauri
           tauriScript: bun ../ui/node_modules/@tauri-apps/cli/tauri.js
           args: --target ${{ matrix.target }} --config tauri.package.conf.json -- --locked
+      # Windows builds the student's NSIS installer above, which downloads WebView2 when it is
+      # missing. The MSI is for machines an administrator sets up, often offline: bundled from the
+      # same executable, it carries Microsoft's standalone WebView2 installer, fetched now.
+      - name: Offline MSI from the same executable
+        if: runner.os == 'Windows'
+        working-directory: src/desktop/src-tauri
+        run: bun ../ui/node_modules/@tauri-apps/cli/tauri.js bundle --target "$TARGET" --config tauri.package.conf.json --config tauri.msi.conf.json
       - name: Read back every installer, verify licences and measure GLIBC
         run: python scripts/package/verify.py --target "$TARGET"
       - uses: actions/upload-artifact@v4

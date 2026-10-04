@@ -74,7 +74,15 @@ cargo run --locked -- --logic --goal 'Q -> P' --premise P
 
 ## 保存和恢复
 
-默认进度保存在系统本地应用数据目录下的 Stepwise 文件夹中，文件名为 `progress.json`。退出后重新启动同一种语言，会恢复尚未完成的练习。终端和桌面版共用这份进度；同一份文件请只交给一个正在运行的实例。
+默认进度文件 `progress.json` 保存在：
+
+| 系统 | 目录 |
+| --- | --- |
+| macOS | `~/Library/Application Support/io.github.acture.stepwise/` |
+| Windows | `%LOCALAPPDATA%\acture\stepwise\data\` |
+| Linux | `$XDG_DATA_HOME/stepwise/`，未设置时为 `~/.local/share/stepwise/` |
+
+退出后重新启动同一种语言，会恢复尚未完成的练习。终端和桌面版共用这份进度；同一份文件请只交给一个正在运行的实例。
 
 ```fish
 cargo run --locked -- --python --progress-file ./my-progress.json

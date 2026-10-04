@@ -148,6 +148,50 @@ def verify_macos(installer: Path, extracted: Path, target: str) -> None:
 		run("hdiutil", "detach", str(extracted))
 
 
+def summarize(line: str) -> None:
+	if summary := os.environ.get("GITHUB_STEP_SUMMARY"):
+		with Path(summary).open("a", encoding="utf-8") as stream:
+			stream.write(f"- {line}\n")
+
+
+def verify_webview2_offline(installer: Path, extracted: Path) -> None:
+	"""The MSI carries Microsoft's standalone WebView2 installer as a Binary table stream, which an
+	administrative extraction leaves out. The bundler fetched it unpinned, so its signature is
+	checked and what it is gets recorded."""
+	stream: str = "Binary.MicrosoftEdgeWebView2RuntimeInstaller.exe"
+	run("7z", "e", "-tCompound", "-y", f"-o{extracted}", str(installer), stream)
+	payload: Path = extracted / stream
+	if not payload.is_file():
+		raise ValueError(
+			f"{installer}: no {stream}; it cannot install WebView2 offline"
+		)
+	quoted: str = str(payload).replace("'", "''")
+	signature: dict[str, str] = json.loads(
+		run(
+			"powershell",
+			"-NoProfile",
+			"-Command",
+			f"$s = Get-AuthenticodeSignature -LiteralPath '{quoted}'; [pscustomobject]@{{"
+			" status = [string]$s.Status; signer = [string]$s.SignerCertificate.Subject;"
+			f" version = (Get-Item -LiteralPath '{quoted}').VersionInfo.ProductVersion"
+			" } | ConvertTo-Json -Compress",
+		)
+	)
+	if (
+		signature["status"] != "Valid"
+		or "O=Microsoft Corporation" not in signature["signer"]
+	):
+		raise ValueError(
+			f"{installer}: {stream} is not signed by Microsoft: {signature}"
+		)
+	line: str = (
+		f"`{installer.name}` carries WebView2 {signature['version']}"
+		f" ({payload.stat().st_size} bytes, SHA256 {digest(payload)}), signed by Microsoft"
+	)
+	LOG.info("%s", line)
+	summarize(line)
+
+
 def verify_windows(installer: Path, extracted: Path) -> None:
 	if installer.suffix == ".msi":
 		# An administrative extraction; it does not install or launch the application.
@@ -166,8 +210,18 @@ def verify_windows(installer: Path, extracted: Path) -> None:
 		if result.returncode != 0:
 			LOG.error("%s", (extracted / "msi.log").read_text(encoding="utf-16"))
 			result.check_returncode()
+		verify_webview2_offline(installer, extracted / "webview2")
 	else:
 		run("7z", "x", "-y", f"-o{extracted}", str(installer))
+		# The student's installer stays small and downloads WebView2 only where it is missing.
+		if payloads := [
+			p
+			for p in extracted.rglob("*")
+			if p.name.lower().startswith("microsoftedgewebview2")
+		]:
+			raise ValueError(
+				f"{installer}: carries {payloads}; it should download WebView2"
+			)
 	if len(list(extracted.rglob("stepwise-desktop.exe"))) != 1:
 		raise ValueError(f"{installer}: expected one desktop executable")
 	verify_resources(extracted)
@@ -240,11 +294,7 @@ def main() -> None:
 		LOG.info(
 			"Verified and hashed %s in %.1fs", installer.name, time.monotonic() - start
 		)
-		if summary := os.environ.get("GITHUB_STEP_SUMMARY"):
-			with Path(summary).open("a", encoding="utf-8") as stream:
-				stream.write(
-					f"- `{installer.name}`: extracted licence bytes verified\n"
-				)
+		summarize(f"`{installer.name}`: extracted licence bytes verified")
 
 
 if __name__ == "__main__":

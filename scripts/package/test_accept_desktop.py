@@ -66,7 +66,9 @@ class Installers(unittest.TestCase):
 class Gatekeeper(unittest.TestCase):
 	def test_the_expected_verdict_follows_the_signature(self) -> None:
 		self.assertFalse(
-			gatekeeper_accepts("Identifier=dev.stepwise.desktop\nSignature=adhoc\n")
+			gatekeeper_accepts(
+				"Identifier=io.github.acture.stepwise\nSignature=adhoc\n"
+			)
 		)
 		self.assertTrue(
 			gatekeeper_accepts(

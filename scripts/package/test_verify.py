@@ -1,5 +1,6 @@
 """Regression checks for the package gates; the native jobs inspect the real installers."""
 
+from collections.abc import Callable
 import json
 from pathlib import Path
 import subprocess
@@ -8,7 +9,13 @@ import unittest
 from unittest.mock import patch
 
 from check_rust_notices import check
-from verify import glibc_report, glibc_versions, verify_resources
+from verify import (
+	glibc_report,
+	glibc_versions,
+	verify_resources,
+	verify_webview2_offline,
+	verify_windows,
+)
 
 
 class Gates(unittest.TestCase):
@@ -113,6 +120,56 @@ class Gates(unittest.TestCase):
 				(installed / "COPYRIGHT").unlink()
 				with self.assertRaises(FileNotFoundError):
 					verify_resources(installed.parent)
+
+
+class WebView2(unittest.TestCase):
+	"""7-Zip and PowerShell are replaced; the Windows job runs them on the real installers."""
+
+	@staticmethod
+	def tools(signature: dict[str, str], payload: str | None) -> Callable[..., str]:
+		def run(*args: str, cwd: Path | None = None) -> str:
+			if args[0] == "powershell":
+				return json.dumps(signature)
+			output: Path = Path(next(a for a in args if a.startswith("-o"))[2:])
+			if payload is not None:
+				(output / payload).parent.mkdir(parents=True, exist_ok=True)
+				(output / payload).write_bytes(b"MZ")
+			return ""
+
+		return run
+
+	def check(self, signature: dict[str, str], payload: str | None) -> None:
+		with tempfile.TemporaryDirectory() as temporary:
+			with patch("verify.run", side_effect=self.tools(signature, payload)):
+				verify_webview2_offline(Path("app.msi"), Path(temporary) / "webview2")
+
+	def test_the_msi_carries_microsofts_signed_offline_installer(self) -> None:
+		stream: str = "Binary.MicrosoftEdgeWebView2RuntimeInstaller.exe"
+		microsoft: str = "CN=Microsoft Corporation, O=Microsoft Corporation, C=US"
+		self.check({"status": "Valid", "signer": microsoft, "version": "1.0"}, stream)
+		with self.assertRaisesRegex(ValueError, "cannot install WebView2 offline"):
+			self.check({"status": "Valid", "signer": microsoft, "version": "1.0"}, None)
+		with self.assertRaisesRegex(ValueError, "not signed by Microsoft"):
+			self.check({"status": "NotSigned", "signer": "", "version": "1.0"}, stream)
+		with self.assertRaisesRegex(ValueError, "not signed by Microsoft"):
+			self.check(
+				{
+					"status": "Valid",
+					"signer": "CN=Someone, O=Someone",
+					"version": "1.0",
+				},
+				stream,
+			)
+
+	def test_the_student_installer_carries_no_webview2(self) -> None:
+		signature: dict[str, str] = {}
+		with tempfile.TemporaryDirectory() as temporary:
+			tools: Callable[..., str] = self.tools(
+				signature, "$TEMP/MicrosoftEdgeWebview2Setup.exe"
+			)
+			with patch("verify.run", side_effect=tools):
+				with self.assertRaisesRegex(ValueError, "should download WebView2"):
+					verify_windows(Path("app-setup.exe"), Path(temporary))
 
 
 if __name__ == "__main__":
