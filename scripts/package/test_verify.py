@@ -139,9 +139,13 @@ class WebView2(unittest.TestCase):
 		return run
 
 	def check(self, signature: dict[str, str], payload: str | None) -> None:
-		with tempfile.TemporaryDirectory() as temporary:
-			with patch("verify.run", side_effect=self.tools(signature, payload)):
-				verify_webview2_offline(Path("app.msi"), Path(temporary) / "webview2")
+		# Not into the summary of the Actions step running these tests.
+		with (
+			tempfile.TemporaryDirectory() as temporary,
+			patch("verify.run", side_effect=self.tools(signature, payload)),
+			patch("verify.summarize"),
+		):
+			verify_webview2_offline(Path("app.msi"), Path(temporary) / "webview2")
 
 	def test_the_msi_carries_microsofts_signed_offline_installer(self) -> None:
 		stream: str = "Binary.MicrosoftEdgeWebView2RuntimeInstaller.exe"
