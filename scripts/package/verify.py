@@ -185,8 +185,9 @@ def verify_webview2_offline(installer: Path, extracted: Path) -> None:
 			f"{installer}: {stream} is not signed by Microsoft: {signature}"
 		)
 	line: str = (
-		f"`{installer.name}` carries WebView2 {signature['version']}"
-		f" ({payload.stat().st_size} bytes, SHA256 {digest(payload)}), signed by Microsoft"
+		f"`{installer.name}` carries Microsoft's WebView2 standalone installer, file"
+		f" version {signature['version']} (the installer's, not the runtime's),"
+		f" {payload.stat().st_size} bytes, SHA256 {digest(payload)}"
 	)
 	LOG.info("%s", line)
 	summarize(line)
