@@ -28,7 +28,7 @@ macOS 的 CLI 与 dmg 都用 Developer ID 签名并经苹果公证。学生从�
 | Secret | 内容 |
 | --- | --- |
 | `APPLE_CERTIFICATE` | Developer ID Application 证书连同私钥导出的 `.p12`，base64 编码 |
-| `APPLE_CERTIFICATE_PASSWORD` | 导出 `.p12` 时设的密码 |
+| `APPLE_CERTIFICATE_PASSWORD` | 导出 `.p12` 时设的密码；导出时不设密码，就不添加这一项 |
 | `APPLE_SIGNING_IDENTITY` | 证书的完整名称 `Developer ID Application: 名称 (团队 ID)`，或其 SHA-1 |
 | `APPLE_API_ISSUER` | App Store Connect API 的 Issuer ID |
 | `APPLE_API_KEY` | 该 API 密钥的 Key ID（10 位） |
@@ -38,7 +38,7 @@ API 密钥在 App Store Connect 的 **用户和访问 → 集成** 中创建，�
 
 ```fish
 base64 -i DeveloperID.p12 | gh secret set APPLE_CERTIFICATE
-gh secret set APPLE_CERTIFICATE_PASSWORD
+gh secret set APPLE_CERTIFICATE_PASSWORD  # 仅当 .p12 设了密码
 gh secret set APPLE_SIGNING_IDENTITY --body 'Developer ID Application: 名称 (团队 ID)'
 gh secret set APPLE_API_ISSUER --body 'Issuer ID'
 gh secret set APPLE_API_KEY --body 'Key ID'

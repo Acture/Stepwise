@@ -99,7 +99,7 @@ class Credentials(Tools):
 			ValueError, "APPLE_CERTIFICATE, APPLE_SIGNING_IDENTITY, APPLE_API_KEY$"
 		):
 			required(environment, CREDENTIALS)
-		self.assertEqual(required(credentials(), CREDENTIALS)[2], IDENTITY)
+		self.assertEqual(required(credentials(), CREDENTIALS)[1], IDENTITY)
 
 	def test_malformed_credentials_stop_before_any_keychain_exists(self) -> None:
 		fake(self.bin, "security", "")
@@ -151,6 +151,12 @@ class Credentials(Tools):
 		self.assertIn("-T /usr/bin/codesign", calls[3])
 		self.assertNotIn("-A", calls[3].split())
 		self.assertFalse((self.root / "stepwise-signing.p12").exists())
+		# A .p12 exported without a password is imported with an empty one.
+		self.calls.write_text("")
+		environment: dict[str, str] = credentials()
+		del environment["APPLE_CERTIFICATE_PASSWORD"]
+		setup(environment, self.root)
+		self.assertIn(" -P  -T /usr/bin/codesign", self.recorded()[3])
 		key: Path = Path(made["notaryKey"])
 		self.assertEqual(key.read_text(encoding="utf-8"), KEY + "\n")
 		self.assertEqual(stat.S_IMODE(key.stat().st_mode), 0o600)

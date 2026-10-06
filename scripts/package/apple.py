@@ -24,9 +24,10 @@ import time
 LOG: logging.Logger = logging.getLogger(__name__)
 
 # Every one is required: a macOS package is never signed ad hoc, and never ships unnotarized.
+# APPLE_CERTIFICATE_PASSWORD is not among them: a .p12 exported without a password needs none,
+# and a missing or wrong one fails the import, before the build.
 CREDENTIALS: tuple[str, ...] = (
 	"APPLE_CERTIFICATE",
-	"APPLE_CERTIFICATE_PASSWORD",
 	"APPLE_SIGNING_IDENTITY",
 	"APPLE_API_ISSUER",
 	"APPLE_API_KEY",
@@ -67,7 +68,7 @@ def run(*args: str, hidden: Sequence[str] = ()) -> subprocess.CompletedProcess[s
 	"""Runs a command and returns its output. The command is logged, and a failure reported
 	with what the command printed, with every hidden value (a password, a key's identity)
 	masked."""
-	shown: str = " ".join("***" if arg in hidden else arg for arg in args)
+	shown: str = " ".join("***" if arg and arg in hidden else arg for arg in args)
 	LOG.info("%s", shown)
 	result: subprocess.CompletedProcess[str] = subprocess.run(
 		args, capture_output=True, text=True, encoding="utf-8"
@@ -118,9 +119,8 @@ def setup(environment: Mapping[str, str], temporary: Path) -> dict[str, str]:
 	"""Checks that every credential is there, imports the Developer ID identity into a keychain
 	of its own on the user's search list, where `codesign` and `tauri build` find it by name,
 	and writes the notary key to a file only this user can read."""
-	certificate, password, identity, issuer, key, private_key = required(
-		environment, CREDENTIALS
-	)
+	certificate, identity, issuer, key, private_key = required(environment, CREDENTIALS)
+	password: str = environment.get("APPLE_CERTIFICATE_PASSWORD", "")
 	# Checked as given: Tauri and notarytool receive these values unchanged.
 	if not re.fullmatch(r"[A-Z0-9]{10}", key):
 		raise ValueError("APPLE_API_KEY is not an App Store Connect key ID")
