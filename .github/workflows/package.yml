@@ -420,6 +420,8 @@ jobs:
       matrix:
         include:
           - image: debian:11
+            # Artifact names cannot hold the image's colon.
+            name: debian-11
             # Bullseye's old security mirror can retain indexes after removing the packages.
             # Install the test driver from the signed distribution archive instead.
             install: |
@@ -427,8 +429,10 @@ jobs:
               apt-get -o Acquire::Check-Valid-Until=false -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update
               apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 install -y python3
           - image: fedora:43
+            name: fedora-43
             install: dnf install -y python3 coreutils
           - image: alpine:3.22
+            name: alpine-3.22
             install: apk add --no-cache python3
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -469,7 +473,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
         with:
-          name: cli-evidence-${{ strategy.job-index }}-container
+          name: cli-evidence-container-${{ matrix.name }}
           path: target/cli-evidence
           if-no-files-found: error
           retention-days: 7
