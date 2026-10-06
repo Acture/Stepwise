@@ -1,10 +1,9 @@
 name: Test
 
+# Pull requests only, and only the tests for what the pull request touches (changes.py).
 on:
-  push:
   pull_request:
-  workflow_dispatch:
-  # Each packaging workflow's first job: it packages only a commit whose tests pass.
+  # Each packaging workflow's first job: it packages only a commit whose family's tests all pass.
   workflow_call:
     inputs:
       family:
@@ -16,14 +15,36 @@ permissions:
   contents: read
 
 # Called from a packaging workflow this is evaluated in the caller's context, so the workflow in
-# the name keeps a packaging run's tests out of the group a Test run on the same ref takes. A run
-# started by hand queues behind one already running in its group instead of cancelling it.
+# the name keeps a packaging run's tests out of the group a pull request's run takes. A packaging
+# run, started by hand, queues behind one already running in its group instead of cancelling it.
 concurrency:
   group: test-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
 
 jobs:
+  changes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      cli: ${{ steps.changes.outputs.cli }}
+      desktop: ${{ steps.changes.outputs.desktop }}
+      scripts: ${{ steps.changes.outputs.scripts }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      # Outside a pull request both are empty, and every test of the family runs.
+      - id: changes
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+          FAMILY: ${{ inputs.family }}
+        run: python3 .github/scripts/changes.py --base "$BASE" --head "$HEAD" --family "$FAMILY"
+
   scripts:
+    needs: changes
+    if: needs.changes.outputs.scripts == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -36,7 +57,8 @@ jobs:
       - run: python -m unittest discover -s .github/scripts -v
 
   cli:
-    if: inputs.family != 'desktop'
+    needs: changes
+    if: needs.changes.outputs.cli == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -58,7 +80,8 @@ jobs:
       - run: cargo +stable run --locked -- --logic --proof raa --check-proof tests/fixtures/raa.json
 
   desktop:
-    if: inputs.family != 'cli'
+    needs: changes
+    if: needs.changes.outputs.desktop == 'true'
     strategy:
       fail-fast: false
       matrix:

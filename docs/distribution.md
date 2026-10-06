@@ -12,7 +12,7 @@ CLI 与桌面各有一个打包工作流：[package-cli.yml](../.github/workflow
 4. 等待测试与构建结束。工作流先跑这一边的测试（[test.yml](../.github/workflows/test.yml)），通过后才打包；打包作业会拆开自己打出的文件逐项检查。
 5. 从该次运行的 **Artifacts** 下载 `stepwise-cli` 或 `stepwise-desktop`，解压到独立目录。
 
-只有每个平台都通过时，运行才产出这份汇总包及其 `SHA256SUMS`；某个平台失败时，其他平台的单独产物仍保留在该次运行中。工作流不安装软件、不启动程序，只拆开打出的文件检查。格式与静态检查在 [lint.yml](../.github/workflows/lint.yml)，随每次推送运行，打包不等它。
+只有每个平台都通过时，运行才产出这份汇总包及其 `SHA256SUMS`；某个平台失败时，其他平台的单独产物仍保留在该次运行中。工作流不安装软件、不启动程序，只拆开打出的文件检查。格式与静态检查在 [lint.yml](../.github/workflows/lint.yml)，与测试一样只在 PR 上运行，并且只检查 PR 改到的部分（由 [changes.py](../.github/scripts/changes.py) 判断）；打包不等它。
 
 | 程序 | 平台与格式 |
 | --- | --- |
