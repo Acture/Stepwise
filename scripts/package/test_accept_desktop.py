@@ -12,7 +12,6 @@ from unittest.mock import patch
 
 from accept_desktop import (
 	SETTLE,
-	gatekeeper_accepts,
 	identify,
 	missing_libraries,
 	uncarried,
@@ -61,23 +60,6 @@ class Installers(unittest.TestCase):
 				identify(root, name)["sha256"],
 				hashlib.sha256(b"changed bytes").hexdigest(),
 			)
-
-
-class Gatekeeper(unittest.TestCase):
-	def test_the_expected_verdict_follows_the_signature(self) -> None:
-		self.assertFalse(
-			gatekeeper_accepts(
-				"Identifier=io.github.acture.stepwise\nSignature=adhoc\n"
-			)
-		)
-		self.assertTrue(
-			gatekeeper_accepts(
-				"Authority=Developer ID Application: Someone (TEAM123456)\n"
-				"Authority=Developer ID Certification Authority\n"
-			)
-		)
-		with self.assertRaisesRegex(ValueError, "neither"):
-			gatekeeper_accepts("Authority=Apple Development: Someone (TEAM123456)\n")
 
 
 class Libraries(unittest.TestCase):

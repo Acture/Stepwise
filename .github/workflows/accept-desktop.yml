@@ -370,8 +370,8 @@ jobs:
           path: downloaded
       - name: The exact installer, held to its packaging job's hash
         run: python scripts/package/accept_desktop.py --evidence evidence identify --artifacts downloaded --name "$INSTALLER"
-      # Gatekeeper's verdict is asserted for the signature the app has today: an ad-hoc one must
-      # be refused, a Developer ID one accepted.
+      # The dmg and the app copied out of it must each be signed with Developer ID, carry a
+      # stapled ticket, and be accepted by this Mac's Gatekeeper as notarized.
       - name: Verify the dmg and copy its app out
         id: install
         env:

@@ -7,7 +7,7 @@ from __future__ import annotations
 import argparse
 from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 import hashlib
 import json
 import logging
@@ -23,6 +23,8 @@ import tempfile
 import threading
 import time
 from typing import IO
+
+from apple import Signature, gatekeeper, signature, stapled
 
 LOG: logging.Logger = logging.getLogger(__name__)
 
@@ -52,16 +54,6 @@ def identify(artifacts: Path, name: str) -> dict[str, str]:
 			f"{name}: downloaded bytes differ from the packaging job's SHA256"
 		)
 	return {"installer": name, "path": str(installer.resolve()), "sha256": actual}
-
-
-def gatekeeper_accepts(signature: str) -> bool:
-	"""What Gatekeeper must say of an app, from `codesign -dv`'s description of its signature:
-	reject an ad-hoc signature, accept a Developer ID one. Anything else is neither."""
-	if re.search(r"^Signature=adhoc$", signature, re.MULTILINE):
-		return False
-	if re.search(r"^Authority=Developer ID Application: ", signature, re.MULTILINE):
-		return True
-	raise ValueError(f"neither an ad-hoc nor a Developer ID signature:\n{signature}")
 
 
 def run(*args: str) -> subprocess.CompletedProcess[str]:
@@ -121,9 +113,10 @@ def install(installer: Path, evidence: Path) -> dict[str, str]:
 	return {"app": str(app), "appSha256": digest(app)}
 
 
-def unpack_dmg(dmg: Path, destination: Path, target: str) -> dict[str, str]:
-	"""Verifies the dmg, copies its app out and checks the copy's architecture, signature and
-	Gatekeeper's verdict on it; returns where the copy's executable is."""
+def unpack_dmg(dmg: Path, destination: Path, target: str) -> dict[str, object]:
+	"""Verifies the dmg, copies its app out and checks the copy's architecture; then that the
+	dmg and the app are both signed with Developer ID, carry a stapled notarization ticket, and
+	are accepted by this Mac's Gatekeeper as notarized. Returns where the copy's executable is."""
 	show("hdiutil", "verify", str(dmg))
 	mount: Path = Path(tempfile.mkdtemp(prefix="stepwise-dmg-"))
 	show(
@@ -145,34 +138,16 @@ def unpack_dmg(dmg: Path, destination: Path, target: str) -> dict[str, str]:
 	architecture: str = run("lipo", "-archs", str(binary)).stdout.strip()
 	if architecture != wanted:
 		raise ValueError(f"{dmg.name}: expected {wanted} alone, got {architecture}")
-	show("codesign", "--verify", "--deep", "--strict", "--verbose=2", str(app))
-	# codesign describes a signature on stderr.
-	signature: str = run("codesign", "-dv", "--verbose=4", str(app)).stderr
-	accepts: bool = gatekeeper_accepts(signature)
-	# A Mac that assesses nothing accepts anything, so its verdict says nothing either way.
-	assessments: str = run("spctl", "--status").stdout.strip()
-	if assessments != "assessments enabled":
-		raise ValueError(f"Gatekeeper is not assessing on this Mac: {assessments}")
-	assessment: subprocess.CompletedProcess[str] = subprocess.run(
-		["spctl", "--assess", "--type", "execute", "-vv", str(app)],
-		capture_output=True,
-		text=True,
-		encoding="utf-8",
-	)
-	verdict: str = (assessment.stdout + assessment.stderr).strip()
-	LOG.info("Gatekeeper (exit %d): %s", assessment.returncode, verdict)
-	# spctl exits 0 when it accepts and 3 when it rejects; anything else is no verdict at all.
-	if assessment.returncode not in (0, 3) or (assessment.returncode == 0) != accepts:
-		raise ValueError(
-			f"{dmg.name}: Gatekeeper should {'accept' if accepts else 'reject'} this signature, "
-			f"and spctl exited {assessment.returncode}: {verdict}"
-		)
+	signed: Signature = signature(app, executable=True)
 	return {
 		"app": str(binary),
 		"architecture": architecture,
-		"signature": "Developer ID" if accepts else "ad-hoc",
-		"gatekeeper": verdict,
-		"assessments": assessments,
+		"authority": signed.authority,
+		"team": signed.team,
+		"timestamp": signed.timestamp,
+		"dmgSignature": asdict(signature(dmg, executable=False)),
+		"stapled": {"dmg": stapled(dmg), "app": stapled(app)},
+		"gatekeeper": {"dmg": gatekeeper(dmg, "dmg"), "app": gatekeeper(app, "app")},
 	}
 
 
