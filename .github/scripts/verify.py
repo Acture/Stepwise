@@ -121,8 +121,8 @@ def glibc_report(tree: Path, binary: Path, image: Path, output: Path) -> None:
 
 def verify_macos(installer: Path, extracted: Path, target: str) -> None:
 	"""`tauri build` only warns when it cannot notarize, and ignores a failed staple, so its
-	success says nothing about either. A ticket is stapled only to code Apple notarized, which
-	takes a Developer ID signature, so the shipped dmg's and its app's tickets are checked here."""
+	success says nothing about either. Apple notarizes only Developer ID code, so the app's
+	signature and the tickets stapled to the shipped dmg and to its app are checked here."""
 	stapled(installer)
 	run(
 		"hdiutil",
