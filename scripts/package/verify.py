@@ -158,8 +158,8 @@ def verify_macos(installer: Path, extracted: Path, target: str) -> None:
 	finally:
 		run("hdiutil", "detach", str(extracted))
 	summarize(
-		f"`{installer.name}` and its app: {signed.authority}, timestamped, hardened runtime,"
-		" notarization tickets stapled"
+		f"`{installer.name}` and its app: Developer ID Application, team {signed.team},"
+		" timestamped, hardened runtime, notarization tickets stapled"
 	)
 
 

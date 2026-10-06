@@ -14,12 +14,14 @@ from unittest.mock import patch
 
 from apple import (
 	CREDENTIALS,
+	Signature,
 	developer_id,
 	notarize,
 	notarized,
 	required,
 	setup,
 	signing_identity,
+	staple_ticket,
 )
 
 TEAM: str = "A1B2C3D4E5"
@@ -76,12 +78,12 @@ class Tools(unittest.TestCase):
 		self.bin.mkdir()
 		self.calls: Path = self.root / "calls"
 		self.calls.touch()
-		environment = patch.dict(
-			os.environ,
-			{"PATH": f"{self.bin}:{os.environ['PATH']}", "CALLS": str(self.calls)},
+		self.enterContext(
+			patch.dict(
+				os.environ,
+				{"PATH": f"{self.bin}:{os.environ['PATH']}", "CALLS": str(self.calls)},
+			)
 		)
-		environment.start()
-		self.addCleanup(environment.stop)
 
 	def recorded(self) -> list[str]:
 		return self.calls.read_text(encoding="utf-8").splitlines()
@@ -173,7 +175,7 @@ class Credentials(Tools):
 
 class Signatures(unittest.TestCase):
 	def test_a_developer_id_signature_is_read_back(self) -> None:
-		signature = developer_id(SIGNED)
+		signature: Signature = developer_id(SIGNED)
 		self.assertEqual(signature.authority, IDENTITY)
 		self.assertEqual(signature.team, TEAM)
 		self.assertEqual(signature.timestamp, "6 Oct 2026 at 10:00:00")
@@ -317,6 +319,26 @@ class Notarization(Tools):
 		)
 		self.assertEqual(dmg.read_bytes(), b"dmgticket")
 		self.assertEqual(report["sha256"], hashlib.sha256(b"dmgticket").hexdigest())
+
+	def test_stapling_is_tried_again_before_it_fails(self) -> None:
+		# Fails while the ticket is still on its way to Apple's servers, here for two attempts.
+		fake(
+			self.bin,
+			"xcrun",
+			'case "$1 $2" in\n'
+			"  'stapler staple') printf x >> \"$CALLS.staple\";"
+			' [ "$(wc -c < "$CALLS.staple")" -gt 2 ] || { echo "Record not found"; exit 65; } ;;\n'
+			"esac\n",
+		)
+		dmg: Path = self.root / "Stepwise.dmg"
+		dmg.write_bytes(b"dmg")
+		with patch("apple.STAPLE_BACKOFF", 0.0):
+			staple_ticket(dmg)
+			self.assertEqual(len(self.recorded()), 3)
+			with self.assertRaisesRegex(RuntimeError, "stapling failed 3 times"):
+				fake(self.bin, "xcrun", "echo 'Record not found'; exit 65\n")
+				staple_ticket(dmg)
+		self.assertEqual(len(self.recorded()), 6)
 
 	def test_missing_notary_credentials_fail_before_submitting(self) -> None:
 		self.notary("Accepted")

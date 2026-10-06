@@ -499,7 +499,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - uses: oven-sh/setup-bun@v2
+      # Pinned to a commit like tauri-action below: this Bun runs `tauri build`, which signs.
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
@@ -547,7 +548,7 @@ jobs:
       # Pinned to a commit: on macOS it runs with the notary key and the signing identity.
       # There APPLE_SIGNING_IDENTITY overrides the configuration's ad-hoc "-", `tauri build` signs
       # the app and the dmg, and notarizes and staples the app; APPLE_API_KEY_PATH came from the
-      # keychain step. Elsewhere these are empty and unread.
+      # keychain step. Elsewhere these are empty and unused.
       - uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1.0.0
         env:
           APPLE_SIGNING_IDENTITY: ${{ runner.os == 'macOS' && secrets.APPLE_SIGNING_IDENTITY || '' }}
@@ -558,13 +559,16 @@ jobs:
           tauriScript: bun ../ui/node_modules/@tauri-apps/cli/tauri.js
           args: --target ${{ matrix.target }} --config tauri.package.conf.json -- --locked
       # Tauri signs the dmg but neither notarizes nor staples it. Stapling rewrites the dmg, so
-      # this comes before verify.py copies and hashes it.
+      # this comes before verify.py copies and hashes it. Tauri ignores a failed staple of the
+      # app the dmg was made from, so that is checked before the dmg is submitted.
       - name: Notarize and staple the dmg
         if: runner.os == 'macOS'
         env:
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
-        run: python scripts/package/apple.py notarize --staple target/"$TARGET"/release/bundle/dmg/*.dmg
+        run: |
+          xcrun stapler validate target/"$TARGET"/release/bundle/macos/Stepwise.app
+          python scripts/package/apple.py notarize --staple target/"$TARGET"/release/bundle/dmg/*.dmg
       # Windows builds the student's NSIS installer above, which downloads WebView2 when it is
       # missing. The MSI is for machines an administrator sets up, often offline: bundled from the
       # same executable, it carries Microsoft's standalone WebView2 installer, fetched now.

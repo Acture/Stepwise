@@ -23,7 +23,7 @@ Artifacts 保留七天。需要长期提供下载时，应另外发布所需产�
 
 ## macOS 签名与公证
 
-macOS 的 CLI 与 dmg 都用 Developer ID 签名并经苹果公证，学生从浏览器下载后可直接打开，不必绕过 Gatekeeper。工作流没有退回 ad-hoc 签名的路径：在仓库 **Settings → Secrets and variables → Actions** 中缺任何一项，或格式不对，macOS 作业都会在构建前失败。
+macOS 的 CLI 与 dmg 都用 Developer ID 签名并经苹果公证。学生从浏览器下载的 dmg 可直接打开，不必绕过 Gatekeeper；CLI 在终端中运行，首次运行需联网供 Gatekeeper 核验。工作流没有退回 ad-hoc 签名的路径：在仓库 **Settings → Secrets and variables → Actions** 中缺任何一项，或格式不对，macOS 作业都会在构建前失败。
 
 | Secret | 内容 |
 | --- | --- |
@@ -47,7 +47,7 @@ gh secret set APPLE_API_PRIVATE_KEY < AuthKey_KEYID.p8
 
 各作业的做法：
 
-- CLI 二进制在打包前以 hardened runtime 和安全时间戳签名，压成 zip 提交公证。单独的可执行文件装订不了票据，tar.gz 里是同一份签名字节，Gatekeeper 首次运行时联网核验，离线电脑上会拒绝运行。
+- CLI 二进制在打包前以 hardened runtime 和安全时间戳签名，压成 zip 提交公证。单独的可执行文件装订不了票据，tar.gz 里是同一份签名字节。从浏览器下载、解压出来的副本带隔离属性，首次在终端运行时 Gatekeeper 联网核验，离线时会被拒绝。
 - 桌面：`tauri build` 用同一身份签名 `.app` 和 dmg，并公证 `.app`、装订票据；工作流随后公证 dmg 并装订，然后才提取检查和计算哈希。
 - 打包作业从产物中读回签名的证书、团队、时间戳与 hardened runtime，以及装订的票据。验收作业在三台 Mac 上要求 Gatekeeper 判定为 `Notarized Developer ID`；CLI 的判定依赖联网。
 

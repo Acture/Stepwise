@@ -1,6 +1,7 @@
 """Developer ID signing and notarization for the macOS packaging jobs, and the checks that read a
 signature, a stapled ticket and Gatekeeper's verdict back. Credentials come only from the
-environment, and nothing here prints them."""
+environment. The certificate, its password, the notary key and its IDs are never printed; the
+signing identity is, as every signature names it, though GitHub masks it in a job given it."""
 
 from __future__ import annotations
 
@@ -36,6 +37,10 @@ NOTARY: tuple[str, ...] = ("APPLE_API_KEY", "APPLE_API_ISSUER", "APPLE_API_KEY_P
 SUBMITTABLE: frozenset[str] = frozenset({".dmg", ".pkg", ".zip"})
 # Apple: most submissions finish within 5 minutes, 98 percent within 15.
 NOTARY_TIMEOUT: str = "20m"
+# Right after an Accepted verdict the ticket may not have reached Apple's servers yet, and
+# stapling then fails with "Record not found"; Apple's advice is to try again.
+STAPLE_ATTEMPTS: int = 3
+STAPLE_BACKOFF: float = 30.0
 # How Gatekeeper is asked about each kind of item. `--type execute` judges only apps, so a bare
 # executable is assessed as something to install, and a dmg by its own signature.
 ASSESSMENTS: dict[str, tuple[str, ...]] = {
@@ -198,8 +203,30 @@ def sign(
 		"--sign",
 		identity,
 		str(binary),
-		hidden=(identity,),
 	)
+
+
+def staple_ticket(path: Path) -> None:
+	for attempt in range(1, STAPLE_ATTEMPTS + 1):
+		result: subprocess.CompletedProcess[str] = subprocess.run(
+			["xcrun", "stapler", "staple", str(path)],
+			capture_output=True,
+			text=True,
+			encoding="utf-8",
+		)
+		if result.returncode == 0:
+			return
+		LOG.warning(
+			"xcrun stapler staple %s, attempt %d of %d, exited %d: %s",
+			path.name,
+			attempt,
+			STAPLE_ATTEMPTS,
+			result.returncode,
+			(result.stdout + result.stderr).strip(),
+		)
+		if attempt < STAPLE_ATTEMPTS:
+			time.sleep(STAPLE_BACKOFF * attempt)
+	raise RuntimeError(f"{path.name}: stapling failed {STAPLE_ATTEMPTS} times")
 
 
 def stapled(path: Path) -> str:
@@ -274,7 +301,7 @@ def notarize(
 		)
 	if staple:
 		# Stapling writes the ticket into the dmg, so its bytes are hashed only after this.
-		run("xcrun", "stapler", "staple", str(path))
+		staple_ticket(path)
 		stapled(path)
 	return {
 		"file": path.name,
@@ -456,8 +483,8 @@ def main() -> None:
 			args.evidence.mkdir(parents=True, exist_ok=True)
 			(args.evidence / "signature.json").write_text(text + "\n", encoding="utf-8")
 		summarize(
-			f"`{args.binary.name}` SHA256 `{checked['sha256']}`: {checked['authority']},"
-			f" timestamp {checked['timestamp']}"
+			f"`{args.binary.name}` SHA256 `{checked['sha256']}`: Developer ID Application,"
+			f" team {checked['team']}, timestamp {checked['timestamp']}"
 			+ (", Gatekeeper: notarized Developer ID" if args.gatekeeper else "")
 		)
 	else:
