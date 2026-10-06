@@ -13,8 +13,6 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-mod support;
-
 #[derive(Serialize)]
 struct Run {
 	args: Vec<String>,
@@ -60,27 +58,20 @@ fn squashed(text: &str) -> String {
 
 fn drive(runs: Vec<Run>) -> Vec<Capture> {
 	let request: Request = Request {
-		binary: support::binary().to_string_lossy().into(),
+		binary: env!("CARGO_BIN_EXE_stepwise").into(),
 		columns: 80,
 		rows: 24,
 		runs,
 	};
-	let script: &str = if cfg!(windows) {
-		"terminal_conpty.py"
-	} else {
-		"terminal_smoke.py"
-	};
-	let mut child: std::process::Child =
-		Command::new(if cfg!(windows) { "python" } else { "python3" })
-			.arg(
-				std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-					.join("tests")
-					.join(script),
-			)
-			.stdin(Stdio::piped())
-			.stdout(Stdio::piped())
-			.spawn()
-			.expect("python3 must be installed for the explicit terminal test");
+	let mut child: std::process::Child = Command::new("python3")
+		.arg(concat!(
+			env!("CARGO_MANIFEST_DIR"),
+			"/tests/terminal_smoke.py"
+		))
+		.stdin(Stdio::piped())
+		.stdout(Stdio::piped())
+		.spawn()
+		.expect("python3 must be installed for the explicit terminal test");
 	child
 		.stdin
 		.take()
@@ -104,14 +95,14 @@ fn drive(runs: Vec<Run>) -> Vec<Capture> {
 		);
 		assert_eq!(
 			capture.terminal_after, capture.terminal_before,
-			"terminal input mode changed after exit (stty on Unix, GetConsoleMode on Windows)"
+			"stty settings changed after exit"
 		);
 	}
 	captures
 }
 
 #[test]
-#[ignore = "requires a pty (ConPTY on Windows) and Python"]
+#[ignore = "requires a pty and python3"]
 fn unicode_answers_resume_and_no_save_preserves_the_file() {
 	let directory: tempfile::TempDir = tempfile::tempdir().unwrap();
 	let progress: std::path::PathBuf = directory.path().join("中文 进度.json");
@@ -278,8 +269,6 @@ fn the_inline_adapter_teaches_and_saves_through_a_real_terminal() {
 		!expression.raw.contains("\u{1b}[2J"),
 		"cleared the whole screen"
 	);
-	// Windows changes mouse input through WinAPI, checked by the mode snapshot above.
-	#[cfg(unix)]
 	assert!(
 		expression.raw.contains("\u{1b}[?1000l") || expression.raw.contains("\u{1b}[?1003l"),
 		"left mouse capture enabled"

@@ -7,10 +7,10 @@
 1. 确认仓库已配置 [macOS 签名凭据](#macos-签名与公证)。缺少时，macOS 的 CLI 与桌面作业在构建前失败。
 2. 将待打包代码提交到远端分支。
 3. 在 GitHub 的 **Actions → Package → Run workflow** 中选择该分支，启动 [.github/workflows/package.yml](../.github/workflows/package.yml)。
-4. 等待检查、构建和产物验收结束。工作流先调用完整的 `Check`，通过后才打包。
+4. 等待检查与构建结束。工作流先调用完整的 `Check`，通过后才打包；打包作业会拆开自己打出的文件逐项检查。
 5. 从该次运行的 **Artifacts** 下载 `stepwise`，解压到独立目录。
 
-`stepwise` 包含通过验收的 CLI 或桌面完整平台组及 `SHA256SUMS`。CLI 与桌面分别验收，其中一组失败时，另一组仍可交付；下载前先确认汇总包里确实含有所需平台。
+`stepwise` 包含打包作业全部通过的 CLI 或桌面完整平台组及 `SHA256SUMS`。CLI 与桌面分别汇总，其中一组失败时，另一组仍可交付；下载前先确认汇总包里确实含有所需平台。工作流只检查打出的文件本身，不在任何系统上安装或运行它们。
 
 | 程序 | 平台与格式 |
 | --- | --- |
@@ -49,7 +49,7 @@ gh secret set APPLE_API_PRIVATE_KEY < AuthKey_KEYID.p8
 
 - CLI 二进制在打包前以 hardened runtime 和安全时间戳签名，压成 zip 提交公证。单独的可执行文件装订不了票据，tar.gz 里是同一份签名字节。从浏览器下载、解压出来的副本带隔离属性，首次在终端运行时 Gatekeeper 联网核验，离线时会被拒绝。
 - 桌面：`tauri build` 用同一身份签名 `.app` 和 dmg，并公证 `.app`、装订票据；工作流随后公证 dmg 并装订，然后才提取检查和计算哈希。
-- 打包作业从产物中读回签名的证书、团队、时间戳与 hardened runtime，以及装订的票据。验收作业在三台 Mac 上要求 Gatekeeper 判定为 `Notarized Developer ID`；CLI 的判定依赖联网。
+- 公证结果必须为 Accepted。打包作业检查交付的 dmg 及其中的 `.app` 都装订了票据，然后才计算哈希。
 
 一次运行提交六项公证（两个 `.app`、两个 dmg、两个 CLI），苹果建议每天不超过 75 次。签名身份与公证密钥只放在作业的临时钥匙串和临时文件中，作业结束时删除。本地 `bun run app` 仍按 [tauri.macos.conf.json](../src/desktop/src-tauri/tauri.macos.conf.json) 做 ad-hoc 签名，只供本机使用。
 
@@ -65,11 +65,11 @@ Linux 使用 `sha256sum -c SHA256SUMS`。Windows 可在 PowerShell 中运行 `Ge
 
 ## 修改打包配置
 
-- 平台、归档命名和构建入口在 [package.yml](../.github/workflows/package.yml)。先更新相应测试，再修改构建或验收步骤。
+- 平台、归档命名和构建入口在 [package.yml](../.github/workflows/package.yml)。先更新相应测试，再修改构建或检查步骤。
 - CLI 的 Rust 依赖声明由 [about.toml](../about.toml) 和 [about.hbs](../about.hbs) 生成。新增许可证种类前应阅读许可证；缺少版权信息时补充校验过的来源，不用泛化 SPDX 文本代替。
 - 桌面页面声明由 [licenses.ts](../src/desktop/ui/licenses.ts) 生成，安装资源映射在 [tauri.package.conf.json](../src/desktop/src-tauri/tauri.package.conf.json)。
 - Windows 先按 [tauri.windows.conf.json](../src/desktop/src-tauri/tauri.windows.conf.json) 构建并打出 NSIS，再用同一个可执行文件按 [tauri.msi.conf.json](../src/desktop/src-tauri/tauri.msi.conf.json) 打出 MSI。MSI 里的 WebView2 离线安装程序在打包时从微软下载最新版，不固定版本；提取检查确认它带有微软签名，并在运行摘要中记下版本与 SHA256。
-- macOS 签名、公证与读回检查在 [apple.py](../scripts/package/apple.py)。
-- 安装包提取、许可证、架构和动态库检查在 [scripts/package](../scripts/package/)；修改后运行 `python3 -m unittest discover -s scripts/package -v`。
+- macOS 签名与公证在 [apple.py](../.github/scripts/apple.py)，票据检查在 [verify.py](../.github/scripts/verify.py)。
+- 安装包提取、许可证、架构和动态库检查在 [.github/scripts](../.github/scripts/)；修改后运行 `python3 -m unittest discover -s .github/scripts -v`。
 
 验证必须检查从产物中提取的文件。新增平台或改变打包方式时，保持构建、提取检查与最终哈希针对同一份产物。

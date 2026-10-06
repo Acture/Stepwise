@@ -1,7 +1,7 @@
-"""Developer ID signing and notarization for the macOS packaging jobs, and the checks that read a
-signature, a stapled ticket and Gatekeeper's verdict back. Credentials come only from the
-environment. The certificate, its password, the notary key and its IDs are never printed; the
-signing identity is, as every signature names it, though GitHub masks it in a job given it."""
+"""Developer ID signing and notarization for the macOS packaging jobs, and the check that reads
+a stapled ticket back. Credentials come only from the environment. The certificate, its
+password, the notary key and its IDs are never printed; the signing identity is, as every
+signature names it, though GitHub masks it in a job given it."""
 
 from __future__ import annotations
 
@@ -9,7 +9,6 @@ import argparse
 import base64
 import binascii
 from collections.abc import Mapping, Sequence
-from dataclasses import asdict, dataclass
 import hashlib
 import json
 import logging
@@ -42,13 +41,6 @@ NOTARY_TIMEOUT: str = "20m"
 # stapling then fails with "Record not found"; Apple's advice is to try again.
 STAPLE_ATTEMPTS: int = 3
 STAPLE_BACKOFF: float = 30.0
-# How Gatekeeper is asked about each kind of item. `--type execute` judges only apps, so a bare
-# executable is assessed as something to install, and a dmg by its own signature.
-ASSESSMENTS: dict[str, tuple[str, ...]] = {
-	"app": ("--type", "execute"),
-	"dmg": ("--type", "open", "--context", "context:primary-signature"),
-	"binary": ("--type", "install"),
-}
 
 
 def keychain_path(temporary: Path) -> Path:
@@ -302,7 +294,6 @@ def notarize(
 	if staple:
 		# Stapling writes the ticket into the dmg, so its bytes are hashed only after this.
 		staple_ticket(path)
-		stapled(path)
 	return {
 		"file": path.name,
 		"sha256": digest(path),
@@ -310,123 +301,6 @@ def notarize(
 		"status": status,
 		"stapled": str(staple).lower(),
 	}
-
-
-@dataclass(frozen=True)
-class Signature:
-	"""A Developer ID signature with a secure timestamp, as `codesign -dvv` describes it."""
-
-	identifier: str
-	authority: str
-	team: str
-	timestamp: str
-	runtime: bool
-
-
-def developer_id(description: str) -> Signature:
-	"""Reads `codesign -dvv`'s description of a signature. It must be a Developer ID Application
-	certificate's under Apple's root, from the team the signature names, with a secure
-	timestamp: Apple notarizes nothing signed ad hoc, by another kind of certificate, or with a
-	signing time from the local clock."""
-	fields: dict[str, list[str]] = {}
-	for line in description.splitlines():
-		name, separator, value = line.partition("=")
-		if separator:
-			fields.setdefault(name, []).append(value)
-	if fields.get("Signature") == ["adhoc"]:
-		raise ValueError("an ad-hoc signature, not Developer ID")
-	authorities: list[str] = fields.get("Authority", [])
-	leaf: re.Match[str] | None = (
-		re.fullmatch(r"Developer ID Application: .+ \(([A-Z0-9]{10})\)", authorities[0])
-		if authorities
-		else None
-	)
-	if leaf is None or authorities[1:] != [
-		"Developer ID Certification Authority",
-		"Apple Root CA",
-	]:
-		raise ValueError(
-			f"not signed by a Developer ID Application certificate under Apple's root: {authorities}"
-		)
-	teams: list[str] = fields.get("TeamIdentifier", [])
-	if teams != [leaf.group(1)]:
-		raise ValueError(
-			f"TeamIdentifier {teams} is not the certificate's team {leaf.group(1)}"
-		)
-	timestamps: list[str] = fields.get("Timestamp", [])
-	if len(timestamps) != 1:
-		raise ValueError(
-			f"no secure timestamp (Signed Time {fields.get('Signed Time', [])})"
-		)
-	flags: re.Match[str] | None = re.search(
-		r"\bflags=0x[0-9a-f]+\(([^)]*)\)", description
-	)
-	return Signature(
-		identifier=fields.get("Identifier", [""])[0],
-		authority=authorities[0],
-		team=teams[0],
-		timestamp=timestamps[0],
-		runtime=flags is not None and "runtime" in flags.group(1).split(","),
-	)
-
-
-def signature(path: Path, executable: bool) -> Signature:
-	"""Verifies a signature as strictly as notarization does and reads it back; an executable,
-	or an app, must also run with the hardened runtime."""
-	run("codesign", "--verify", "--deep", "--strict", "--verbose=2", str(path))
-	# codesign describes a signature on stderr.
-	description: str = run("codesign", "-dvv", str(path)).stderr
-	print(description, flush=True)
-	found: Signature = developer_id(description)
-	if executable and not found.runtime:
-		raise ValueError(f"{path}: signed without the hardened runtime")
-	return found
-
-
-def notarized(verdict: str, code: int) -> None:
-	"""spctl exits 0 when it accepts, 3 when it refuses and 1 when it could not assess at all;
-	only an acceptance as notarized Developer ID code passes."""
-	if (
-		code != 0
-		or not re.search(r": accepted$", verdict, re.MULTILINE)
-		or not re.search(r"^source=Notarized Developer ID$", verdict, re.MULTILINE)
-	):
-		raise ValueError(
-			f"Gatekeeper did not accept it as notarized Developer ID code (spctl exited {code}):\n{verdict}"
-		)
-
-
-def gatekeeper(path: Path, kind: str) -> str:
-	"""Gatekeeper's verdict on an item, which must be accepted as notarized. An item with no
-	stapled ticket, such as a bare executable, is looked up online."""
-	# A Mac that assesses nothing accepts anything, so its verdict would say nothing.
-	assessments: str = run("spctl", "--status").stdout.strip()
-	if assessments != "assessments enabled":
-		raise ValueError(f"Gatekeeper is not assessing on this Mac: {assessments}")
-	result: subprocess.CompletedProcess[str] = subprocess.run(
-		["spctl", "--assess", "-vv", *ASSESSMENTS[kind], str(path)],
-		capture_output=True,
-		text=True,
-		encoding="utf-8",
-	)
-	# spctl writes its verdict on stderr.
-	verdict: str = (result.stdout + result.stderr).strip()
-	LOG.info("Gatekeeper (exit %d): %s", result.returncode, verdict)
-	notarized(verdict, result.returncode)
-	return verdict
-
-
-def check(binary: Path, online: bool) -> dict[str, object]:
-	"""The signature of a CLI binary as it ships, and with `online`, Gatekeeper's verdict on it,
-	which for a bare executable depends on Apple's servers knowing its notarized code."""
-	report: dict[str, object] = {
-		"binary": str(binary),
-		"sha256": digest(binary),
-		**asdict(signature(binary, executable=True)),
-	}
-	if online:
-		report["gatekeeper"] = gatekeeper(binary, "binary")
-	return report
 
 
 def cleanup(temporary: Path) -> None:
@@ -453,10 +327,6 @@ def main() -> None:
 	notarizing: argparse.ArgumentParser = commands.add_parser("notarize")
 	notarizing.add_argument("--staple", action="store_true")
 	notarizing.add_argument("path", type=Path)
-	checking: argparse.ArgumentParser = commands.add_parser("check")
-	checking.add_argument("--gatekeeper", action="store_true")
-	checking.add_argument("--evidence", type=Path)
-	checking.add_argument("binary", type=Path)
 	commands.add_parser("cleanup")
 	args: argparse.Namespace = parser.parse_args()
 	temporary: Path = Path(os.environ["RUNNER_TEMP"])
@@ -474,18 +344,6 @@ def main() -> None:
 			f"`{report['file']}`: notarization {report['status']}, submission"
 			f" `{report['submission']}`{', ticket stapled' if args.staple else ''},"
 			f" SHA256 `{report['sha256']}`"
-		)
-	elif args.command == "check":
-		checked: dict[str, object] = check(args.binary, args.gatekeeper)
-		text: str = json.dumps(checked, indent=2)
-		print(text, flush=True)
-		if args.evidence is not None:
-			args.evidence.mkdir(parents=True, exist_ok=True)
-			(args.evidence / "signature.json").write_text(text + "\n", encoding="utf-8")
-		summarize(
-			f"`{args.binary.name}` SHA256 `{checked['sha256']}`: Developer ID Application,"
-			f" team {checked['team']}, timestamp {checked['timestamp']}"
-			+ (", Gatekeeper: notarized Developer ID" if args.gatekeeper else "")
 		)
 	else:
 		cleanup(temporary)

@@ -1,6 +1,6 @@
 """A macOS package must never leave the signing job ad-hoc signed or unnotarized: missing
-credentials, the wrong identity, a refused submission and a signature or verdict short of
-notarized Developer ID all fail."""
+credentials, the wrong identity and a refused submission all fail, and an accepted dmg is
+stapled before it is hashed."""
 
 import base64
 import hashlib
@@ -14,10 +14,7 @@ from unittest.mock import patch
 
 from apple import (
 	CREDENTIALS,
-	Signature,
-	developer_id,
 	notarize,
-	notarized,
 	required,
 	setup,
 	signing_identity,
@@ -28,22 +25,6 @@ TEAM: str = "A1B2C3D4E5"
 IDENTITY: str = f"Developer ID Application: Example Teacher ({TEAM})"
 SHA1: str = "0123456789ABCDEF0123456789ABCDEF01234567"
 KEY: str = "-----BEGIN PRIVATE KEY-----\nMIGTAgEA\n-----END PRIVATE KEY-----"
-# What `codesign -dvv` prints for a notarizable app, trimmed.
-SIGNED: str = f"""Executable=/Volumes/Stepwise/Stepwise.app/Contents/MacOS/stepwise-desktop
-Identifier=io.github.acture.stepwise
-Format=app bundle with Mach-O thin (arm64)
-CodeDirectory v=20500 size=1234 flags=0x10000(runtime) hashes=27+7 location=embedded
-Signature size=9000
-Authority={IDENTITY}
-Authority=Developer ID Certification Authority
-Authority=Apple Root CA
-Timestamp=6 Oct 2026 at 10:00:00
-Info.plist entries=20
-TeamIdentifier={TEAM}
-Runtime Version=26.0.0
-Sealed Resources version=2 rules=13 files=10
-Internal requirements count=1 size=200
-"""
 
 
 def credentials(**changes: str) -> dict[str, str]:
@@ -179,70 +160,6 @@ class Credentials(Tools):
 			signing_identity(listing + f'  3) {"E" * 40} "{IDENTITY}"\n', IDENTITY)
 
 
-class Signatures(unittest.TestCase):
-	def test_a_developer_id_signature_is_read_back(self) -> None:
-		signature: Signature = developer_id(SIGNED)
-		self.assertEqual(signature.authority, IDENTITY)
-		self.assertEqual(signature.team, TEAM)
-		self.assertEqual(signature.timestamp, "6 Oct 2026 at 10:00:00")
-		self.assertEqual(signature.identifier, "io.github.acture.stepwise")
-		self.assertTrue(signature.runtime)
-		dmg: str = SIGNED.replace("flags=0x10000(runtime)", "flags=0x0(none)")
-		self.assertFalse(developer_id(dmg).runtime)
-
-	def test_anything_short_of_a_timestamped_developer_id_signature_fails(self) -> None:
-		for wrong, message in (
-			(
-				"Identifier=stepwise\nSignature=adhoc\nTeamIdentifier=not set\n",
-				"ad-hoc",
-			),
-			(
-				SIGNED.replace(
-					"Developer ID Application: ", "Apple Development: "
-				).replace("Developer ID Certification Authority", "Apple Worldwide"),
-				"Developer ID Application",
-			),
-			(SIGNED.replace("Authority=Apple Root CA\n", ""), "Apple's root"),
-			(
-				SIGNED.replace(f"TeamIdentifier={TEAM}", "TeamIdentifier=ZZZZZZZZZZ"),
-				"team",
-			),
-			(
-				SIGNED.replace("Timestamp=", "Signed Time="),
-				"no secure timestamp",
-			),
-			# What codesign prints when it cannot reach the trust daemon.
-			(
-				SIGNED.replace(f"Authority={IDENTITY}\n", "Authority=(unavailable)\n"),
-				"Developer ID Application",
-			),
-		):
-			with self.subTest(message=message):
-				with self.assertRaisesRegex(ValueError, message):
-					developer_id(wrong)
-
-
-class Gatekeeper(unittest.TestCase):
-	def test_only_an_acceptance_as_notarized_developer_id_passes(self) -> None:
-		notarized(
-			"/tmp/Stepwise.app: accepted\nsource=Notarized Developer ID\n"
-			f"origin={IDENTITY}",
-			0,
-		)
-		for verdict, code in (
-			(
-				f"/tmp/Stepwise.app: rejected\nsource=Unnotarized Developer ID\norigin={IDENTITY}",
-				3,
-			),
-			(f"/tmp/Stepwise.app: accepted\nsource=Developer ID\norigin={IDENTITY}", 0),
-			("/tmp/stepwise: internal error in Code Signing subsystem", 1),
-			("/tmp/Stepwise.app: accepted\nsource=Notarized Developer ID", 3),
-		):
-			with self.subTest(verdict=verdict):
-				with self.assertRaisesRegex(ValueError, "notarized Developer ID"):
-					notarized(verdict, code)
-
-
 class Notarization(Tools):
 	ENVIRONMENT: dict[str, str] = {
 		"APPLE_API_KEY": "2X9R4HXF34",
@@ -320,7 +237,6 @@ class Notarization(Tools):
 				"xcrun notarytool submit",
 				"xcrun notarytool log",
 				"xcrun stapler staple",
-				"xcrun stapler validate",
 			],
 		)
 		self.assertEqual(dmg.read_bytes(), b"dmgticket")

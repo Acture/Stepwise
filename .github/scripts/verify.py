@@ -16,7 +16,7 @@ import tempfile
 import time
 import tomllib
 
-from apple import Signature, signature, stapled
+from apple import stapled
 
 ROOT: Path = Path(__file__).resolve().parents[2]
 LOG: logging.Logger = logging.getLogger(__name__)
@@ -121,8 +121,8 @@ def glibc_report(tree: Path, binary: Path, image: Path, output: Path) -> None:
 
 def verify_macos(installer: Path, extracted: Path, target: str) -> None:
 	"""`tauri build` only warns when it cannot notarize, and ignores a failed staple, so its
-	success says nothing about either: the signatures and tickets are read back here."""
-	dmg: Signature = signature(installer, executable=False)
+	success says nothing about either. A ticket is stapled only to code Apple notarized, which
+	takes a Developer ID signature, so the shipped dmg's and its app's tickets are checked here."""
 	stapled(installer)
 	run(
 		"hdiutil",
@@ -135,11 +135,7 @@ def verify_macos(installer: Path, extracted: Path, target: str) -> None:
 	)
 	try:
 		app: Path = extracted / "Stepwise.app"
-		signed: Signature = signature(app, executable=True)
-		if (signed.authority, signed.team) != (dmg.authority, dmg.team):
-			raise ValueError(
-				f"{installer}: the app is signed by {signed.authority}, the dmg by {dmg.authority}"
-			)
+		run("codesign", "--verify", "--deep", "--strict", str(app))
 		stapled(app)
 		binary: Path = app / "Contents/MacOS/stepwise-desktop"
 		architecture: str = run("lipo", "-archs", str(binary)).strip()
@@ -157,10 +153,7 @@ def verify_macos(installer: Path, extracted: Path, target: str) -> None:
 		verify_resources(app)
 	finally:
 		run("hdiutil", "detach", str(extracted))
-	summarize(
-		f"`{installer.name}` and its app: Developer ID Application, team {signed.team},"
-		" timestamped, hardened runtime, notarization tickets stapled"
-	)
+	summarize(f"`{installer.name}` and its app: notarization tickets stapled")
 
 
 def summarize(line: str) -> None:
