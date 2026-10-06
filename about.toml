@@ -1,5 +1,5 @@
-# cargo-about's configuration for the third-party licence notices that `.github/workflows/package.yml`
-# puts in every archive. Only these licences are accepted, in order of preference where a crate
+# cargo-about's configuration for the third-party licence notices that
+# `.github/workflows/package-cli.yml` puts in every archive. Only these licences are accepted, in order of preference where a crate
 # offers a choice, so a dependency under any other licence stops the packaging run until someone
 # has read that licence and added it here.
 accepted = [

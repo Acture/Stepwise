@@ -27,7 +27,7 @@ cargo test --locked
 
 ## 运行桌面版
 
-除 Rust 外，还需要 Bun 和平台依赖：macOS 的 Xcode Command Line Tools、Windows 的 MSVC C++ 构建工具与 WebView2、Linux 的 GTK 3 与 WebKitGTK 4.1 开发库。Linux CI 安装的包名可查 [check.yml](../.github/workflows/check.yml) 中的桌面作业。
+除 Rust 外，还需要 Bun 和平台依赖：macOS 的 Xcode Command Line Tools、Windows 的 MSVC C++ 构建工具与 WebView2、Linux 的 GTK 3 与 WebKitGTK 4.1 开发库。Linux CI 安装的包名可查 [test.yml](../.github/workflows/test.yml) 中的桌面作业。
 
 在仓库根目录进入页面目录，安装锁定依赖并启动带热更新的窗口：
 

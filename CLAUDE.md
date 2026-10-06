@@ -12,7 +12,7 @@ Offline Rust CLI and desktop exercises for Python evaluation, propositional logi
 - Native gates: `cargo fmt --check`, `cargo clippy --locked --all-targets -- -D warnings`, `cargo test --locked`. The default workspace member is the CLI/library, not the Tauri shell.
 - Python semantics changes also run `cargo test --locked --test python_oracle -- --ignored --nocapture`; terminal adapter changes also run `cargo test --locked --test terminal -- --ignored --nocapture`. They require CPython and, for terminal tests, a pty; neither is a runtime dependency.
 - Desktop gates and prerequisites are in `docs/development.md`. Rust tests generate `src/desktop/ui/src/lib/protocol/`; regenerate declarations instead of editing them.
-- Packaging uses `.github/workflows/package.yml`. Keep checks over extracted archives and generated license notices intact. Packaging also signs and notarizes the macOS builds with Developer ID and fails without the Apple secrets; publication is a separate action. See `docs/distribution.md`.
+- CI: `lint.yml` (format and static checks) and `test.yml` run on every push. Packaging is `package-cli.yml` and `package-desktop.yml`, started by hand and independent; each runs its family's tests first. Keep checks over extracted archives and generated license notices intact. Packaging also signs and notarizes the macOS builds with Developer ID and fails without the Apple secrets; publication is a separate action. See `docs/distribution.md`.
 
 ## Code boundaries
 

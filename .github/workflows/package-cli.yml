@@ -1,21 +1,21 @@
-name: Package
+name: Package CLI
 
 # By hand only: GitHub offers the run once this file is on the default branch, and it packages the
-# commit it was started on after that commit has passed the whole gate.
+# commit it was started on after that commit has passed the tests.
 on:
   workflow_dispatch:
 
 permissions:
   contents: read
 
-# Not check.yml's group: the gate called below takes check-Package-<ref> in this run's context, and
-# a caller sharing its callee's group deadlocks. A second run on the same ref waits for the first.
+# Not test.yml's group: the tests called below take test-Package CLI-<ref> in this run's context, and a
+# caller sharing its callee's group deadlocks. A second run on the same ref waits for the first.
 concurrency:
-  group: package-${{ github.ref }}
+  group: package-cli-${{ github.ref }}
   cancel-in-progress: false
 
 env:
-  # The day's stable, the channel the gate in this same run tests with: Stepwise follows the latest
+  # The day's stable, the channel the tests in this same run use: Stepwise follows the latest
   # release and leans on nothing a compiler update changes. The runner images below are named
   # instead, so a move between images is a commit and not a rollout landing mid-run.
   RUSTUP_TOOLCHAIN: stable
@@ -27,11 +27,13 @@ defaults:
     shell: bash
 
 jobs:
-  check:
-    uses: ./.github/workflows/check.yml
+  test:
+    uses: ./.github/workflows/test.yml
+    with:
+      family: cli
 
-  # Beside the gate rather than after it: it writes no part of the program, and cargo-about takes a
-  # few minutes to build. Nothing is archived before the gate has passed.
+  # Beside the tests rather than after them: it writes no part of the program, and cargo-about takes
+  # a few minutes to build. Nothing is archived before the tests have passed.
   notices:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -97,39 +99,9 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # Separate from the CLI notice job: a new desktop dependency must not stop CLI delivery.
-  desktop-notices:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - run: rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.13'
-      - run: cargo install --locked --features cli cargo-about@0.9.2
-      - name: The desktop's Rust licences, including its embedded-page features
-        run: |
-          for target in x86_64-unknown-linux-gnu aarch64-apple-darwin x86_64-apple-darwin x86_64-pc-windows-msvc; do
-            notice="desktop-notices/$target/THIRD-PARTY-NOTICES.txt"
-            mkdir -p "desktop-notices/$target"
-            cargo about generate --locked --fail -m src/desktop/src-tauri/Cargo.toml --features tauri/custom-protocol --config about.toml --target "$target" --format json --output-file "$RUNNER_TEMP/$target.json"
-            cargo about generate --locked --fail -m src/desktop/src-tauri/Cargo.toml --features tauri/custom-protocol --config about.toml --target "$target" --output-file "$notice" about.hbs
-            python .github/scripts/check_rust_notices.py "$RUNNER_TEMP/$target.json" "$notice"
-            cp "$(rustc --print sysroot)/share/doc/rust/COPYRIGHT-library.html" "desktop-notices/$target/RUST-STD-COPYRIGHT.html"
-          done
-      - uses: actions/upload-artifact@v4
-        with:
-          name: desktop-notices
-          path: desktop-notices
-          if-no-files-found: error
-          retention-days: 7
-
   cli:
     name: CLI ${{ matrix.target }}
-    needs: [check, notices]
+    needs: [test, notices]
     strategy:
       fail-fast: false
       matrix:
@@ -301,160 +273,28 @@ jobs:
         if: always() && runner.os == 'macOS'
         run: python .github/scripts/apple.py cleanup
 
-  desktop:
-    name: Desktop ${{ matrix.target }}
-    needs: [check, desktop-notices]
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - target: aarch64-apple-darwin
-            os: macos-26
-          - target: x86_64-apple-darwin
-            os: macos-26
-          - target: x86_64-pc-windows-msvc
-            os: windows-2025
-          - target: x86_64-unknown-linux-gnu
-            os: ubuntu-24.04
-    runs-on: ${{ matrix.os }}
-    # On macOS two notarizations follow the build: the app's inside `tauri build`, then the dmg's.
-    timeout-minutes: 60
-    env:
-      TARGET: ${{ matrix.target }}
-    steps:
-      - run: git config --global core.autocrlf false
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      # Pinned to a commit like tauri-action below: this Bun runs `tauri build`, which signs.
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.13'
-      # As in the CLI job: every credential, before the build. The keychain is on the search list,
-      # where `tauri build` finds the identity it is named; Tauri's own import of
-      # APPLE_CERTIFICATE would take the first identity in the .p12 instead.
-      - name: Signing keychain and notary key
-        if: runner.os == 'macOS'
-        env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
-          APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
-        run: python .github/scripts/apple.py setup
-      - name: Rust targets
-        run: |
-          rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal --target "$TARGET"
-          if [ "$RUNNER_OS" = macOS ]; then
-            rustup target add --toolchain "$RUSTUP_TOOLCHAIN" aarch64-apple-darwin x86_64-apple-darwin
-          fi
-      - name: Linux build and extraction tools
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update
-          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev patchelf xdg-utils libarchive-tools
-      - name: Locked page and Tauri CLI
-        working-directory: src/desktop/ui
-        run: |
-          bun install --frozen-lockfile
-          bun run tauri --version
-          # Log and compare the installed CLI with the package recorded in bun.lock.
-          bun -e 'const p = require("./node_modules/@tauri-apps/cli/package.json"); const lock = Bun.JSON5.parse(await Bun.file("bun.lock").text()); if (lock.packages["@tauri-apps/cli"][0] !== p.name + "@" + p.version) throw new Error("Tauri CLI differs from bun.lock"); console.log("Locked Tauri CLI:", p.version);'
-      - uses: actions/download-artifact@v4
-        with:
-          name: desktop-notices
-          path: desktop-notices
-      - name: Stage this target's notices
-        run: |
-          mkdir -p target/desktop-notices
-          cp "desktop-notices/$TARGET/"* target/desktop-notices/
-      # The CLI is resolved in ui's node_modules; the action works in src-tauri. Without an
-      # explicit script it may install a global CLI. No tag/release input or write permission.
-      # Pinned to a commit: on macOS it runs with the notary key and the signing identity.
-      # There APPLE_SIGNING_IDENTITY overrides the configuration's ad-hoc "-", `tauri build` signs
-      # the app and the dmg, and notarizes and staples the app; APPLE_API_KEY_PATH came from the
-      # keychain step. Elsewhere these are empty and unused.
-      - uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1.0.0
-        env:
-          APPLE_SIGNING_IDENTITY: ${{ runner.os == 'macOS' && secrets.APPLE_SIGNING_IDENTITY || '' }}
-          APPLE_API_ISSUER: ${{ runner.os == 'macOS' && secrets.APPLE_API_ISSUER || '' }}
-          APPLE_API_KEY: ${{ runner.os == 'macOS' && secrets.APPLE_API_KEY || '' }}
-        with:
-          projectPath: src/desktop/src-tauri
-          tauriScript: bun ../ui/node_modules/@tauri-apps/cli/tauri.js
-          args: --target ${{ matrix.target }} --config tauri.package.conf.json -- --locked
-      # Tauri signs the dmg but neither notarizes nor staples it. Stapling rewrites the dmg, so
-      # this comes before verify.py, which copies and hashes it and checks the tickets of the dmg
-      # and of the app inside it: Tauri ignores a failed staple of the app.
-      - name: Notarize and staple the dmg
-        if: runner.os == 'macOS'
-        env:
-          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
-        run: python .github/scripts/apple.py notarize --staple target/"$TARGET"/release/bundle/dmg/*.dmg
-      # Windows builds the student's NSIS installer above, which downloads WebView2 when it is
-      # missing. The MSI is for machines an administrator sets up, often offline: bundled from the
-      # same executable, it carries Microsoft's standalone WebView2 installer, fetched now.
-      - name: Offline MSI from the same executable
-        if: runner.os == 'Windows'
-        working-directory: src/desktop/src-tauri
-        run: bun ../ui/node_modules/@tauri-apps/cli/tauri.js bundle --target "$TARGET" --config tauri.package.conf.json --config tauri.msi.conf.json
-      - name: Read back every installer, verify licences and measure GLIBC
-        run: python .github/scripts/verify.py --target "$TARGET"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: installers-${{ matrix.target }}
-          path: dist
-          if-no-files-found: error
-          retention-days: 7
-      - name: GLIBC requirements of every ELF in the AppImage
-        if: runner.os == 'Linux'
-        uses: actions/upload-artifact@v4
-        with:
-          name: desktop-glibc
-          path: target/package-evidence/GLIBC.json
-          if-no-files-found: error
-          retention-days: 7
-      - name: Remove the signing keychain and notary key
-        if: always() && runner.os == 'macOS'
-        run: python .github/scripts/apple.py cleanup
-
   checksums:
-    needs: [cli, desktop]
-    # Each family can be delivered independently, once every one of its packaging jobs has
-    # passed. Never describe partial target sets as a complete family; successful individual
-    # jobs still keep their own installer artifacts.
-    if: ${{ !cancelled() && (needs.cli.result == 'success' || needs.desktop.result == 'success') }}
+    # Only once every target has passed: a partial set is never described as complete, though each
+    # successful target keeps its own archive artifact.
+    needs: cli
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/download-artifact@v4
-        if: needs.cli.result == 'success'
         with:
           name: cli-x86_64-unknown-linux-musl
           path: dist
       - uses: actions/download-artifact@v4
-        if: needs.cli.result == 'success'
         with:
           name: cli-aarch64-apple-darwin
           path: dist
       - uses: actions/download-artifact@v4
-        if: needs.cli.result == 'success'
         with:
           name: cli-x86_64-apple-darwin
           path: dist
       - uses: actions/download-artifact@v4
-        if: needs.cli.result == 'success'
         with:
           name: cli-x86_64-pc-windows-msvc
-          path: dist
-      - uses: actions/download-artifact@v4
-        if: needs.desktop.result == 'success'
-        with:
-          pattern: installers-*
-          merge-multiple: true
           path: dist
       - name: SHA256SUMS
         working-directory: dist
@@ -471,7 +311,6 @@ jobs:
         run: |
           while read -r _ archive; do
             case "$archive" in
-              stepwise-desktop-*) continue ;; # Each installer was read back by its native job.
               *.zip) name="${archive%.zip}" && unzip -q "$archive" -d "$RUNNER_TEMP" ;;
               *) name="${archive%.tar.gz}" && tar -xzf "$archive" -C "$RUNNER_TEMP" ;;
             esac
@@ -487,7 +326,7 @@ jobs:
           done < SHA256SUMS
       - uses: actions/upload-artifact@v4
         with:
-          name: stepwise
+          name: stepwise-cli
           path: dist
           if-no-files-found: error
           retention-days: 7

@@ -1,24 +1,29 @@
-name: Check
+name: Test
 
 on:
   push:
   pull_request:
   workflow_dispatch:
-  # package.yml's first job: it packages only a commit that passed all of this.
+  # Each packaging workflow's first job: it packages only a commit whose tests pass.
   workflow_call:
+    inputs:
+      family:
+        description: Only the tests of this family, `cli` or `desktop`; both when empty
+        type: string
+        default: ''
 
 permissions:
   contents: read
 
-# Called from package.yml this is evaluated in the caller's context, so the workflow in the name
-# keeps a packaging run's gate out of the group a Check run on the same ref takes. A run started by
-# hand queues behind one already running in its group instead of cancelling it.
+# Called from a packaging workflow this is evaluated in the caller's context, so the workflow in
+# the name keeps a packaging run's tests out of the group a Test run on the same ref takes. A run
+# started by hand queues behind one already running in its group instead of cancelling it.
 concurrency:
-  group: check-${{ github.workflow }}-${{ github.ref }}
+  group: test-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
 
 jobs:
-  packaging:
+  scripts:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -30,7 +35,8 @@ jobs:
           python-version: '3.13'
       - run: python -m unittest discover -s .github/scripts -v
 
-  check:
+  cli:
+    if: inputs.family != 'desktop'
     strategy:
       fail-fast: false
       matrix:
@@ -41,9 +47,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - run: rustup toolchain install stable --profile minimal --component rustfmt --component clippy
-      - run: cargo +stable fmt --check
-      - run: cargo +stable clippy --locked --all-targets -- -D warnings
+      - run: rustup toolchain install stable --profile minimal
       - run: cargo +stable test --locked
       - name: Compare with CPython
         if: runner.os == 'Linux'
@@ -54,6 +58,7 @@ jobs:
       - run: cargo +stable run --locked -- --logic --proof raa --check-proof tests/fixtures/raa.json
 
   desktop:
+    if: inputs.family != 'cli'
     strategy:
       fail-fast: false
       matrix:
@@ -64,25 +69,21 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - run: rustup toolchain install stable --profile minimal --component rustfmt --component clippy
+      - run: rustup toolchain install stable --profile minimal
       - uses: oven-sh/setup-bun@v2
       - name: WebKitGTK and GTK for the window
         if: runner.os == 'Linux'
         run: |
           sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update
           sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev
-      # bash, so a failing check stops the step on Windows too: PowerShell carries on past a
+      # bash, so a failing build stops the step on Windows too: PowerShell carries on past a
       # native command's exit code and would report only the last one.
       - name: The page
         working-directory: src/desktop/ui
         shell: bash
         run: |
           bun install --frozen-lockfile
-          bun run check
-          bun run lint
           bun run build
-      - run: cargo +stable fmt --all --check
-      - run: cargo +stable clippy --locked -p stepwise-desktop --all-targets -- -D warnings
       # A release build embeds the built page; this compiles that path, after `bun run build`.
       - run: cargo +stable check --locked -p stepwise-desktop --features tauri/custom-protocol
       # The shell's own tests: progress and appearance written, refused and left alone, themes
