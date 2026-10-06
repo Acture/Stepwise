@@ -99,7 +99,7 @@ impl Default for Progress {
 
 impl Progress {
 	pub fn default_path() -> io::Result<PathBuf> {
-		ProjectDirs::from("dev", "Stepwise", "Stepwise")
+		ProjectDirs::from("io.github", "acture", "stepwise")
 			.map(|dirs| dirs.data_local_dir().join("progress.json"))
 			.ok_or_else(|| {
 				io::Error::new(
