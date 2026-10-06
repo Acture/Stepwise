@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import pty
+import re
 import select
 import struct
 import subprocess
@@ -15,17 +16,44 @@ import sys
 import tempfile
 import termios
 import time
-from typing import Callable, cast
+from typing import Callable, TypedDict, cast
 
-from terminal_protocol import (
-	QUIET_SECONDS,
-	RAW_MODE,
-	STEP_TIMEOUT,
-	Capture,
-	Run,
-	main,
-	visible,
+
+class Run(TypedDict):
+	args: list[str]
+	keys: list[str]
+
+
+class Capture(TypedDict):
+	raw: str
+	visible: str
+	exit_code: int
+	terminal_before: str
+	terminal_after: str
+
+
+class Request(TypedDict):
+	binary: str
+	columns: int
+	rows: int
+	runs: list[Run]
+
+
+QUIET_SECONDS = 0.15
+# Bracketed paste on; crossterm enables raw mode just before writing it.
+RAW_MODE = b"\x1b[?2004h"
+STEP_TIMEOUT = 5.0
+ESCAPES = (
+	re.compile(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)"),
+	re.compile(r"\x1b\[[0-9;?]*[a-zA-Z]"),
+	re.compile(r"\x1b[()][B0]"),
 )
+
+
+def visible(text: str) -> str:
+	for pattern in ESCAPES:
+		text = pattern.sub("", text)
+	return text
 
 
 def controlling_terminal() -> None:
@@ -131,8 +159,18 @@ def drive(binary: str, run: Run, columns: int, rows: int) -> Capture:
 	}
 
 
+def main() -> None:
+	# Rust sends UTF-8 bytes; read them as such whatever the locale says.
+	request: Request = cast(Request, json.load(sys.stdin.buffer))
+	captures: list[Capture] = [
+		drive(request["binary"], run, request["columns"], request["rows"])
+		for run in request["runs"]
+	]
+	json.dump({"runs": captures}, sys.stdout)
+
+
 if __name__ == "__main__":
 	if len(sys.argv) > 1 and sys.argv[1] == "--child":
 		supervise()
 	else:
-		main(drive)
+		main()

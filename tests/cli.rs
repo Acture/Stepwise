@@ -1,11 +1,9 @@
-//! Opted-in process checks of the identified binary, with no terminal attached.
+//! The binary's noninteractive commands and failure codes, with no terminal attached.
 
 use std::process::{Command, Output, Stdio};
 
-mod support;
-
 fn run(args: &[&str], code: i32) -> String {
-	let output: Output = Command::new(support::binary())
+	let output: Output = Command::new(env!("CARGO_BIN_EXE_stepwise"))
 		.args(args)
 		.stdin(Stdio::null())
 		.stdout(Stdio::piped())
@@ -27,7 +25,6 @@ fn run(args: &[&str], code: i32) -> String {
 }
 
 #[test]
-#[ignore = "explicit acceptance of a CLI binary"]
 fn noninteractive_commands_need_no_terminal_or_progress() {
 	assert_eq!(
 		run(&["--version"], 0).trim(),
@@ -157,7 +154,6 @@ fn noninteractive_commands_need_no_terminal_or_progress() {
 }
 
 #[test]
-#[ignore = "explicit acceptance of a CLI binary"]
 fn invalid_arguments_and_interactive_launches_have_distinct_failure_codes() {
 	assert!(run(&[], 2).contains("--python"));
 	assert!(run(&["--python", "--logic"], 2).contains("error:"));

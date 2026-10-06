@@ -1,0 +1,332 @@
+name: Package CLI
+
+# By hand only: GitHub offers the run once this file is on the default branch, and it packages the
+# commit it was started on after that commit has passed the tests.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Not test.yml's group: the tests called below take test-Package CLI-<ref> in this run's context, and a
+# caller sharing its callee's group deadlocks. A second run on the same ref waits for the first.
+concurrency:
+  group: package-cli-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  # The day's stable, the channel the tests in this same run use: Stepwise follows the latest
+  # release and leans on nothing a compiler update changes. The runner images below are named
+  # instead, so a move between images is a commit and not a rollout landing mid-run.
+  RUSTUP_TOOLCHAIN: stable
+
+# bash everywhere, Windows included: it stops on a failed command inside a pipeline, and PowerShell
+# reports only the last native exit code.
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  test:
+    uses: ./.github/workflows/test.yml
+    with:
+      family: cli
+
+  # Beside the tests rather than after them: it writes no part of the program, and cargo-about takes
+  # a few minutes to build. Nothing is archived before the tests have passed.
+  notices:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      # The musl target only to read which musl it links.
+      - run: rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal --target x86_64-unknown-linux-musl
+      # Since 0.9 the binary is behind the `cli` feature; without it cargo installs nothing, and succeeds.
+      - run: cargo install --locked --features cli cargo-about@0.9.2
+      # One file per target: the Windows build links crates the Unix builds do not, and back.
+      - name: The crates' licences
+        run: |
+          for target in x86_64-unknown-linux-musl aarch64-apple-darwin x86_64-apple-darwin x86_64-pc-windows-msvc; do
+            notice="notices/$target/THIRD-PARTY-NOTICES.txt"
+            mkdir -p "notices/$target"
+            cargo about generate --locked --fail --config about.toml --target "$target" --format json --output-file "$RUNNER_TEMP/$target.json"
+            cargo about generate --locked --fail --config about.toml --target "$target" --output-file "$notice" about.hbs
+            # A crate with no licence file of its own gets the SPDX text, whose copyright line names
+            # nobody. A clarification that cannot be fetched lands there too, as a mere warning, and
+            # each run fetches afresh, so the file that ships is read as well as the listing.
+            unnamed="$(jq -r '.licenses[] | select(.source_path == null and (.id | IN("MIT", "BSD-2-Clause", "BSD-3-Clause", "ISC", "Zlib", "0BSD"))) | .used_by[].crate | "\(.name) \(.version)"' "$RUNNER_TEMP/$target.json")"
+            if [ -n "$unnamed" ]; then
+              echo "::error::$target: no licence file, so no copyright holder, for these crates"
+              echo "$unnamed"
+              exit 1
+            fi
+            if grep -nE '<(year|owner|copyright holders)>' "$notice"; then
+              echo "::error::$notice keeps a licence's placeholder copyright line"
+              exit 1
+            fi
+          done
+      # The standard library is compiled into every build; the toolchain carries its notice.
+      - name: The standard library's notices
+        run: cp "$(rustc --print sysroot)/share/doc/rust/COPYRIGHT-library.html" notices/RUST-STD-COPYRIGHT.html
+      # The Linux build links musl in, and musl's MIT licence travels with it. A Rust release that
+      # moves to another musl stops here until these two move with it.
+      - name: musl's licence
+        env:
+          MUSL: 1.2.5
+          MUSL_COPYRIGHT_SHA256: f9bc4423732350eb0b3f7ed7e91d530298476f8fec0c6c427a1c04ade22655af
+        run: |
+          libc="$(rustc --print sysroot)/lib/rustlib/x86_64-unknown-linux-musl/lib/self-contained/libc.a"
+          linked="$(strings "$libc" | grep -xE '[0-9]+\.[0-9]+\.[0-9]+' | sort -u || true)"
+          if [ "$linked" != "$MUSL" ]; then
+            echo "::error::Rust $RUSTUP_TOOLCHAIN links musl '$linked'; the notice is musl $MUSL's"
+            exit 1
+          fi
+          curl -fsSL --retry 3 "https://git.musl-libc.org/cgit/musl/plain/COPYRIGHT?h=v$MUSL" -o "$RUNNER_TEMP/musl-COPYRIGHT"
+          echo "$MUSL_COPYRIGHT_SHA256  $RUNNER_TEMP/musl-COPYRIGHT" | sha256sum -c -
+          {
+            echo
+            echo "================================================================================"
+            echo "musl libc $MUSL, linked into the Linux build <https://musl.libc.org>"
+            echo
+            cat "$RUNNER_TEMP/musl-COPYRIGHT"
+          } >> notices/x86_64-unknown-linux-musl/THIRD-PARTY-NOTICES.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: notices
+          path: notices
+          if-no-files-found: error
+          retention-days: 7
+
+  cli:
+    name: CLI ${{ matrix.target }}
+    needs: [test, notices]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-24.04
+          - target: aarch64-apple-darwin
+            os: macos-26
+          # Cross-compiled on the Apple Silicon runner.
+          - target: x86_64-apple-darwin
+            os: macos-26
+          - target: x86_64-pc-windows-msvc
+            os: windows-2025
+    runs-on: ${{ matrix.os }}
+    # Notarization usually takes minutes, but may take up to the notary timeout in apple.py.
+    timeout-minutes: 35
+    env:
+      TARGET: ${{ matrix.target }}
+    steps:
+      # Git on the Windows image checks text out as CRLF; every archive carries the repository's bytes.
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        if: runner.os == 'macOS'
+        with:
+          python-version: '3.13'
+      # First, so a missing or malformed credential stops the job before the build. There is no
+      # fallback: a macOS archive is never signed ad hoc or shipped unnotarized.
+      - name: Signing keychain and notary key
+        if: runner.os == 'macOS'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
+        run: python .github/scripts/apple.py setup
+      - run: rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal --target "$TARGET"
+      - name: Build
+        env:
+          # The C runtime linked in: musl's, which is that target's default, and the MSVC runtime, so
+          # the program needs no VCRUNTIME140.dll. Each variable is read by its own target alone.
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_RUSTFLAGS: "-C target-feature=+crt-static"
+          CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS: "-C target-feature=+crt-static"
+        run: cargo build --release --locked --target "$TARGET"
+      # Hardened runtime and a secure timestamp, then Apple's notary service, before the binary is
+      # archived. A bare executable cannot hold a ticket: Gatekeeper looks its code up online, so
+      # the tar.gz ships these same signed bytes.
+      - name: Sign and notarize
+        if: runner.os == 'macOS'
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+        run: |
+          python .github/scripts/apple.py sign --identifier io.github.acture.stepwise.cli "target/$TARGET/release/stepwise"
+          python .github/scripts/apple.py notarize "target/$TARGET/release/stepwise"
+      - uses: actions/download-artifact@v4
+        with:
+          name: notices
+          path: notices
+      - name: Archive
+        id: archive
+        run: |
+          # The native jq on Windows ends its output with CRLF.
+          version="$(cargo metadata --locked --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "stepwise") | .version' | tr -d '\r')"
+          name="stepwise-$version-$TARGET"
+          exe=""
+          if [ "$RUNNER_OS" = Windows ]; then exe=.exe; fi
+          mkdir -p "dist/$name"
+          cp "target/$TARGET/release/stepwise$exe" LICENSE README.md "notices/$TARGET/THIRD-PARTY-NOTICES.txt" notices/RUST-STD-COPYRIGHT.html "dist/$name/"
+          if [ "$RUNNER_OS" = Windows ]; then
+            archive="$name.zip"
+            (cd dist && 7z a -tzip "$archive" "$name")
+          else
+            archive="$name.tar.gz"
+            # No AppleDouble entries for extended attributes from macOS's tar.
+            COPYFILE_DISABLE=1 tar -czf "dist/$archive" -C dist "$name"
+          fi
+          {
+            echo "archive=$archive"
+            echo "binary=$name/stepwise$exe"
+          } >> "$GITHUB_OUTPUT"
+      # The checks read the binary back out of the archive, so they see the bytes that ship.
+      - name: Unpack
+        env:
+          ARCHIVE: ${{ steps.archive.outputs.archive }}
+        run: |
+          mkdir unpacked
+          case "$ARCHIVE" in
+            *.zip) 7z x -ounpacked "dist/$ARCHIVE" ;;
+            *) tar -xzf "dist/$ARCHIVE" -C unpacked ;;
+          esac
+      # Output is read whole before grepping: under pipefail, `readelf | grep -q` fails when grep
+      # stops early. musl links a static-pie, which keeps a DYNAMIC segment, so its absence is no test.
+      - name: No interpreter and no shared library
+        if: runner.os == 'Linux'
+        env:
+          BINARY: unpacked/${{ steps.archive.outputs.binary }}
+        run: |
+          headers="$(readelf -lW "$BINARY")"
+          dynamic="$(readelf -d "$BINARY")"
+          echo "$headers"
+          echo "$dynamic"
+          if ! grep -q LOAD <<<"$headers"; then echo "::error::readelf listed no segments of $BINARY"; exit 1; fi
+          # The same reading finds both in the runner's own dynamically linked programs.
+          grep -q INTERP <<<"$(readelf -lW /usr/bin/true)"
+          grep -q NEEDED <<<"$(readelf -d /usr/bin/true)"
+          if grep -q INTERP <<<"$headers"; then echo "::error::$BINARY asks for a program interpreter"; exit 1; fi
+          if grep -q NEEDED <<<"$dynamic"; then echo "::error::$BINARY needs a shared library"; exit 1; fi
+      - name: Only the target's architecture
+        if: runner.os == 'macOS'
+        env:
+          BINARY: unpacked/${{ steps.archive.outputs.binary }}
+        run: |
+          case "$TARGET" in
+            aarch64-*) want=arm64 ;;
+            x86_64-*) want=x86_64 ;;
+          esac
+          lipo -info "$BINARY"
+          archs="$(lipo -archs "$BINARY")"
+          if [ "$archs" != "$want" ]; then echo "::error::$BINARY holds $archs, not $want alone"; exit 1; fi
+      # dumpbin is not on PATH; vswhere finds one installed with the MSVC tools. The switches are
+      # written with a dash so Git Bash does not rewrite `/dependents` into a path, and the native
+      # tools' CRLF is dropped before matching. std itself imports api-ms-win-core-*, which is Windows.
+      - name: No C runtime import
+        if: runner.os == 'Windows'
+        env:
+          BINARY: unpacked/${{ steps.archive.outputs.binary }}
+        run: |
+          vswhere="/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe"
+          dumpbin="$("$vswhere" -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find 'VC\Tools\MSVC\**\bin\Hostx64\x64\dumpbin.exe' | tail -n 1 | tr -d '\r')"
+          if [ -z "$dumpbin" ]; then echo "::error::vswhere found no dumpbin.exe"; exit 1; fi
+          dependents="$("$(cygpath -u "$dumpbin")" -nologo -dependents "$(cygpath -w "$BINARY")" | tr -d '\r')"
+          echo "$dependents"
+          if ! grep -q 'Image has the following dependencies' <<<"$dependents" || ! grep -qi 'KERNEL32.dll' <<<"$dependents"; then
+            echo "::error::dumpbin listed no imports of $BINARY"
+            exit 1
+          fi
+          if grep -Ei 'VCRUNTIME|MSVCP|ucrtbase|api-ms-win-crt-' <<<"$dependents"; then
+            echo "::error::$BINARY imports the C runtime"
+            exit 1
+          fi
+      # The hash of the bytes the checks above read. SHA256SUMS is written from these, so the
+      # checksums job holds what it downloads to what was checked here.
+      - name: Hash
+        working-directory: dist
+        env:
+          ARCHIVE: ${{ steps.archive.outputs.archive }}
+        run: |
+          if command -v sha256sum >/dev/null; then
+            sha256sum "$ARCHIVE" | cut -d ' ' -f 1 > "$ARCHIVE.sha256"
+          else
+            shasum -a 256 "$ARCHIVE" | cut -d ' ' -f 1 > "$ARCHIVE.sha256"
+          fi
+          cat "$ARCHIVE.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cli-${{ matrix.target }}
+          path: |
+            dist/${{ steps.archive.outputs.archive }}
+            dist/${{ steps.archive.outputs.archive }}.sha256
+          if-no-files-found: error
+          retention-days: 7
+      - name: Remove the signing keychain and notary key
+        if: always() && runner.os == 'macOS'
+        run: python .github/scripts/apple.py cleanup
+
+  checksums:
+    # Only once every target has passed: a partial set is never described as complete, though each
+    # successful target keeps its own archive artifact.
+    needs: cli
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: cli-x86_64-unknown-linux-musl
+          path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: cli-aarch64-apple-darwin
+          path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: cli-x86_64-apple-darwin
+          path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: cli-x86_64-pc-windows-msvc
+          path: dist
+      - name: SHA256SUMS
+        working-directory: dist
+        run: |
+          for sum in *.sha256; do
+            printf '%s  %s\n' "$(cat "$sum")" "${sum%.sha256}"
+          done > SHA256SUMS
+          rm -- *.sha256
+          cat SHA256SUMS
+          # A malformed line must fail too; otherwise an uncheckable installer can be skipped.
+          sha256sum --strict --check SHA256SUMS
+      - name: Every CLI archive holds the licences and the README
+        working-directory: dist
+        run: |
+          while read -r _ archive; do
+            case "$archive" in
+              *.zip) name="${archive%.zip}" && unzip -q "$archive" -d "$RUNNER_TEMP" ;;
+              *) name="${archive%.tar.gz}" && tar -xzf "$archive" -C "$RUNNER_TEMP" ;;
+            esac
+            unpacked="$RUNNER_TEMP/$name"
+            for file in LICENSE README.md THIRD-PARTY-NOTICES.txt RUST-STD-COPYRIGHT.html; do
+              if [ ! -s "$unpacked/$file" ]; then echo "::error::$archive has no $name/$file"; exit 1; fi
+            done
+            if [ ! -s "$unpacked/stepwise" ] && [ ! -s "$unpacked/stepwise.exe" ]; then
+              echo "::error::$archive has no program"
+              exit 1
+            fi
+            ls -l "$unpacked"
+          done < SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stepwise-cli
+          path: dist
+          if-no-files-found: error
+          retention-days: 7

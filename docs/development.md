@@ -27,7 +27,7 @@ cargo test --locked
 
 ## 运行桌面版
 
-除 Rust 外，还需要 Bun 和平台依赖：macOS 的 Xcode Command Line Tools、Windows 的 MSVC C++ 构建工具与 WebView2、Linux 的 GTK 3 与 WebKitGTK 4.1 开发库。Linux CI 安装的包名可查 [check.yml](../.github/workflows/check.yml) 中的桌面作业。
+除 Rust 外，还需要 Bun 和平台依赖：macOS 的 Xcode Command Line Tools、Windows 的 MSVC C++ 构建工具与 WebView2、Linux 的 GTK 3 与 WebKitGTK 4.1 开发库。Linux CI 安装的包名可查 [test.yml](../.github/workflows/test.yml) 中的桌面作业。
 
 在仓库根目录进入页面目录，安装锁定依赖并启动带热更新的窗口：
 
@@ -93,7 +93,7 @@ cargo check --locked -p stepwise-desktop --features tauri/custom-protocol
 
 最后一条检查内嵌页面，因此必须在页面构建之后运行。Rust 协议类型变动后，运行 `cargo test --locked --lib desktop` 和桌面包测试，重新生成 `src/desktop/ui/src/lib/protocol/` 下的 TypeScript 声明，再提交生成差异；不要直接编辑声明文件。
 
-修改安装包交互测试时，在 `src/desktop/e2e` 运行 `bun install --frozen-lockfile`、`bun run check`、`bun run lint`。修改打包脚本时运行 `python3 -m unittest discover -s scripts/package -v`；真实安装后的交互测试由分发工作流执行。
+修改打包脚本时运行 `python3 -m unittest discover -s .github/scripts -v`。
 
 ## 提交前
 
