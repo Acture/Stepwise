@@ -59,8 +59,10 @@ gh secret set APPLE_API_PRIVATE_KEY < AuthKey_KEYID.p8
 
 推送形如 `v0.1.0` 的标签后，[release.yml](../.github/workflows/release.yml)（**Release**）在标签指向的提交上跑完上面两个打包工作流，再把它们检查过的全部文件放进一个草稿 Release。草稿由维护者亲自发布。
 
+Release 也可以在 **Actions** 中点 **Run workflow** 手动运行：选分支时，它检查两个 crate 的版本一致，跑完两个打包工作流，把全部文件与一份合并的 `SHA256SUMS` 放进名为 `stepwise` 的 Artifact，不建草稿，也不生成构建来源证明；选一个已推送的版本标签时，与推送这个标签完全相同。
+
 1. 把根目录 [Cargo.toml](../Cargo.toml) 与 [src/desktop/src-tauri/Cargo.toml](../src/desktop/src-tauri/Cargo.toml) 的 `version` 改成同一个新版本号，运行 `cargo check` 更新 `Cargo.lock`，经 PR 合入 master。版本号只用 `主.次.修订` 三段数字：MSI 不接受带字母的预发布号，而 deb 与 rpm 会把 `0.1.0-1` 这类纯数字后缀排在 `0.1.0` 之后。
-2. 为 master 上的这个提交打标签并推送。标签一经推送就是公开的，推送前确认这个提交就是要发布的版本：
+2. 在 master 上手动运行一次 Release，确认各平台都能打包，再为 master 上的这个提交打标签并推送。标签一经推送就是公开的，推送前确认这个提交就是要发布的版本：
 
    ```fish
    git fetch origin
@@ -70,9 +72,10 @@ gh secret set APPLE_API_PRIVATE_KEY < AuthKey_KEYID.p8
    ```
 
 3. 等待 Release 运行结束。它依次：
-   - 检查标签是 `v主.次.修订`，且等于两个 crate 的版本，否则在构建前失败；
+   - 检查标签是 `v主.次.修订`，且等于两个 crate 共同的版本，否则在构建前失败；
    - 跑 Package CLI 与 Package Desktop：测试、构建、签名公证与提取检查；
-   - 确认该标签还没有任何 Release（包括草稿），然后建一个草稿；
+   - 合并两份 `SHA256SUMS`，确认它与文件一一对应；
+   - 确认该标签还没有任何 Release（包括草稿），且仍指向这次构建的提交，然后建一个草稿；
    - 把 CLI 归档、桌面安装包和合并后的 `SHA256SUMS` 上传到草稿，再从草稿下载回来，校验文件集合与每个文件的 SHA256；
    - 为 `SHA256SUMS` 列出的每个文件生成 GitHub 的构建来源证明（由 GitHub 保存，不在 Release 的文件中），核验命令见[下载与安装](install.md#校验下载)。
 4. 在 Apple 芯片的 Mac 上，用浏览器从草稿下载 arm64 的 dmg 与 CLI 归档（这样文件带有隔离属性，与学生下载的一样），安装并打开桌面版，在终端第一次运行 CLI。
@@ -80,7 +83,7 @@ gh secret set APPLE_API_PRIVATE_KEY < AuthKey_KEYID.p8
 
 每次 Release 提交六项公证。权限按作业分配：测试与构建只能读仓库，能写草稿的只有建草稿与上传两个作业，能签构建来源证明的只有最后一个作业。
 
-某个作业因网络或苹果服务等临时原因失败时，在同一次运行中只重跑失败的作业：上传作业（`upload`）重跑时覆盖已上传的同名文件，证明作业（`attest`）重跑时为同样的摘要再签一次。草稿一旦建成，建草稿的作业（`draft`）就会拒绝这个标签；要重跑它或整次运行，先删除草稿（`gh release delete v0.1.0 --yes`，标签保留）。Release 运行期间，不要在同一标签上手动启动打包工作流。草稿中的文件验收不通过时，删除草稿，修复后升到下一个修订号重新打标签，不复用已推送的版本号。
+某个作业因网络或苹果服务等临时原因失败时，在同一次运行中只重跑失败的作业：上传作业（`upload`）重跑时覆盖已上传的同名文件，证明作业（`attest`）重跑时为同样的摘要再签一次。草稿一旦建成，建草稿的作业（`draft`）就会拒绝这个标签；要重跑它、整次运行，或在这个标签上手动运行 Release，先删除草稿（`gh release delete v0.1.0 --yes`，标签保留）。Release 运行期间，不要在同一标签上手动启动打包工作流。草稿中的文件验收不通过时，删除草稿，修复后升到下一个修订号重新打标签，不复用已推送的版本号。
 
 ## 校验下载
 

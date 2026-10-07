@@ -1,11 +1,14 @@
 name: Release
 
-# A version tag, pushed by hand: the tag's commit is tested and packaged by the two packaging
-# workflows, every file they checked goes into one draft Release with a single SHA256SUMS, and each
-# of those files gets a build-provenance attestation of this run. Publishing is left to a person.
+# A version tag, pushed by hand or picked when starting the run by hand: the tag's commit is tested
+# and packaged by the two packaging workflows, every file they checked goes into one draft Release
+# with a single SHA256SUMS, and each of those files gets a build-provenance attestation of this
+# run. Publishing is left to a person. Started by hand on a branch, the run stops at the artifact
+# `stepwise`, the same files and SHA256SUMS, and touches no Release.
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -22,7 +25,8 @@ defaults:
     shell: bash
 
 jobs:
-  # Before anything is built: a tag names the version both programs and their file names carry.
+  # Before anything is built: both programs and their file names carry one version, which a tag
+  # must name.
   version:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -30,22 +34,29 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: The tag is both crates' version
+      - name: One version, the tag's
         env:
+          REF_TYPE: ${{ github.ref_type }}
           TAG: ${{ github.ref_name }}
         run: |
-          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::$TAG is not vMAJOR.MINOR.PATCH; no pre-release or build suffix"
-            exit 1
-          fi
           versions="$(cargo metadata --locked --no-deps --format-version 1 | jq -r '.packages[] | "\(.name) \(.version)"')"
           echo "$versions"
-          for crate in stepwise stepwise-desktop; do
-            if ! grep -qxF "$crate ${TAG#v}" <<<"$versions"; then
-              echo "::error::$TAG is not the version of $crate"
+          cli="$(awk '$1 == "stepwise" { print $2 }' <<<"$versions")"
+          desktop="$(awk '$1 == "stepwise-desktop" { print $2 }' <<<"$versions")"
+          if [ -z "$cli" ] || [ "$cli" != "$desktop" ]; then
+            echo "::error::stepwise is '$cli' but stepwise-desktop is '$desktop'"
+            exit 1
+          fi
+          if [ "$REF_TYPE" = tag ]; then
+            if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "::error::$TAG is not vMAJOR.MINOR.PATCH; no pre-release or build suffix"
               exit 1
             fi
-          done
+            if [ "${TAG#v}" != "$cli" ]; then
+              echo "::error::$TAG is not the version both crates carry, $cli"
+              exit 1
+            fi
+          fi
 
   # The packaging workflows as they run by hand: tests first, then each target, read back and
   # hashed. The Apple secrets sign and notarize the macOS files.
@@ -59,11 +70,46 @@ jobs:
     uses: ./.github/workflows/package-desktop.yml
     secrets: inherit
 
-  # Made once, by one job, after every target has passed: matrix jobs creating their own would race
-  # into several drafts for one tag. Creating and filling the draft here and in the next job, not in
-  # the build jobs, keeps the write token away from the jobs that run third-party build code.
-  draft:
+  # The files each packaging workflow checked and hashed, under one SHA256SUMS, without a token
+  # that can write.
+  checksums:
     needs: [cli, desktop]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      # Apart: both artifacts hold a SHA256SUMS.
+      - uses: actions/download-artifact@v4
+        with:
+          name: stepwise-cli
+          path: cli
+      - uses: actions/download-artifact@v4
+        with:
+          name: stepwise-desktop
+          path: desktop
+      - name: One SHA256SUMS
+        run: |
+          mkdir dist
+          cat cli/SHA256SUMS desktop/SHA256SUMS > dist/SHA256SUMS
+          rm cli/SHA256SUMS desktop/SHA256SUMS
+          mv -n cli/* desktop/* dist/
+          cd dist
+          cat SHA256SUMS
+          sha256sum --strict --check SHA256SUMS
+          # Every file here is listed once, and nothing else is here.
+          diff <(printf '%s\n' * | sort) <({ echo SHA256SUMS; cut -d ' ' -f 3 SHA256SUMS; } | sort)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stepwise
+          path: dist
+          if-no-files-found: error
+          retention-days: 7
+
+  # Made once, by one job, for a tag only: matrix jobs creating their own would race into several
+  # drafts for one tag. Creating and filling the draft here and in the next job, not in the build
+  # jobs, keeps the write token away from the jobs that run third-party build code.
+  draft:
+    needs: checksums
+    if: github.ref_type == 'tag'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -103,8 +149,7 @@ jobs:
           echo "Draft $id for $TAG"
           echo "id=$id" >> "$GITHUB_OUTPUT"
 
-  # The files each packaging workflow checked and hashed, under one SHA256SUMS, into the draft; then
-  # the draft is read back. A rerun of this job alone replaces a partial upload.
+  # Into the draft, then read back from it. A rerun of this job alone replaces a partial upload.
   upload:
     needs: draft
     runs-on: ubuntu-24.04
@@ -117,32 +162,10 @@ jobs:
       TAG: ${{ github.ref_name }}
       RELEASE_ID: ${{ needs.draft.outputs.id }}
     steps:
-      # Apart: both artifacts hold a SHA256SUMS.
       - uses: actions/download-artifact@v4
         with:
-          name: stepwise-cli
-          path: cli
-      - uses: actions/download-artifact@v4
-        with:
-          name: stepwise-desktop
-          path: desktop
-      - name: One SHA256SUMS
-        run: |
-          mkdir dist
-          cat cli/SHA256SUMS desktop/SHA256SUMS > dist/SHA256SUMS
-          rm cli/SHA256SUMS desktop/SHA256SUMS
-          mv -n cli/* desktop/* dist/
-          cd dist
-          cat SHA256SUMS
-          sha256sum --strict --check SHA256SUMS
-          # Every file here is listed once, and nothing else is here.
-          diff <(printf '%s\n' * | sort) <({ echo SHA256SUMS; cut -d ' ' -f 3 SHA256SUMS; } | sort)
-      - uses: actions/upload-artifact@v4
-        with:
-          name: release-sha256sums
-          path: dist/SHA256SUMS
-          if-no-files-found: error
-          retention-days: 7
+          name: stepwise
+          path: dist
       - name: Upload to the draft
         working-directory: dist
         run: |
@@ -174,10 +197,11 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: release-sha256sums
+          name: stepwise
+          path: dist
       # The action reads a path it cannot find as checksums text, and would sign nothing.
       - name: The subjects
-        run: cat SHA256SUMS
+        run: cat dist/SHA256SUMS
       - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
-          subject-checksums: SHA256SUMS
+          subject-checksums: dist/SHA256SUMS
