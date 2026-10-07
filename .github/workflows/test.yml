@@ -15,11 +15,12 @@ permissions:
   contents: read
 
 # Called from a packaging workflow this is evaluated in the caller's context, so the workflow in
-# the name keeps a packaging run's tests out of the group a pull request's run takes. A packaging
-# run, started by hand, queues behind one already running in its group instead of cancelling it.
+# the name keeps a packaging run's tests out of the group a pull request's run takes, and the
+# family keeps apart the two calls one Release run makes. A packaging run queues behind one
+# already running in its group instead of cancelling it; only a pull request's newer push cancels.
 concurrency:
-  group: test-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
+  group: test-${{ github.workflow }}-${{ inputs.family }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   changes:
@@ -93,7 +94,7 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup toolchain install stable --profile minimal
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
       - name: WebKitGTK and GTK for the window
         if: runner.os == 'Linux'
         run: |

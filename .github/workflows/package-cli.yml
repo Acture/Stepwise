@@ -1,15 +1,17 @@
 name: Package CLI
 
-# By hand only: GitHub offers the run once this file is on the default branch, and it packages the
-# commit it was started on after that commit has passed the tests.
+# By hand, or called by release.yml for a version tag. GitHub offers the run by hand once this file
+# is on the default branch; either way it packages its commit after that commit has passed the tests.
 on:
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
 
-# Not test.yml's group: the tests called below take test-Package CLI-<ref> in this run's context, and a
-# caller sharing its callee's group deadlocks. A second run on the same ref waits for the first.
+# Not test.yml's group: the tests called below take test-<workflow>-cli-<ref> in the context of
+# the run, Package CLI or Release, and a caller sharing its callee's group deadlocks. A second run on
+# the same ref waits for the first.
 concurrency:
   group: package-cli-${{ github.ref }}
   cancel-in-progress: false
