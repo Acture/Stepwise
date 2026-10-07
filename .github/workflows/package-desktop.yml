@@ -1,15 +1,17 @@
 name: Package Desktop
 
-# By hand only: GitHub offers the run once this file is on the default branch, and it packages the
-# commit it was started on after that commit has passed the tests.
+# By hand, or called by release.yml for a version tag. GitHub offers the run by hand once this file
+# is on the default branch; either way it packages its commit after that commit has passed the tests.
 on:
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
 
-# Not test.yml's group: the tests called below take test-Package Desktop-<ref> in this run's context, and a
-# caller sharing its callee's group deadlocks. A second run on the same ref waits for the first.
+# Not test.yml's group: the tests called below take test-<workflow>-desktop-<ref> in the context of
+# the run, Package Desktop or Release, and a caller sharing its callee's group deadlocks. A second run on
+# the same ref waits for the first.
 concurrency:
   group: package-desktop-${{ github.ref }}
   cancel-in-progress: false
@@ -189,10 +191,22 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
+      # By name, like the CLI's: an artifact under any other name is not taken into SHA256SUMS.
       - uses: actions/download-artifact@v4
         with:
-          pattern: installers-*
-          merge-multiple: true
+          name: installers-aarch64-apple-darwin
+          path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: installers-x86_64-apple-darwin
+          path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: installers-x86_64-pc-windows-msvc
+          path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: installers-x86_64-unknown-linux-gnu
           path: dist
       - name: SHA256SUMS
         working-directory: dist

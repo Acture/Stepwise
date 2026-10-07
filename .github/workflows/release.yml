@@ -1,0 +1,183 @@
+name: Release
+
+# A version tag, pushed by hand: the tag's commit is tested and packaged by the two packaging
+# workflows, every file they checked goes into one draft Release with a single SHA256SUMS, and each
+# of those files gets a build-provenance attestation of this run. Publishing is left to a person.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+# Not a packaging workflow's group: the calls below take package-cli-<ref> and package-desktop-<ref>
+# in this run's context, and a caller sharing its callee's group deadlocks.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+# As in the packaging workflows: an explicit bash also stops on a failure inside a pipeline.
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  # Before anything is built: a tag names the version both programs and their file names carry.
+  version:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: The tag is both crates' version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::$TAG is not vMAJOR.MINOR.PATCH; no pre-release or build suffix"
+            exit 1
+          fi
+          versions="$(cargo metadata --locked --no-deps --format-version 1 | jq -r '.packages[] | "\(.name) \(.version)"')"
+          echo "$versions"
+          for crate in stepwise stepwise-desktop; do
+            if ! grep -qxF "$crate ${TAG#v}" <<<"$versions"; then
+              echo "::error::$TAG is not the version of $crate"
+              exit 1
+            fi
+          done
+
+  # The packaging workflows as they run by hand: tests first, then each target, read back and
+  # hashed. The Apple secrets sign and notarize the macOS files.
+  cli:
+    needs: version
+    uses: ./.github/workflows/package-cli.yml
+    secrets: inherit
+
+  desktop:
+    needs: version
+    uses: ./.github/workflows/package-desktop.yml
+    secrets: inherit
+
+  # Made once, by one job, after every target has passed: matrix jobs creating their own would race
+  # into several drafts for one tag. Creating and filling the draft here and in the next job, not in
+  # the build jobs, keeps the write token away from the jobs that run third-party build code.
+  draft:
+    needs: [cli, desktop]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    outputs:
+      id: ${{ steps.create.outputs.id }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/release-notes.md
+          sparse-checkout-cone-mode: false
+      - id: create
+        run: |
+          # GraphQL finds a tag's Release, draft or published, without the lag the release listing has
+          # after a draft is made. Any Release of this tag stops the run, and so does a failed lookup.
+          query="query(\$owner: String!, \$name: String!, \$tag: String!) { repository(owner: \$owner, name: \$name) { release(tagName: \$tag) { url } } }"
+          found="$(gh api graphql -f query="$query" -f owner="${GH_REPO%/*}" -f name="${GH_REPO#*/}" -f tag="$TAG" --jq '.data.repository.release.url // ""')"
+          if [ -n "$found" ]; then
+            echo "::error::$TAG already has a Release: $found"
+            exit 1
+          fi
+          # A draft names a tag without creating it: the tag must still name the commit built here.
+          commit="$(gh api "repos/$GH_REPO/commits/refs/tags/$TAG" --jq .sha)"
+          if [ "$commit" != "$GITHUB_SHA" ]; then
+            echo "::error::$TAG now names $commit, not $GITHUB_SHA, which this run built"
+            exit 1
+          fi
+          # The version job held the tag to digits and dots, so it is safe in a sed replacement.
+          sed -e "s/{{TAG}}/$TAG/g" -e "s/{{VERSION}}/${TAG#v}/g" .github/release-notes.md > "$RUNNER_TEMP/notes.md"
+          # The API answers with the draft's id; gh release create answers only with its URL.
+          id="$(gh api --method POST "repos/$GH_REPO/releases" -f tag_name="$TAG" -f name="$TAG" -F draft=true -F body=@"$RUNNER_TEMP/notes.md" --jq .id)"
+          echo "Draft $id for $TAG"
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+
+  # The files each packaging workflow checked and hashed, under one SHA256SUMS, into the draft; then
+  # the draft is read back. A rerun of this job alone replaces a partial upload.
+  upload:
+    needs: draft
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TAG: ${{ github.ref_name }}
+      RELEASE_ID: ${{ needs.draft.outputs.id }}
+    steps:
+      # Apart: both artifacts hold a SHA256SUMS.
+      - uses: actions/download-artifact@v4
+        with:
+          name: stepwise-cli
+          path: cli
+      - uses: actions/download-artifact@v4
+        with:
+          name: stepwise-desktop
+          path: desktop
+      - name: One SHA256SUMS
+        run: |
+          mkdir dist
+          cat cli/SHA256SUMS desktop/SHA256SUMS > dist/SHA256SUMS
+          rm cli/SHA256SUMS desktop/SHA256SUMS
+          mv -n cli/* desktop/* dist/
+          cd dist
+          cat SHA256SUMS
+          sha256sum --strict --check SHA256SUMS
+          # Every file here is listed once, and nothing else is here.
+          diff <(printf '%s\n' * | sort) <({ echo SHA256SUMS; cut -d ' ' -f 3 SHA256SUMS; } | sort)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-sha256sums
+          path: dist/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload to the draft
+        working-directory: dist
+        run: |
+          # gh finds a draft by its tag; it must be the one the draft job made.
+          found="$(gh release view "$TAG" --json databaseId,isDraft --jq '"\(.databaseId) \(.isDraft)"')"
+          if [ "$found" != "$RELEASE_ID true" ]; then
+            echo "::error::$TAG resolves to release '$found', not this run's draft $RELEASE_ID"
+            exit 1
+          fi
+          gh release upload "$TAG" --clobber -- *
+      - name: The draft holds exactly these bytes
+        run: |
+          gh release download "$TAG" --dir drafted
+          diff <(ls drafted) <(ls dist)
+          cd drafted
+          sha256sum --strict --check SHA256SUMS
+
+  # The only job that can sign attestations, stored by GitHub rather than in the Release; SHA256SUMS
+  # lists the files, not itself. Apart from upload, so an outage of Sigstore or the attestation API
+  # fails it alone, after the draft is complete; a rerun signs the same digests.
+  attest:
+    needs: upload
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-sha256sums
+      # The action reads a path it cannot find as checksums text, and would sign nothing.
+      - name: The subjects
+        run: cat SHA256SUMS
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-checksums: SHA256SUMS

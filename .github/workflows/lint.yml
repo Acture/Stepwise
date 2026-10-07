@@ -32,7 +32,7 @@ jobs:
       - if: steps.changes.outputs.rustfmt == 'true'
         run: cargo +stable fmt --all --check
       - if: steps.changes.outputs.page == 'true'
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
       - name: The page's types and format
         if: steps.changes.outputs.page == 'true'
         working-directory: src/desktop/ui
