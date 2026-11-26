@@ -78,7 +78,7 @@ const python: EvaluationView = {
 	},
 	ending: null,
 	feedback: {
-		text: "选对了位置，但结果不正确。两个操作数都已求值，现在应用乘法规则。 请再算一次。",
+		text: "选对了位置，但结果不正确。两个操作数都已求值，现在应用乘法规则。请再算一次。",
 		tone: "bad",
 	},
 	message: null,
@@ -204,7 +204,7 @@ const finished: EvaluationView = {
 	draft: null,
 	ending: "3 / 0 引发 ZeroDivisionError",
 	feedback: {
-		text: "正确。ZeroDivisionError: 除数为零；这一步引发异常，不会得到一个数值。 求值在这里终止。",
+		text: "正确。ZeroDivisionError: 除数为零；这一步引发异常，不会得到一个数值。求值在这里终止。",
 		tone: "good",
 	},
 	message: null,

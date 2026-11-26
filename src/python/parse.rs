@@ -8,12 +8,33 @@ use super::{BinaryOp, BoolOp, CompareOp, Op, UnaryOp, value};
 use crate::core::{Expr, ExprKind, Language, NodeId, ParseError, Value};
 
 pub fn parse_expression(source: &str) -> Result<Expr, ParseError> {
-	parse_bound_expression(source, &BTreeMap::new())
+	parse_bound_expression(source, &BTreeMap::new(), UnboundName::Answer)
 }
 
-pub fn parse_bound_expression(
+/// Who is parsing decides the wording of a name nothing bound: a question on the command
+/// line, where `--assign` can supply the value, or a student's answer, where only a plain
+/// value is accepted and the flag must not be named.
+#[derive(Clone, Copy)]
+pub(crate) enum UnboundName {
+	/// A question for the CLI: name the `--assign` flag that can bind it.
+	Assign,
+	/// A student's answer: ask for a value instead.
+	Answer,
+}
+
+impl UnboundName {
+	fn message(self, name: &str) -> String {
+		match self {
+			Self::Assign => format!("未给变量 {name} 赋值；使用 --assign {name}=3。"),
+			Self::Answer => format!("请填写一个 Python 值，不要填写变量 {name}。"),
+		}
+	}
+}
+
+pub(crate) fn parse_bound_expression(
 	source: &str,
 	bindings: &BTreeMap<String, Value>,
+	unbound: UnboundName,
 ) -> Result<Expr, ParseError> {
 	let source: &str = source.trim();
 	if source.len() > 2048 {
@@ -33,7 +54,7 @@ pub fn parse_bound_expression(
 	let parsed: ast::Expr = ast::Expr::parse(source.trim(), "<expression>")
 		.map_err(|error| ParseError(format!("Python 语法错误：{error}")))?;
 	let mut next_id: NodeId = 0;
-	let mut root: Expr = convert(parsed, bindings, &mut next_id, 0)?;
+	let mut root: Expr = convert(parsed, bindings, &mut next_id, 0, unbound)?;
 	let names: BTreeSet<&str> = root
 		.rows()
 		.into_iter()
@@ -61,6 +82,7 @@ fn convert(
 	bindings: &BTreeMap<String, Value>,
 	next_id: &mut NodeId,
 	depth: usize,
+	unbound: UnboundName,
 ) -> Result<Expr, ParseError> {
 	if depth > 32 || *next_id >= 128 {
 		return Err(ParseError("首版最多支持 128 个节点、32 层表达式。".into()));
@@ -75,9 +97,7 @@ fn convert(
 			let value: Value = value::checked(
 				bindings
 					.get(&name)
-					.ok_or_else(|| {
-						ParseError(format!("未给变量 {name} 赋值；使用 --assign {name}=3。"))
-					})?
+					.ok_or_else(|| ParseError(unbound.message(&name)))?
 					.clone(),
 			)
 			.map_err(|error| ParseError(error.to_string()))?;
@@ -109,7 +129,13 @@ fn convert(
 			};
 			operation(
 				Op::Unary(op),
-				vec![convert(*node.operand, bindings, next_id, depth + 1)?],
+				vec![convert(
+					*node.operand,
+					bindings,
+					next_id,
+					depth + 1,
+					unbound,
+				)?],
 			)
 		}
 		ast::Expr::BinOp(node) => {
@@ -130,8 +156,8 @@ fn convert(
 			operation(
 				Op::Binary(op),
 				vec![
-					convert(*node.left, bindings, next_id, depth + 1)?,
-					convert(*node.right, bindings, next_id, depth + 1)?,
+					convert(*node.left, bindings, next_id, depth + 1, unbound)?,
+					convert(*node.right, bindings, next_id, depth + 1, unbound)?,
 				],
 			)
 		}
@@ -143,7 +169,7 @@ fn convert(
 			let values: Vec<Expr> = node
 				.values
 				.into_iter()
-				.map(|value| convert(value, bindings, next_id, depth + 1))
+				.map(|value| convert(value, bindings, next_id, depth + 1, unbound))
 				.collect::<Result<_, _>>()?;
 			operation(Op::Bool(op), values)
 		}
@@ -170,8 +196,8 @@ fn convert(
 			operation(
 				Op::Compare(op),
 				vec![
-					convert(*node.left, bindings, next_id, depth + 1)?,
-					convert(right, bindings, next_id, depth + 1)?,
+					convert(*node.left, bindings, next_id, depth + 1, unbound)?,
+					convert(right, bindings, next_id, depth + 1, unbound)?,
 				],
 			)
 		}
