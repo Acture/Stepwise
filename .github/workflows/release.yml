@@ -31,7 +31,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - name: One version, the tag's
@@ -78,11 +78,11 @@ jobs:
     timeout-minutes: 15
     steps:
       # Apart: both artifacts hold a SHA256SUMS.
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: stepwise-cli
           path: cli
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: stepwise-desktop
           path: desktop
@@ -97,7 +97,7 @@ jobs:
           sha256sum --strict --check SHA256SUMS
           # Every file here is listed once, and nothing else is here.
           diff <(printf '%s\n' * | sort) <({ echo SHA256SUMS; cut -d ' ' -f 3 SHA256SUMS; } | sort)
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: stepwise
           path: dist
@@ -121,7 +121,7 @@ jobs:
       GH_REPO: ${{ github.repository }}
       TAG: ${{ github.ref_name }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
           sparse-checkout: .github/release-notes.md
@@ -162,7 +162,7 @@ jobs:
       TAG: ${{ github.ref_name }}
       RELEASE_ID: ${{ needs.draft.outputs.id }}
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: stepwise
           path: dist
@@ -195,7 +195,7 @@ jobs:
       id-token: write
       attestations: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: stepwise
           path: dist
