@@ -4,6 +4,9 @@
 		"targets": ["nsis"],
 		"licenseFile": "../../../LICENSE",
 		"windows": {
+			"nsis": {
+				"languages": ["SimpChinese"]
+			},
 			"webviewInstallMode": { "type": "downloadBootstrapper", "silent": true },
 			"wix": {
 				"upgradeCode": "5c829e2d-f2a3-5ef7-8679-ac69f33cd9d3"

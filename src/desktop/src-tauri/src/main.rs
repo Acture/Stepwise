@@ -309,6 +309,34 @@ mod tests {
 		assert_eq!(macos, window(include_str!("../tauri.conf.json")));
 	}
 
+	/// The app speaks one language, so its installer does too: SimpChinese alone means NSIS shows
+	/// no language dialog, a system language outside the list falls back to the first entry, and
+	/// the WebView2 download and abort messages are Chinese on every machine. Adding a language
+	/// also means deciding `displayLanguageSelector`.
+	#[test]
+	fn the_installer_speaks_chinese_without_asking() {
+		let config: Value = serde_json::from_str(include_str!("../tauri.windows.conf.json"))
+			.expect("a JSON config");
+		let nsis: &Value = &config["bundle"]["windows"]["nsis"];
+		let languages: &Vec<Value> = nsis["languages"].as_array().expect("a language list");
+		assert!(
+			languages
+				.iter()
+				.any(|language: &Value| language == "SimpChinese"),
+			"SimpChinese among the installer languages: {languages:?}"
+		);
+		assert_eq!(
+			languages.first(),
+			Some(&Value::from("SimpChinese")),
+			"SimpChinese first: the fallback when the system language is not listed"
+		);
+		assert_ne!(
+			nsis["displayLanguageSelector"],
+			Value::Bool(true),
+			"no language dialog before the installer"
+		);
+	}
+
 	#[test]
 	fn flags_are_consistent_and_no_save_refuses_a_progress_file() {
 		Args::command().debug_assert();

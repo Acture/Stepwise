@@ -50,8 +50,10 @@ Intel 芯片把文件名中的 `aarch64` 换成 `x86_64`。从浏览器下载的
 
 **桌面版**有两种安装包，任选其一：
 
-- `-setup.exe`，适合个人电脑：约 9 MB，安装到当前用户名下，不需要管理员权限。窗口依靠系统的 WebView2 组件显示；Windows 11 自带它，大多数 Windows 10 也已经由系统更新装好。电脑缺少 WebView2 时，安装程序会联网下载它。
-- `.msi`，适合机房和离线电脑：两百多 MB，需要管理员权限，为这台电脑的所有用户安装到 Program Files。安装包内含微软的 WebView2 离线安装程序，不联网也能装好。
+- `-setup.exe`，适合个人电脑：约 9 MB，安装到当前用户名下，不需要管理员权限。安装界面是简体中文，不随系统语言改变，也不弹语言选择。窗口依靠系统的 WebView2 组件显示；Windows 11 自带它，大多数 Windows 10 也已经由系统更新装好。电脑缺少 WebView2 时，安装程序会联网下载它，下载失败时的中止提示同样是中文。
+- `.msi`，适合机房和离线电脑：两百多 MB，需要管理员权限，为这台电脑的所有用户安装到 Program Files。安装包内含微软的 WebView2 离线安装程序，不联网也能装好；安装界面目前仍是英文。
+
+装好后若系统里没有了 WebView2（例如后来被卸载），应用启动时会弹出英文的 “Could not find the WebView2 Runtime” 错误框。这段文字来自上游运行时组件，安装包无法改写；装回 WebView2 即可。
 
 **终端版**：解压 zip，打开其中含有 `stepwise.exe` 的 `stepwise-<版本>-x86_64-pc-windows-msvc` 文件夹（用资源管理器「全部解压缩」时，它在同名文件夹里面一层），在空白处右键选「在终端中打开」，运行 `.\stepwise.exe --python`。
 
@@ -98,7 +100,7 @@ tar -xzf stepwise-<版本>-x86_64-unknown-linux-musl.tar.gz
 卸载方法：
 
 - macOS：把「应用程序」中的 Stepwise 移到废纸篓。终端版直接删除解压出的目录。
-- Windows：在「设置 → 应用」的应用列表中卸载 Stepwise。卸载 `-setup.exe` 装的版本时，勾选 “Delete the application data” 会一并删除 WebView 数据，进度仍然保留。终端版直接删除解压出的目录。
+- Windows：在「设置 → 应用」的应用列表中卸载 Stepwise。卸载 `-setup.exe` 装的版本时，勾选「删除应用程序数据」会一并删除 WebView 数据，进度仍然保留。终端版直接删除解压出的目录。
 - Linux：`sudo apt remove stepwise` 或 `sudo dnf remove stepwise`；AppImage 和终端版直接删除文件。
 
 不再使用时，卸载后再删除上表中的目录即可清除全部数据。删除进度目录会丢失所有做题记录。
