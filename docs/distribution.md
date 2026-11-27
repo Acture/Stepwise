@@ -19,7 +19,7 @@ CLI 与桌面各有一个打包工作流：[package-cli.yml](../.github/workflow
 | CLI | Linux x86_64 musl、macOS arm64 / x86_64：tar.gz；Windows x86_64：zip |
 | 桌面 | macOS arm64 / x86_64：dmg；Windows x86_64：NSIS / MSI；Linux x86_64：deb / rpm / AppImage |
 
-桌面版在 Windows 上用系统的 WebView2 组件显示界面。已装有 WebView2 的电脑上，两种安装包都跳过它；缺少时，NSIS 安装包（`-setup.exe`）联网下载安装，MSI 则用内置的微软 WebView2 离线安装程序，可在离线电脑上安装，适合机房等由管理员统一安装的场合。
+桌面版在 Windows 上用系统的 WebView2 组件显示界面。已装有 WebView2 的电脑上，两种安装包都跳过它；缺少时，NSIS 安装包（`-setup.exe`）联网下载安装，MSI 则用内置的微软 WebView2 离线安装程序，可在离线电脑上安装，适合机房等由管理员统一安装的场合。NSIS 的安装界面和它的 WebView2 下载、中止提示是简体中文；MSI 界面仍是英文，装好后应用启动时缺 WebView2 的弹窗来自上游运行时组件，也只有英文。
 
 Artifacts 保留七天。手动运行不会创建 tag 或 GitHub Release；对外发布见[发布版本](#发布版本)。
 
@@ -100,7 +100,7 @@ Linux 使用 `sha256sum -c SHA256SUMS`。Windows 可在 PowerShell 中运行 `Ge
 - 平台、归档命名和构建入口在 [package-cli.yml](../.github/workflows/package-cli.yml) 与 [package-desktop.yml](../.github/workflows/package-desktop.yml)。先更新相应测试，再修改构建或检查步骤。
 - CLI 的 Rust 依赖声明由 [about.toml](../about.toml) 和 [about.hbs](../about.hbs) 生成。新增许可证种类前应阅读许可证；缺少版权信息时补充校验过的来源，不用泛化 SPDX 文本代替。
 - 桌面页面声明由 [licenses.ts](../src/desktop/ui/licenses.ts) 生成，安装资源映射在 [tauri.package.conf.json](../src/desktop/src-tauri/tauri.package.conf.json)。
-- Windows 先按 [tauri.windows.conf.json](../src/desktop/src-tauri/tauri.windows.conf.json) 构建并打出 NSIS，再用同一个可执行文件按 [tauri.msi.conf.json](../src/desktop/src-tauri/tauri.msi.conf.json) 打出 MSI。MSI 里的 WebView2 离线安装程序在打包时从微软下载最新版，不固定版本；提取检查确认它带有微软签名，并在运行摘要中记下版本与 SHA256。
+- Windows 先按 [tauri.windows.conf.json](../src/desktop/src-tauri/tauri.windows.conf.json) 构建并打出 NSIS，再用同一个可执行文件按 [tauri.msi.conf.json](../src/desktop/src-tauri/tauri.msi.conf.json) 打出 MSI。NSIS 的安装语言是其中的 `bundle.windows.nsis.languages`：只有 `SimpChinese`，界面不弹语言选择，系统语言不在列表时也回退到简体中文，[src/main.rs](../src/desktop/src-tauri/src/main.rs) 的测试守住这项配置。MSI 里的 WebView2 离线安装程序在打包时从微软下载最新版，不固定版本；提取检查确认它带有微软签名，并在运行摘要中记下版本与 SHA256。
 - macOS 签名与公证在 [apple.py](../.github/scripts/apple.py)，票据检查在 [verify.py](../.github/scripts/verify.py)。
 - [release.yml](../.github/workflows/release.yml) 按名称下载两个打包工作流的汇总 Artifact（`stepwise-cli`、`stepwise-desktop`），改动这两个名称时一并修改它。产物文件名（CLI 的在 package-cli.yml，桌面的在 verify.py）改变时，同步修改[下载与安装](install.md)中的文件表与命令。发布说明的模板是 [release-notes.md](../.github/release-notes.md)。
 - 安装包提取、许可证、架构和动态库检查在 [.github/scripts](../.github/scripts/)；修改后运行 `python3 -m unittest discover -s .github/scripts -v`。
