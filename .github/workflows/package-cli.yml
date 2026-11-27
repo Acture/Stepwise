@@ -40,7 +40,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       # The musl target only to read which musl it links.
@@ -94,7 +94,7 @@ jobs:
             echo
             cat "$RUNNER_TEMP/musl-COPYRIGHT"
           } >> notices/x86_64-unknown-linux-musl/THIRD-PARTY-NOTICES.txt
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: notices
           path: notices
@@ -125,10 +125,10 @@ jobs:
     steps:
       # Git on the Windows image checks text out as CRLF; every archive carries the repository's bytes.
       - run: git config --global core.autocrlf false
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         if: runner.os == 'macOS'
         with:
           python-version: '3.13'
@@ -164,7 +164,7 @@ jobs:
         run: |
           python .github/scripts/apple.py sign --identifier io.github.acture.stepwise.cli "target/$TARGET/release/stepwise"
           python .github/scripts/apple.py notarize "target/$TARGET/release/stepwise"
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: notices
           path: notices
@@ -263,7 +263,7 @@ jobs:
             shasum -a 256 "$ARCHIVE" | cut -d ' ' -f 1 > "$ARCHIVE.sha256"
           fi
           cat "$ARCHIVE.sha256"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: cli-${{ matrix.target }}
           path: |
@@ -282,19 +282,19 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: cli-x86_64-unknown-linux-musl
           path: dist
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: cli-aarch64-apple-darwin
           path: dist
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: cli-x86_64-apple-darwin
           path: dist
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: cli-x86_64-pc-windows-msvc
           path: dist
@@ -326,7 +326,7 @@ jobs:
             fi
             ls -l "$unpacked"
           done < SHA256SUMS
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: stepwise-cli
           path: dist
