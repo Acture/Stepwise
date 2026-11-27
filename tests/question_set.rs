@@ -670,7 +670,7 @@ fn a_question_that_ends_in_an_exception_loads_and_is_practised_to_that_exception
 	let raised: Feedback = answered.submit(node(&answered, "6 / 0"), "ZeroDivisionError");
 	assert!(raised.accepted(), "{}", raised.message);
 	assert!(
-		raised.message.ends_with(" 求值在这里终止。"),
+		raised.message.ends_with("求值在这里终止。"),
 		"{}",
 		raised.message
 	);

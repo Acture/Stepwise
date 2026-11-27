@@ -22,7 +22,7 @@ use crate::core::{Expr, Language, ParseError, Session, Value};
 /// the Debug rendering of Python's typed bindings; both must stay byte-identical.
 pub fn session(source: &str, bindings: &BTreeMap<String, Value>) -> Result<Session, ParseError> {
 	let source: String = source.trim().into();
-	let root: Expr = parse::parse_bound_expression(&source, bindings)?;
+	let root: Expr = parse::parse_bound_expression(&source, bindings, parse::UnboundName::Assign)?;
 	let context: String = format!("python\n{bindings:?}\n{source}");
 	Ok(Session::new(Language::Python, source, root, context))
 }

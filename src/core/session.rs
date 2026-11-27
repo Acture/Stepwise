@@ -364,6 +364,7 @@ impl Session {
 			Ok(step) => step,
 			Err(feedback) => return feedback,
 		};
+		let separator: &'static str = note_separator(&step.explanation);
 		match &step.outcome {
 			// Only Python's numeric rules raise a limit, so the note names Python.
 			Err(EvalError::Limit(reason)) => Feedback::new(
@@ -383,13 +384,16 @@ impl Session {
 					};
 					Feedback::new(
 						FeedbackKind::Correct,
-						format!("正确。{} {origin}求值在这里终止。", step.explanation),
+						format!(
+							"正确。{}{separator}{origin}求值在这里终止。",
+							step.explanation
+						),
 					)
 				} else {
 					Feedback::new(
 						FeedbackKind::WrongValue,
 						format!(
-							"这一步不会产生普通值。{} 请填写异常名称。",
+							"这一步不会产生普通值。{}{separator}请填写异常名称。",
 							step.explanation
 						),
 					)
@@ -418,7 +422,7 @@ impl Session {
 					Feedback::new(
 						FeedbackKind::WrongValue,
 						format!(
-							"选对了位置，但结果不正确。{} 请再算一次。",
+							"选对了位置，但结果不正确。{}{separator}请再算一次。",
 							step.explanation
 						),
 					)
@@ -536,6 +540,16 @@ impl Session {
 		self.attempts.pop();
 		self.terminal_error = None;
 		true
+	}
+}
+
+/// The separator before a note that follows a step explanation: nothing after a Chinese
+/// full stop; one space after a placeholder or Latin ending.
+fn note_separator(explanation: &str) -> &'static str {
+	if explanation.ends_with('。') {
+		""
+	} else {
+		" "
 	}
 }
 

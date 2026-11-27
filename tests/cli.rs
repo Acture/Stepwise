@@ -168,3 +168,16 @@ fn invalid_arguments_and_interactive_launches_have_distinct_failure_codes() {
 	);
 	assert!(!progress.exists(), "a refused launch wrote progress");
 }
+
+/// A custom question whose expression leaves a name unbound names the `--assign` flag
+/// that could bind it; that wording stays out of every student answer.
+#[test]
+fn a_custom_question_missing_a_binding_names_the_assign_flag() {
+	assert!(
+		run(&["--python", "x + 1", "--trace"], 1).contains("未给变量 x 赋值；使用 --assign x=3。")
+	);
+	assert!(
+		run(&["--logic", "P and Q", "--trace"], 1)
+			.contains("未给命题 P 赋值；使用 --assign P=true 或 P=false。")
+	);
+}

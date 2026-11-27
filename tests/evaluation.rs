@@ -129,7 +129,7 @@ fn short_circuit_types_and_a_chosen_exception_are_distinct() {
 	assert_eq!(
 		feedback.message,
 		format!(
-			"正确。{error} 这个异常来自你选择计算的子式 3 / 0；Python 执行原式时不会在这里引发它。求值在这里终止。"
+			"正确。{error}这个异常来自你选择计算的子式 3 / 0；Python 执行原式时不会在这里引发它。求值在这里终止。"
 		)
 	);
 	assert!(practice.is_finished());
@@ -171,7 +171,7 @@ fn a_chosen_exception_says_whether_python_raises_it_there() {
 		let error: &EvalError = practice.terminal_error().unwrap();
 		assert_eq!(
 			feedback.message,
-			format!("正确。{error} {origin}求值在这里终止。"),
+			format!("正确。{error}{origin}求值在这里终止。"),
 			"{source}"
 		);
 	}
@@ -307,6 +307,41 @@ fn rejects_unsupported_source_and_resource_limits() {
 	let mut practice: Session = session("2 ** 99999999999999");
 	assert_eq!(practice.submit(0, "0").kind, FeedbackKind::Unsupported);
 	assert!(!practice.is_finished());
+}
+
+/// An answer is asked for as a value and never names the CLI flag; the `--assign` wording
+/// stays only on the question path, where the flag can actually supply the binding.
+#[test]
+fn unbound_names_keep_the_assign_flag_on_the_question_path() {
+	for answer in ["x", "x + 1", "十二"] {
+		let error: stepwise::core::ParseError = parse_value(answer).expect_err("answer");
+		assert!(
+			!error.to_string().contains("--assign"),
+			"{answer} names the CLI flag: {error}"
+		);
+	}
+	assert_eq!(
+		parse_value("x").expect_err("x").to_string(),
+		"请填写一个 Python 值，不要填写变量 x。"
+	);
+	// A logic answer is matched as a literal; it never reaches the teaching tree's wording.
+	let truth: stepwise::core::ParseError =
+		stepwise::logic::parse_truth("P").expect_err("logic answer");
+	assert!(
+		!truth.to_string().contains("--assign"),
+		"logic answer names the CLI flag: {truth}"
+	);
+	// The question path keeps the flag hint, in both languages.
+	let python: stepwise::core::ParseError =
+		python::session("x + 1", &BTreeMap::new()).expect_err("python question");
+	assert_eq!(python.to_string(), "未给变量 x 赋值；使用 --assign x=3。");
+	let logic: stepwise::core::ParseError =
+		stepwise::logic::session("P and Q", &BTreeMap::from([("P".into(), true)]))
+			.expect_err("logic question");
+	assert_eq!(
+		logic.to_string(),
+		"未给命题 Q 赋值；使用 --assign Q=true 或 Q=false。"
+	);
 }
 
 #[test]

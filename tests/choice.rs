@@ -915,7 +915,7 @@ fn an_exception_from_a_skippable_operand_ends_the_question_until_undone() {
 	let wrong: Feedback = rejected(&mut session, "1 / 0", "5", FeedbackKind::WrongValue);
 	assert_eq!(
 		wrong.message,
-		format!("这一步不会产生普通值。{DIVISION} 请填写异常名称。")
+		format!("这一步不会产生普通值。{DIVISION}请填写异常名称。")
 	);
 
 	let raised: Feedback = take(&mut session, "1 / 0", Some("ZeroDivisionError"));
@@ -929,7 +929,7 @@ fn an_exception_from_a_skippable_operand_ends_the_question_until_undone() {
 	assert_eq!(
 		raised.message,
 		format!(
-			"正确。{DIVISION} 这个异常来自你选择计算的子式 1 / 0；Python 执行原式时不会在这里引发它。求值在这里终止。"
+			"正确。{DIVISION}这个异常来自你选择计算的子式 1 / 0；Python 执行原式时不会在这里引发它。求值在这里终止。"
 		)
 	);
 	assert_eq!(
@@ -971,7 +971,7 @@ fn an_exception_from_a_skippable_operand_ends_the_question_until_undone() {
 	assert!(feedback.accepted());
 	assert_eq!(
 		feedback.message,
-		format!("正确。{DIVISION} 求值在这里终止。")
+		format!("正确。{DIVISION}求值在这里终止。")
 	);
 	assert!(raises.is_finished());
 	assert!(raises.terminal_error().is_some());
@@ -984,7 +984,7 @@ fn an_exception_from_a_skippable_operand_ends_the_question_until_undone() {
 	assert_eq!(
 		feedback.message,
 		format!(
-			"正确。{DIVISION} 这个异常来自你选择计算的子式 1 / 0；Python 执行原式时不会在这里引发它。求值在这里终止。"
+			"正确。{DIVISION}这个异常来自你选择计算的子式 1 / 0；Python 执行原式时不会在这里引发它。求值在这里终止。"
 		)
 	);
 
@@ -994,7 +994,7 @@ fn an_exception_from_a_skippable_operand_ends_the_question_until_undone() {
 	assert!(feedback.accepted(), "{}", feedback.message);
 	assert_eq!(
 		feedback.message,
-		format!("正确。{DIVISION} 这个异常来自你选择计算的子式 1 / 0。求值在这里终止。")
+		format!("正确。{DIVISION}这个异常来自你选择计算的子式 1 / 0。求值在这里终止。")
 	);
 }
 
